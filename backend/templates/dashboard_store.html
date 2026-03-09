@@ -1,0 +1,165 @@
+{% extends "dashboard_base.html" %}
+
+{% block sidebar_menu %}
+<li><a href="/dashboard/admin" class="nav-link active">🏠 Admin Dashboard</a></li>
+<li><a href="/store/create" class="nav-link">🏬 Manage Stores</a></li>
+<li><a href="/role/create" class="nav-link">👥 Manage Roles</a></li>
+<li><a href="#" class="nav-link">📊 Reports</a></li>
+<li><a href="#" class="nav-link">⚙ Settings</a></li>
+{% endblock %}
+
+{% block page_title %}System Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <!-- Store Management -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h3 class="h6 fw-bold mb-3">Store Management</h3>
+        {% if stores|length == 0 %}
+          <p class="text-muted small mb-3">No store registered.</p>
+          <a href="/store/create" class="btn btn-sm btn-dark w-100">+ Register Store</a>
+        {% else %}
+          <ul class="list-group list-group-flush">
+            {% for s in stores %}
+              <li class="list-group-item">🏬 {{ s.c_store_name }} (ID: {{ s.i_store_id }})</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Management -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h3 class="h6 fw-bold mb-3">Role Management</h3>
+        {% if roles|length == 0 %}
+          <p class="text-muted small mb-3">No role registered.</p>
+          <a href="/role/create" class="btn btn-sm btn-dark w-100">+ Register Role</a>
+        {% else %}
+          <ul class="list-group list-group-flush">
+            {% for r in roles %}
+              <li class="list-group-item">👥 {{ r.c_name }} - {{ r.c_description }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Sales Report -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3 class="h6 fw-bold mb-0">Sales Report</h3>
+          <ul class="nav nav-pills small" id="salesTabs">
+            <li class="nav-item"><button class="nav-link active" data-range="weekly">Weekly</button></li>
+            <li class="nav-item"><button class="nav-link" data-range="monthly">Monthly</button></li>
+            <li class="nav-item"><button class="nav-link" data-range="yearly">Yearly</button></li>
+          </ul>
+        </div>
+        <div style="height:300px;">
+          <canvas id="salesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <h3 class="h6 fw-bold mb-3">Recent Transactions</h3>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2025-09-20</td>
+                <td>John Doe</td>
+                <td>$199</td>
+                <td><span class="badge bg-success">Paid</span></td>
+              </tr>
+              <tr>
+                <td>2025-09-19</td>
+                <td>Alice Kim</td>
+                <td>$70</td>
+                <td><span class="badge bg-warning text-dark">Pending</span></td>
+              </tr>
+              <tr>
+                <td>2025-09-18</td>
+                <td>Mark Lee</td>
+                <td>$120</td>
+                <td><span class="badge bg-danger">Failed</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Chart Script -->
+<script>
+  const salesData = {
+    weekly: [120, 150, 180, 90, 200, 170, 220],
+    monthly: [800, 950, 1100, 980, 1200, 1300, 1250, 1400, 1500, 1600, 1550, 1700],
+    yearly: [12000, 13500, 15000, 17000, 18000, 21000, 20000]
+  };
+
+  const salesLabels = {
+    weekly: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    monthly: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    yearly: ["2019", "2020", "2021", "2022", "2023", "2024", "2025"]
+  };
+
+  const ctx = document.getElementById('salesChart').getContext('2d');
+  let chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: salesLabels.weekly,
+      datasets: [{
+        label: 'Sales ($)',
+        data: salesData.weekly,
+        borderColor: '#0d6efd',
+        backgroundColor: 'rgba(13,110,253,0.2)',
+        tension: 0.3,
+        fill: true,
+        borderWidth: 2,
+        pointBackgroundColor: '#0d6efd'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+
+  document.querySelectorAll('#salesTabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#salesTabs .nav-link').forEach(link => link.classList.remove('active'));
+      btn.classList.add('active');
+
+      const range = btn.dataset.range;
+      chart.data.labels = salesLabels[range];
+      chart.data.datasets[0].data = salesData[range];
+      chart.update();
+    });
+  });
+</script>
+{% endblock %}

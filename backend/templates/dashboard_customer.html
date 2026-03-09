@@ -1,0 +1,38 @@
+{% extends "dashboard_base.html" %}
+
+{% block sidebar_menu %}
+<li><a href="/dashboard/customer" class="nav-link active">👤 My Dashboard</a></li>
+<li><a href="/customer/orders" class="nav-link">📦 My Orders</a></li>
+<li><a href="/customer/profile" class="nav-link">⚙ Profile</a></li>
+<li><a href="/customer/support" class="nav-link">💬 Support</a></li>
+{% endblock %}
+
+{% block page_title %}Welcome, {{ user_name }}{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <!-- Upcoming Rentals -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <h3 class="h6 fw-bold mb-3">Upcoming Rentals</h3>
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item">Classic Black - 2025-09-30</li>
+          <li class="list-group-item">Modern Navy - 2025-10-12</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Info -->
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <h3 class="h6 fw-bold mb-3">Account Info</h3>
+        <p>Email: {{ user_email }}</p>
+        <p>Phone: {{ user_phone }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

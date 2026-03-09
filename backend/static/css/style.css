@@ -1,0 +1,258 @@
+/* ================================
+   Global Styles
+================================= */
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+h1, h2, h3, h4, h5 {
+  font-weight: 600;
+}
+
+/* ================================
+   Navbar
+================================= */
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.navbar .btn {
+  font-size: 0.9rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.4rem;
+}
+
+/* ================================
+   Hero Section (Home)
+================================= */
+header.hero {
+  background: url('/static/images/tuxedo_banner.jpg') center/cover no-repeat;
+  height: 100vh;
+  position: relative;
+  color: white;
+}
+
+header.hero .overlay {
+  background: rgba(0, 0, 0, 0.55);
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+header.hero .position-relative {
+  z-index: 1;
+}
+
+header.hero h1 {
+  font-size: 2.8rem;
+  font-weight: 700;
+}
+
+header.hero p {
+  font-size: 1.2rem;
+  color: #e5e5e5;
+}
+
+/* ================================
+   Carousel (Home)
+================================= */
+.carousel-img {
+  height: 500px;
+  object-fit: cover;
+}
+
+@media (max-width: 768px) {
+  .carousel-img { height: 300px; }
+}
+
+@media (max-width: 576px) {
+  .carousel-img { height: 200px; }
+}
+
+.carousel-caption h5 {
+  font-size: 1.75rem;
+  font-weight: bold;
+}
+
+.carousel-caption p {
+  font-size: 1rem;
+  color: #f1f1f1;
+}
+
+/* ================================
+   Collection Section
+================================= */
+.collection-img {
+  width: 100%;
+  max-height: 600px;
+  object-fit: cover;
+}
+
+@media (max-width: 992px) {
+  .collection-img { height: 220px; }
+}
+
+@media (max-width: 576px) {
+  .collection-img { height: 180px; }
+}
+
+/* ================================
+   Login Modal
+================================= */
+.modal-content {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  border-bottom: none;
+}
+
+.modal-footer {
+  border-top: none;
+}
+
+/* ================================
+   Footer
+================================= */
+footer {
+  font-size: 0.85rem;
+  background: #111;
+  color: #bbb;
+}
+
+footer a {
+  color: #fff;
+  text-decoration: underline;
+}
+
+footer a:hover {
+  color: #ddd;
+}
+
+/* ================================
+   Dashboard Layout
+================================= */
+.dashboard-wrapper {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ---- Desktop Sidebar ---- */
+.dashboard-sidebar {
+  width: 240px;
+  background-color: #212529;
+  color: #f8f9fa;
+  padding: 1.5rem 1rem;
+  min-height: 100vh;
+}
+
+.dashboard-sidebar h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-sidebar a {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  color: #adb5bd;
+  border-radius: 0.25rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+  text-decoration: none;
+}
+
+.dashboard-sidebar a.active,
+.dashboard-sidebar a:hover {
+  background-color: #343a40;
+  color: #fff;
+}
+
+/* ---- Mobile/Tablet Sidebar Hide ---- */
+@media (max-width: 991.98px) {
+  .dashboard-sidebar {
+    display: none !important;
+  }
+
+  .dashboard-wrapper {
+    flex-direction: column;
+  }
+}
+
+/* ================================
+   Dashboard Main
+================================= */
+.dashboard-main {
+  flex: 1;
+  padding: 2rem;
+  background-color: #f8f9fa;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+/* ================================
+   Cards
+================================= */
+.card-custom {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  transition: box-shadow 0.2s ease;
+}
+
+.card-custom:hover {
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+.card-custom h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+/* ================================
+   Table
+================================= */
+.table-responsive {
+  margin-top: 1rem;
+}
+
+/* ================================
+   Chart
+================================= */
+#salesChart,
+#activityChart {
+  max-height: 300px;
+}
+
+/* ================================
+   Buttons
+================================= */
+.btn-dark {
+  background-color: #212529;
+  border-color: #212529;
+}
+
+.btn-dark:hover {
+  background-color: #343a40;
+  border-color: #343a40;
+}

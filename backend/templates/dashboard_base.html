@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }} - Dashboard</title>
+  <!-- Bootstrap (오프라인) -->
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    .sidebar {
+      min-height: 100vh;
+    }
+    .sidebar .nav-link {
+      color: #adb5bd;
+    }
+    .sidebar .nav-link.active,
+    .sidebar .nav-link:hover {
+      color: #fff;
+      background-color: #495057;
+      border-radius: .375rem;
+    }
+    .content {
+      margin-left: 0;
+    }
+    @media (min-width: 768px) {
+      .content {
+        margin-left: 240px;
+      }
+      .sidebar {
+        width: 240px;
+        position: fixed;
+      }
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+  <!-- Sidebar -->
+  <nav id="sidebar" class="sidebar bg-dark text-white p-3">
+    <h2 class="h5 fw-bold mb-4">{{ APP_NAME }}</h2>
+    <ul class="nav flex-column gap-1">
+      {% block sidebar_menu %}{% endblock %}
+    </ul>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="content p-4">
+    <!-- Header -->
+    <header class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
+      <h1 class="h5 fw-semibold text-dark mb-0">{% block page_title %}Dashboard{% endblock %}</h1>
+      <div class="d-flex flex-column flex-md-row gap-2 small text-muted">
+        <span>Store: {{ login_store }}</span>
+        <span>Role: {{ role }}</span>
+        <button onclick="window.location.href='/auth/logout'" class="btn btn-sm btn-dark">
+          Logout
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Logout Confirm Modal -->
+  <div class="modal fade" id="logoutModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">로그아웃 확인</h5>
+        </div>
+        <div class="modal-body">
+          <p>로그아웃 하시겠습니까?<br>
+          <span id="countdown">5</span>초 후 자동 로그아웃됩니다.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelLogout">아니오</button>
+          <button type="button" class="btn btn-danger" id="confirmLogout">예</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script>
+    let logoutTimer;
+
+    // Dashboard에서 뒤로가기(←) → 로그아웃 모달
+    window.history.pushState({}, "", window.location.pathname);
+
+    window.addEventListener("popstate", () => {
+      const modal = new bootstrap.Modal(document.getElementById("logoutModal"));
+      modal.show();
+
+      let seconds = 5;
+      document.getElementById("countdown").innerText = seconds;
+
+      // 타이머 시작
+      logoutTimer = setInterval(() => {
+        seconds--;
+        document.getElementById("countdown").innerText = seconds;
+        if (seconds <= 0) {
+          clearInterval(logoutTimer);
+          window.location.href = "/auth/logout";
+        }
+      }, 1000);
+
+      // 예 버튼
+      document.getElementById("confirmLogout").onclick = () => {
+        clearInterval(logoutTimer);
+        window.location.href = "/auth/logout";
+      };
+
+      // 아니오 버튼
+      document.getElementById("cancelLogout").onclick = () => {
+        clearInterval(logoutTimer);
+        modal.hide();
+        window.history.pushState({}, "", window.location.pathname);
+      };
+    });
+  </script>
+
+</body>
+</html>

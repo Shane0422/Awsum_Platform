@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }} Dashboard</title>
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+
+  <!-- Wrapper -->
+  <div class="dashboard-wrapper">
+
+    <!-- Sidebar -->
+    <aside class="dashboard-sidebar">
+      <h2 class="mb-4">{{ APP_NAME }}</h2>
+      <nav>
+        <a href="/dashboard" class="active">🏠 Dashboard</a>
+        <a href="/orders">📦 Orders</a>
+        <a href="/customers">👤 Customers</a>
+        <a href="/inventory">🧾 Inventory</a>
+        <a href="/reports">📊 Reports</a>
+        <a href="/settings">⚙️ Settings</a>
+        <a href="/logout" class="text-danger">🚪 Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="dashboard-main">
+      <!-- Header -->
+      <div class="dashboard-header">
+        <h1>Welcome, {{ user_name }}</h1>
+        <button class="btn btn-sm btn-dark">New Order</button>
+      </div>
+
+      <!-- Cards -->
+      <div class="row">
+        <div class="col-md-3">
+          <div class="card-custom">
+            <h3>Total Orders</h3>
+            <p class="fs-4 fw-bold text-primary">128</p>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card-custom">
+            <h3>Active Rentals</h3>
+            <p class="fs-4 fw-bold text-success">42</p>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card-custom">
+            <h3>Pending Returns</h3>
+            <p class="fs-4 fw-bold text-warning">6</p>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card-custom">
+            <h3>Damaged Items</h3>
+            <p class="fs-4 fw-bold text-danger">2</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="card-custom">
+        <h3>Sales Report</h3>
+        <canvas id="salesChart"></canvas>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const ctx = document.getElementById('salesChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        datasets: [{
+          label: 'Sales ($)',
+          data: [1200, 1500, 1700, 1400, 1800, 2000],
+          borderColor: '#212529',
+          backgroundColor: 'rgba(33, 37, 41, 0.2)',
+          tension: 0.4,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,190 @@
+
+#✅ 1차 스타트 패키지 구성
+
+#프로젝트 구조
+
+폴더 구조 (확정 버전)
+D:\Awsum_Projects\tuxedo_rental\
+ ├── backend\
+ │    ├── main.py
+ │    ├── database\
+ │    │     ├── admin_db.py
+ │    │     └── store_db.py
+ │    └── utils\
+ │          └── safe_schema_migrate.py
+ ├── db_admin\
+ │    ├── db_Admin.db
+ │    └── backups\
+ └── db_store\
+      ├── store_1001\
+      │     ├── store_1001.db
+      │     └── backups\
+      ├── store_1002\
+      │     ├── store_1002.db
+      │     └── backups\
+
+
+fastapi
+uvicorn
+sqlalchemy
+jinja2
+python-multipart
+
+# 실행 방법
+cd project_name
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+
+
+✅ requirements.txt (추천 안정 버전)
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+sqlalchemy==2.0.30
+pydantic==2.7.0
+jinja2==3.1.4
+python-multipart==0.0.9
+passlib[bcrypt]==1.7.4
+alembic==1.13.1
+databases==0.8.0
+email-validator==2.1.1
+
+✅ 설명
+
+fastapi → 웹 프레임워크
+uvicorn[standard] → ASGI 서버 (웹 실행기)
+sqlalchemy → ORM (DB 연결/모델 관리)
+pydantic → 데이터 검증 (FastAPI 핵심)
+jinja2 → 템플릿 엔진 (home.html 렌더링)
+python-multipart → 로그인 폼/파일 업로드 처리
+passlib[bcrypt] → 비밀번호 해싱
+alembic → DB 마이그레이션
+databases → 비동기 DB 연결 지원 (선택적)
+email-validator → 이메일 형식 검증
+python-multipart
+
+✅ 설치 방법 (서버에서)
+cd D:\Awsum_Projects\tuxedo_rental
+python -m venv venv
+venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+
+✅ 서버용 requirements.txt (최신 정리본)
+# --- FastAPI Core ---
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+
+# --- Database & ORM ---
+sqlalchemy==2.0.30
+alembic==1.13.1
+databases==0.8.0
+
+# --- Data validation ---
+pydantic==2.7.0
+email-validator==2.1.1
+
+# --- Security ---
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# --- Templates ---
+jinja2==3.1.4
+
+
+서버에 FastAPI + Uvicorn + SQLAlchemy + Jinja2 환경을 올리려면 설치 과정을 단계별로 정리하면 이렇게 됩니다:
+
+📌 1. Python 환경 확인
+서버에 Python 3.11이 설치되어 있으니 버전 확인:
+python --version
+pip --version
+
+📌 2. 가상환경 생성 (권장)
+(원하는 경우, 프로젝트별로 독립 환경 생성)
+cd C:\Awsum_Projects\tuxedo_rental
+python -m venv venv
+venv\Scripts\activate
+
+📌 3. 필수 라이브러리 설치
+FastAPI 실행과 DB를 위해 필요한 패키지:
+pip install fastapi uvicorn[standard] sqlalchemy pydantic jinja2 python-multipart aiosqlite
+
+📌 4. 개발 편의 라이브러리 (옵션)
+개발 시 디버깅이나 마이그레이션에 도움 되는 패키지:
+pip install alembic email-validator passlib[bcrypt]
+
+📌 5. requirements.txt로 관리
+다음 내용을 requirements.txt로 만들어 두세요:
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+jinja2
+python-multipart
+aiosqlite
+alembic
+email-validator
+passlib[bcrypt]
+
+
+그리고 서버에서는 한 줄로 설치 가능:
+pip install -r requirements.txt
+
+📌 6. 서버 실행
+FastAPI 앱 실행:
+
+cd C:\Awsum_Projects\tuxedo_rental\backend
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+✅ IIS + FastAPI (uvicorn) Reverse Proxy 세팅 정리
+1. 기본 준비
+도메인 연결
+domain.com (aipos24.com) → Vultr 서버 IP (45.76.xxx.xxx) A레코드 세팅
+nslookup aipos24.com → 올바른 IP 확인
+FastAPI 실행 확인
+서버 내에서 uvicorn backend.main:app --host 127.0.0.1 --port 8000 실행
+
+http://127.0.0.1:8000
+ 정상 동작 확인
+2. IIS 기본 사이트 생성
+IIS Manager → Sites → Add Website
+Site name: aipos24.com
+Physical Path: C:\inetpub\wwwroot\aipos24
+Binding: http / Port 80 / Host name: aipos24.com
+(선택) www.aipos24.com 추가 바인딩
+
+3. SSL 인증서 적용 (win-acme 사용)
+win-acme (wacs.exe) 실행 → N (새 인증서 생성)
+aipos24.com, www.aipos24.com 선택
+인증 완료 후 IIS에 자동 바인딩
+Site Bindings에서 https / 443 / SSL certificate 선택
+
+4. ARR (Application Request Routing) 설치 & 활성화
+Web Platform Installer → ARR 3.0 설치
+IIS Manager → Server Root 선택 → Application Request Routing Cache → 오른쪽 → Server Proxy Settings
+
+✅ Enable Proxy 체크
+5. URL Rewrite 룰 추가 (Reverse Proxy)
+해당 사이트(aipos24.com) 선택 → URL Rewrite → Add Rules
+Inbound Rule → Blank Rule
+Name: ReverseProxyToUvicorn
+Requested URL: Matches the Pattern
+Using: Regular Expressions
+Pattern: (.*)
+Action
+Action type: Rewrite
+Rewrite URL: http://127.0.0.1:8000/{R:1}
+적용 후 사이트 Restart
+
+6. 테스트
+http://aipos24.com 접속 → uvicorn 서비스 정상 표시
+https://aipos24.com 접속 → 인증서(SSL) 적용된 HTTPS 확인
+
+🚀 핵심 포인트
+ARR Proxy 반드시 Enable Proxy 체크
+Rewrite URL → 127.0.0.1:8000 으로 연결
+SSL 인증서는 win-acme로 자동 갱신됨 (기본 60~90일 마다)
+FastAPI는 IIS에서 직접 구동되지 않고 uvicorn → IIS 프록시 구조
