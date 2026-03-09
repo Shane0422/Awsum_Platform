@@ -14,7 +14,8 @@ class Store(AdminBase, ContactMixin, AddressMixin, AuditMixin):
     c_store_pw   = Column(String, nullable=False)     # 업체 고유 비밀번호 (Shane 발급, 고객 변경 불가)
     dt_pw_expire = Column(DateTime, nullable=True)    # 업체 비밀번호 만료일자 (optional)
 
-    # ✅ 관계 (구분/업종)
+    # ✅ 관계 (계정/구분/업종)
+    i_account_id       = Column(Integer, ForeignKey("tb_account.i_account_id"), nullable=True)            # 계정 (1:N, Account -> Store)
     i_store_type_id    = Column(Integer, ForeignKey("tb_store_type.i_store_type_id"), nullable=True)       # 본사/지사/대리점/협력사
     i_business_type_id = Column(Integer, ForeignKey("tb_business_type.i_business_type_id"), nullable=True) # 업종 (세탁소/웨딩/꽃집 등)
 
