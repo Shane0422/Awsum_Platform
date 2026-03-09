@@ -31,18 +31,23 @@ Manager (# 매장 운영 책임자)
 Staff (# 매장 직원)
 Customer (# 일반 고객)
 
-2.4 tb_store (업체 관리)
+2.4 tb_account (상위 계정)
+Account명, 상태
+ContactMixin
+AuditMixin
+
+2.5 tb_store (업체 관리)
 업체명, 고유 비밀번호, 만료일자
 StoreType / BusinessType FK
 대표자, 사업자 등록번호
 ContactMixin, AddressMixin
-2.5 tb_user (사용자 계정)
+2.6 tb_user (사용자 계정)
 Store FK, Role FK
 Email + Password (유니크 조합)
 ContactMixin
 AuditMixin
 
-2.6 tb_session (로그인 세션)
+2.7 tb_session (로그인 세션)
 User FK
 JWT 토큰, 로그인/활동 시간
 세션 상태 (active/terminated)
@@ -91,7 +96,14 @@ erDiagram
         string c_status
     }
 
+    ACCOUNT {
+        int i_account_id PK
+        string c_account_name
+        string c_status
+    }
+
     STORE {
+        int i_account_id FK
         int i_store_id PK
         string c_store_name
         string c_store_pw
@@ -144,6 +156,7 @@ erDiagram
     }
 
     %% 관계
+    ACCOUNT ||--o{ STORE : "owns"
     STORE_TYPE ||--o{ STORE : "has"
     BUSINESS_TYPE ||--o{ STORE : "has"
     ROLE ||--o{ USER : "assigns"
@@ -151,6 +164,7 @@ erDiagram
     USER ||--o{ SESSION : "creates"
 
     %% 공통 부분 연결
+    AUDIT_MIXIN ||..|| ACCOUNT : "includes"
     AUDIT_MIXIN ||..|| STORE : "includes"
     AUDIT_MIXIN ||..|| USER : "includes"
     AUDIT_MIXIN ||..|| SESSION : "includes"
@@ -158,6 +172,7 @@ erDiagram
     AUDIT_MIXIN ||..|| BUSINESS_TYPE : "includes"
     AUDIT_MIXIN ||..|| ROLE : "includes"
 
+    CONTACT_MIXIN ||..|| ACCOUNT : "includes"
     CONTACT_MIXIN ||..|| STORE : "includes"
     CONTACT_MIXIN ||..|| USER : "includes"
 

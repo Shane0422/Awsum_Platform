@@ -31,13 +31,31 @@ AdminBase = declarative_base()
 # ==========================================
 def init_admin_db():
     """AdminDB 테이블 생성 및 기본 Seed 데이터 삽입"""
-    from backend.models_admin import store_type, business_type, store, user, session, role
+    from backend.models_admin import account, store_type, business_type, store, user, session, role
 
     # 테이블 생성
     AdminBase.metadata.create_all(bind=admin_engine)
 
     from sqlalchemy.orm import Session
     db = Session(bind=admin_engine)
+
+
+    # ===============================
+    # Account Seed
+    # ===============================
+    from backend.models_admin.account import Account
+    default_accounts = [
+        {"c_account_name": "SystemAccount"},
+    ]
+    for acc in default_accounts:
+        if not db.query(Account).filter_by(c_account_name=acc["c_account_name"]).first():
+            db.add(Account(
+                c_account_name=acc["c_account_name"],
+                c_first_name="System",
+                c_last_name="Owner",
+                c_email="account@system.local",
+                c_status="active",
+            ))
 
     # ===============================
     # StoreType Seed
