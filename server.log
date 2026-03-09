@@ -1,0 +1,202 @@
+INFO:     Will watch for changes in these directories: ['D:\\Awsum_Projects\\Awsum_Platform']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [37472] using StatReload
+INFO:     Started server process [38376]
+INFO:     Waiting for application startup.
+2026-03-10 01:46:34,049 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,049 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_user")
+2026-03-10 01:46:34,049 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,050 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_store")
+2026-03-10 01:46:34,050 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,051 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_store_type")
+2026-03-10 01:46:34,051 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,051 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_business_type")
+2026-03-10 01:46:34,051 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_role")
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_session")
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_account")
+2026-03-10 01:46:34,052 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,053 INFO sqlalchemy.engine.Engine COMMIT
+2026-03-10 01:46:34,053 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,053 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_store")
+2026-03-10 01:46:34,053 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,054 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-03-10 01:46:34,054 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,054 INFO sqlalchemy.engine.Engine SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite~_%' ESCAPE '~' ORDER BY name
+2026-03-10 01:46:34,054 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,055 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_store schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,055 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,055 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_user")
+2026-03-10 01:46:34,055 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,056 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_user schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,056 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,056 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_session")
+2026-03-10 01:46:34,056 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,056 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_session schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,057 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,057 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_role")
+2026-03-10 01:46:34,057 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,057 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_role schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,057 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_business_type")
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_business_type schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_store_type")
+2026-03-10 01:46:34,058 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,059 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_store_type schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,059 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,059 INFO sqlalchemy.engine.Engine PRAGMA main.table_xinfo("tb_account")
+2026-03-10 01:46:34,059 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,059 INFO sqlalchemy.engine.Engine ROLLBACK
+[OK] tb_account schema aligned (extra columns in DB: []).
+2026-03-10 01:46:34,060 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,060 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_user")
+2026-03-10 01:46:34,060 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,060 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_store")
+2026-03-10 01:46:34,060 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_store_type")
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_business_type")
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_role")
+2026-03-10 01:46:34,061 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,062 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_session")
+2026-03-10 01:46:34,062 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,062 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("tb_account")
+2026-03-10 01:46:34,062 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-03-10 01:46:34,062 INFO sqlalchemy.engine.Engine COMMIT
+2026-03-10 01:46:34,070 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,074 INFO sqlalchemy.engine.Engine SELECT tb_account.i_account_id AS tb_account_i_account_id, tb_account.c_account_name AS tb_account_c_account_name, tb_account.c_status AS tb_account_c_status, tb_account.c_first_name AS tb_account_c_first_name, tb_account.c_last_name AS tb_account_c_last_name, tb_account.c_email AS tb_account_c_email, tb_account.c_phone AS tb_account_c_phone, tb_account.dt_created AS tb_account_dt_created, tb_account.i_created_by AS tb_account_i_created_by, tb_account.dt_updated AS tb_account_dt_updated, tb_account.i_updated_by AS tb_account_i_updated_by 
+FROM tb_account 
+WHERE tb_account.c_account_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,074 INFO sqlalchemy.engine.Engine [generated in 0.00021s] ('SystemAccount', 1, 0)
+2026-03-10 01:46:34,076 INFO sqlalchemy.engine.Engine SELECT tb_store_type.i_store_type_id AS tb_store_type_i_store_type_id, tb_store_type.c_name AS tb_store_type_c_name, tb_store_type.c_description AS tb_store_type_c_description, tb_store_type.c_status AS tb_store_type_c_status, tb_store_type.dt_created AS tb_store_type_dt_created, tb_store_type.i_created_by AS tb_store_type_i_created_by, tb_store_type.dt_updated AS tb_store_type_dt_updated, tb_store_type.i_updated_by AS tb_store_type_i_updated_by 
+FROM tb_store_type 
+WHERE tb_store_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,076 INFO sqlalchemy.engine.Engine [generated in 0.00022s] ('HeadOffice', 1, 0)
+2026-03-10 01:46:34,077 INFO sqlalchemy.engine.Engine SELECT tb_store_type.i_store_type_id AS tb_store_type_i_store_type_id, tb_store_type.c_name AS tb_store_type_c_name, tb_store_type.c_description AS tb_store_type_c_description, tb_store_type.c_status AS tb_store_type_c_status, tb_store_type.dt_created AS tb_store_type_dt_created, tb_store_type.i_created_by AS tb_store_type_i_created_by, tb_store_type.dt_updated AS tb_store_type_dt_updated, tb_store_type.i_updated_by AS tb_store_type_i_updated_by 
+FROM tb_store_type 
+WHERE tb_store_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,077 INFO sqlalchemy.engine.Engine [cached since 0.001276s ago] ('Branch', 1, 0)
+2026-03-10 01:46:34,078 INFO sqlalchemy.engine.Engine SELECT tb_store_type.i_store_type_id AS tb_store_type_i_store_type_id, tb_store_type.c_name AS tb_store_type_c_name, tb_store_type.c_description AS tb_store_type_c_description, tb_store_type.c_status AS tb_store_type_c_status, tb_store_type.dt_created AS tb_store_type_dt_created, tb_store_type.i_created_by AS tb_store_type_i_created_by, tb_store_type.dt_updated AS tb_store_type_dt_updated, tb_store_type.i_updated_by AS tb_store_type_i_updated_by 
+FROM tb_store_type 
+WHERE tb_store_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,078 INFO sqlalchemy.engine.Engine [cached since 0.002075s ago] ('Agency', 1, 0)
+2026-03-10 01:46:34,078 INFO sqlalchemy.engine.Engine SELECT tb_store_type.i_store_type_id AS tb_store_type_i_store_type_id, tb_store_type.c_name AS tb_store_type_c_name, tb_store_type.c_description AS tb_store_type_c_description, tb_store_type.c_status AS tb_store_type_c_status, tb_store_type.dt_created AS tb_store_type_dt_created, tb_store_type.i_created_by AS tb_store_type_i_created_by, tb_store_type.dt_updated AS tb_store_type_dt_updated, tb_store_type.i_updated_by AS tb_store_type_i_updated_by 
+FROM tb_store_type 
+WHERE tb_store_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,079 INFO sqlalchemy.engine.Engine [cached since 0.002787s ago] ('Partner', 1, 0)
+2026-03-10 01:46:34,080 INFO sqlalchemy.engine.Engine SELECT tb_business_type.i_business_type_id AS tb_business_type_i_business_type_id, tb_business_type.c_name AS tb_business_type_c_name, tb_business_type.c_description AS tb_business_type_c_description, tb_business_type.c_status AS tb_business_type_c_status, tb_business_type.dt_created AS tb_business_type_dt_created, tb_business_type.i_created_by AS tb_business_type_i_created_by, tb_business_type.dt_updated AS tb_business_type_dt_updated, tb_business_type.i_updated_by AS tb_business_type_i_updated_by 
+FROM tb_business_type 
+WHERE tb_business_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,080 INFO sqlalchemy.engine.Engine [generated in 0.00017s] ('Laundry', 1, 0)
+2026-03-10 01:46:34,081 INFO sqlalchemy.engine.Engine SELECT tb_business_type.i_business_type_id AS tb_business_type_i_business_type_id, tb_business_type.c_name AS tb_business_type_c_name, tb_business_type.c_description AS tb_business_type_c_description, tb_business_type.c_status AS tb_business_type_c_status, tb_business_type.dt_created AS tb_business_type_dt_created, tb_business_type.i_created_by AS tb_business_type_i_created_by, tb_business_type.dt_updated AS tb_business_type_dt_updated, tb_business_type.i_updated_by AS tb_business_type_i_updated_by 
+FROM tb_business_type 
+WHERE tb_business_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,081 INFO sqlalchemy.engine.Engine [cached since 0.001132s ago] ('Wedding', 1, 0)
+2026-03-10 01:46:34,082 INFO sqlalchemy.engine.Engine SELECT tb_business_type.i_business_type_id AS tb_business_type_i_business_type_id, tb_business_type.c_name AS tb_business_type_c_name, tb_business_type.c_description AS tb_business_type_c_description, tb_business_type.c_status AS tb_business_type_c_status, tb_business_type.dt_created AS tb_business_type_dt_created, tb_business_type.i_created_by AS tb_business_type_i_created_by, tb_business_type.dt_updated AS tb_business_type_dt_updated, tb_business_type.i_updated_by AS tb_business_type_i_updated_by 
+FROM tb_business_type 
+WHERE tb_business_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,082 INFO sqlalchemy.engine.Engine [cached since 0.001852s ago] ('FlowerShop', 1, 0)
+2026-03-10 01:46:34,083 INFO sqlalchemy.engine.Engine SELECT tb_business_type.i_business_type_id AS tb_business_type_i_business_type_id, tb_business_type.c_name AS tb_business_type_c_name, tb_business_type.c_description AS tb_business_type_c_description, tb_business_type.c_status AS tb_business_type_c_status, tb_business_type.dt_created AS tb_business_type_dt_created, tb_business_type.i_created_by AS tb_business_type_i_created_by, tb_business_type.dt_updated AS tb_business_type_dt_updated, tb_business_type.i_updated_by AS tb_business_type_i_updated_by 
+FROM tb_business_type 
+WHERE tb_business_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,083 INFO sqlalchemy.engine.Engine [cached since 0.00255s ago] ('CakeShop', 1, 0)
+2026-03-10 01:46:34,084 INFO sqlalchemy.engine.Engine SELECT tb_business_type.i_business_type_id AS tb_business_type_i_business_type_id, tb_business_type.c_name AS tb_business_type_c_name, tb_business_type.c_description AS tb_business_type_c_description, tb_business_type.c_status AS tb_business_type_c_status, tb_business_type.dt_created AS tb_business_type_dt_created, tb_business_type.i_created_by AS tb_business_type_i_created_by, tb_business_type.dt_updated AS tb_business_type_dt_updated, tb_business_type.i_updated_by AS tb_business_type_i_updated_by 
+FROM tb_business_type 
+WHERE tb_business_type.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,084 INFO sqlalchemy.engine.Engine [cached since 0.00377s ago] ('Other', 1, 0)
+2026-03-10 01:46:34,086 INFO sqlalchemy.engine.Engine SELECT tb_role.i_role_id AS tb_role_i_role_id, tb_role.c_name AS tb_role_c_name, tb_role.c_description AS tb_role_c_description, tb_role.c_status AS tb_role_c_status, tb_role.dt_created AS tb_role_dt_created, tb_role.i_created_by AS tb_role_i_created_by, tb_role.dt_updated AS tb_role_dt_updated, tb_role.i_updated_by AS tb_role_i_updated_by 
+FROM tb_role 
+WHERE tb_role.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,087 INFO sqlalchemy.engine.Engine [generated in 0.00022s] ('SuperAdmin', 1, 0)
+2026-03-10 01:46:34,087 INFO sqlalchemy.engine.Engine SELECT tb_role.i_role_id AS tb_role_i_role_id, tb_role.c_name AS tb_role_c_name, tb_role.c_description AS tb_role_c_description, tb_role.c_status AS tb_role_c_status, tb_role.dt_created AS tb_role_dt_created, tb_role.i_created_by AS tb_role_i_created_by, tb_role.dt_updated AS tb_role_dt_updated, tb_role.i_updated_by AS tb_role_i_updated_by 
+FROM tb_role 
+WHERE tb_role.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,088 INFO sqlalchemy.engine.Engine [cached since 0.001209s ago] ('Admin', 1, 0)
+2026-03-10 01:46:34,088 INFO sqlalchemy.engine.Engine SELECT tb_role.i_role_id AS tb_role_i_role_id, tb_role.c_name AS tb_role_c_name, tb_role.c_description AS tb_role_c_description, tb_role.c_status AS tb_role_c_status, tb_role.dt_created AS tb_role_dt_created, tb_role.i_created_by AS tb_role_i_created_by, tb_role.dt_updated AS tb_role_dt_updated, tb_role.i_updated_by AS tb_role_i_updated_by 
+FROM tb_role 
+WHERE tb_role.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,088 INFO sqlalchemy.engine.Engine [cached since 0.001921s ago] ('Manager', 1, 0)
+2026-03-10 01:46:34,089 INFO sqlalchemy.engine.Engine SELECT tb_role.i_role_id AS tb_role_i_role_id, tb_role.c_name AS tb_role_c_name, tb_role.c_description AS tb_role_c_description, tb_role.c_status AS tb_role_c_status, tb_role.dt_created AS tb_role_dt_created, tb_role.i_created_by AS tb_role_i_created_by, tb_role.dt_updated AS tb_role_dt_updated, tb_role.i_updated_by AS tb_role_i_updated_by 
+FROM tb_role 
+WHERE tb_role.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,089 INFO sqlalchemy.engine.Engine [cached since 0.002613s ago] ('Staff', 1, 0)
+2026-03-10 01:46:34,089 INFO sqlalchemy.engine.Engine SELECT tb_role.i_role_id AS tb_role_i_role_id, tb_role.c_name AS tb_role_c_name, tb_role.c_description AS tb_role_c_description, tb_role.c_status AS tb_role_c_status, tb_role.dt_created AS tb_role_dt_created, tb_role.i_created_by AS tb_role_i_created_by, tb_role.dt_updated AS tb_role_dt_updated, tb_role.i_updated_by AS tb_role_i_updated_by 
+FROM tb_role 
+WHERE tb_role.c_name = ?
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,090 INFO sqlalchemy.engine.Engine [cached since 0.0033s ago] ('Customer', 1, 0)
+2026-03-10 01:46:34,090 INFO sqlalchemy.engine.Engine COMMIT
+2026-03-10 01:46:34,090 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-03-10 01:46:34,092 INFO sqlalchemy.engine.Engine SELECT tb_user.i_user_id AS tb_user_i_user_id, tb_user.i_store_id AS tb_user_i_store_id, tb_user.i_role_id AS tb_user_i_role_id, tb_user.c_password AS tb_user_c_password, tb_user.i_role AS tb_user_i_role, tb_user.c_status AS tb_user_c_status, tb_user.c_first_name AS tb_user_c_first_name, tb_user.c_last_name AS tb_user_c_last_name, tb_user.c_email AS tb_user_c_email, tb_user.c_phone AS tb_user_c_phone, tb_user.dt_created AS tb_user_dt_created, tb_user.i_created_by AS tb_user_i_created_by, tb_user.dt_updated AS tb_user_dt_updated, tb_user.i_updated_by AS tb_user_i_updated_by 
+FROM tb_user
+ LIMIT ? OFFSET ?
+2026-03-10 01:46:34,092 INFO sqlalchemy.engine.Engine [generated in 0.00024s] (1, 0)
+2026-03-10 01:46:34,093 INFO sqlalchemy.engine.Engine ROLLBACK
+ERROR:    Traceback (most recent call last):
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\starlette\routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 212, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 212, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 212, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 212, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+               ~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 237, in __aenter__
+    await self._router._startup()
+  File "C:\Users\Awsum\AppData\Local\Programs\Python\Python314\Lib\site-packages\fastapi\routing.py", line 4882, in _startup
+    handler()
+    ~~~~~~~^^
+  File "D:\Awsum_Projects\Awsum_Platform\backend\main.py", line 26, in on_startup
+    init_admin_db()  # ±âº» Seed (StoreType, BusinessType, Role, SuperAdmin) »ðÀÔ
+    ~~~~~~~~~~~~~^^
+  File "D:\Awsum_Projects\Awsum_Platform\backend\database\admin_db.py", line 127, in init_admin_db
+    print("\u2705 AdminDB initialized with default Seed data")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp949' codec can't encode character '\u2705' in position 0: illegal multibyte sequence
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Stopping reloader process [37472]
