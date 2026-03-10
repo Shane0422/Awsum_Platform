@@ -2,12 +2,14 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
 
-from backend.database.admin_db import AdminBase, admin_engine, get_admin_backup_dir, init_admin_db
+from backend.database.admin_db import AdminBase, AdminSessionLocal, admin_engine, get_admin_backup_dir, init_admin_db
 from backend.utils.safe_schema_migrate import safe_schema_migrate
 from backend.config.messages import popup_multi_choice
 from backend.config.settings import APP_NAME
+from backend.models_admin.account import Account
 from backend.routers import auth, store, dashboard, common
 
 app = FastAPI(title=f"{APP_NAME} API")
@@ -26,10 +28,53 @@ def on_startup():
     init_admin_db()  # 기본 Seed (StoreType, BusinessType, Role, SuperAdmin) 삽입
 
 
-# ✅ 루트 페이지 → Home.html
+# ✅ 플랫폼 홈
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("Home.html", {"request": request})
+    return templates.TemplateResponse("platform_home.html", {"request": request})
+
+
+def _normalize_account_code(value: str) -> str:
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+@app.get("/customer/{account_code}", response_class=HTMLResponse)
+async def customer_home(request: Request, account_code: str):
+    db: Session = AdminSessionLocal()
+    try:
+        # 계정코드 컬럼이 현재 스키마에 없어 account_name slug 매핑으로 처리
+        accounts = db.query(Account).all()
+
+        matched_account = next(
+            (
+                account
+                for account in accounts
+                if _normalize_account_code(account.c_account_name or "") == _normalize_account_code(account_code)
+            ),
+            None,
+        )
+
+        if not matched_account:
+            return templates.TemplateResponse(
+                "customer_not_found.html",
+                {"request": request, "account_code": account_code},
+                status_code=404,
+            )
+
+        account_name = matched_account.c_account_name or APP_NAME
+        return templates.TemplateResponse(
+            "customer_home.html",
+            {
+                "request": request,
+                "account_name": account_name,
+                "hero_title": f"Elegance. Style. {account_name}",
+                "hero_subtitle": "Premium formalwear rentals for your most memorable moments.",
+                "contact_email": matched_account.c_email or "support@awsumsolution.com",
+                "contact_phone": matched_account.c_phone or "+1 (000) 000-0000",
+            },
+        )
+    finally:
+        db.close()
 
 # ✅ 404 처리 → 팝업 출력
 @app.exception_handler(StarletteHTTPException)

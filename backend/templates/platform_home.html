@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }} | Platform</title>
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+</head>
+<body class="bg-white text-dark">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+      <a class="navbar-brand fw-bold" href="/">{{ APP_NAME }}</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+        <ul class="navbar-nav align-items-center">
+          <li class="nav-item me-3 text-white-50 small">Platform Home</li>
+          <li class="nav-item">
+            <button class="btn btn-sm btn-light me-2" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+          </li>
+          <li class="nav-item">
+            <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#registerModal">Sign Up</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero d-flex flex-column justify-content-center align-items-center text-center">
+    <div class="overlay"></div>
+    <div class="position-relative z-1 px-3">
+      <h1 class="display-4 fw-bold mb-3">{{ APP_NAME }} Platform</h1>
+      <p class="lead mb-4">Unified account onboarding, store operations, and customer experiences.</p>
+      <a href="#platform-overview" class="btn btn-outline-light px-4">Explore Platform</a>
+    </div>
+  </header>
+
+  <section id="platform-overview" class="py-5 bg-light text-center">
+    <div class="container">
+      <h2 class="h3 fw-bold mb-4">Built for Multi-Account Workflows</h2>
+      <div class="row g-4">
+        <div class="col-12 col-md-4"><div class="p-3 bg-white rounded shadow-sm h-100">Account-based landing pages</div></div>
+        <div class="col-12 col-md-4"><div class="p-3 bg-white rounded shadow-sm h-100">Store + user authentication</div></div>
+        <div class="col-12 col-md-4"><div class="p-3 bg-white rounded shadow-sm h-100">Role-driven dashboards</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-5 text-center">
+    <div class="container">
+      <h2 class="h3 fw-bold mb-3">Account Landing Format</h2>
+      <p class="mb-3">Customer-specific pages are available at:</p>
+      <code>/customer/{account_code}</code>
+    </div>
+  </section>
+
+  <footer class="bg-dark text-white text-center py-4">
+    <div class="container small">
+      <p class="fw-bold mb-1">{{ APP_NAME }}</p>
+      <p class="mb-0">&copy; 2026 {{ APP_NAME }}. All Rights Reserved.</p>
+    </div>
+  </footer>
+
+  <div class="modal fade" id="loginModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="loginForm">
+          <div class="modal-header bg-dark text-white">
+            <h5 class="modal-title">Sign In</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" name="store_id" class="form-control mb-3" placeholder="Store ID" required>
+            <input type="email" name="email" class="form-control mb-3" placeholder="Email" required>
+            <input type="password" name="password" class="form-control mb-3" placeholder="Password" required>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-dark w-100">Login</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="registerModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="registerForm" method="post" action="/auth/register">
+          <div class="modal-header bg-dark text-white">
+            <h5 class="modal-title">Sign Up</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" name="store_id" class="form-control mb-2" placeholder="Store ID" required>
+            <input type="password" name="store_pw" class="form-control mb-2" placeholder="Store Password" required>
+            <div class="row">
+              <div class="col-md-6 mb-2"><input type="text" name="first_name" class="form-control" placeholder="First Name" required></div>
+              <div class="col-md-6 mb-2"><input type="text" name="last_name" class="form-control" placeholder="Last Name" required></div>
+            </div>
+            <input type="text" id="phone" name="phone" class="form-control mb-2" placeholder="Phone" maxlength="15" required>
+            <div id="phone_error" class="invalid-feedback d-none">Phone must contain only numbers</div>
+            <input type="email" name="email" class="form-control mb-2" placeholder="Email" required>
+            <input type="password" id="password" name="password" class="form-control mb-2" placeholder="Password" required>
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Confirm Password" required>
+            <div id="pw_error" class="invalid-feedback d-none">Passwords do not match</div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" id="registerBtn" class="btn btn-dark w-100">Register</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  document.getElementById("loginForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const response = await fetch("/auth/login", { method: "POST", body: formData });
+    if (response.redirected) {
+      const modalEl = document.getElementById('loginModal');
+      const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      modal.hide();
+      window.location.href = response.url;
+    } else {
+      alert("Login failed: " + await response.text());
+    }
+  });
+
+  document.getElementById("registerForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const response = await fetch("/auth/register", { method: "POST", body: formData });
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success) {
+        const modalEl = document.getElementById('registerModal');
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.hide();
+
+        const loginFormData = new FormData();
+        loginFormData.append("store_id", formData.get("store_id"));
+        loginFormData.append("email", formData.get("email"));
+        loginFormData.append("password", formData.get("password"));
+        const loginResponse = await fetch("/auth/login", { method: "POST", body: loginFormData });
+        if (loginResponse.redirected) {
+          window.location.href = loginResponse.url;
+        } else {
+          alert("⚠️ Register success but auto-login failed. Please login manually.");
+        }
+      } else {
+        alert(result.message || "⚠️ Register failed");
+      }
+    } else {
+      alert("Register failed: " + await response.text());
+    }
+  });
+
+  const pw = document.getElementById("password");
+  const confirmPw = document.getElementById("confirm_password");
+  const pwError = document.getElementById("pw_error");
+  const phone = document.getElementById("phone");
+  const phoneError = document.getElementById("phone_error");
+  const registerBtn = document.getElementById("registerBtn");
+
+  function validatePassword() {
+    if (pw.value && confirmPw.value && pw.value !== confirmPw.value) {
+      confirmPw.classList.add("is-invalid");
+      pwError.classList.remove("d-none");
+      registerBtn.disabled = true;
+    } else {
+      confirmPw.classList.remove("is-invalid");
+      pwError.classList.add("d-none");
+      registerBtn.disabled = false;
+    }
+  }
+
+  function validatePhone() {
+    const onlyNumbers = /^\d+$/;
+    if (phone.value && !onlyNumbers.test(phone.value)) {
+      phone.classList.add("is-invalid");
+      phoneError.classList.remove("d-none");
+      registerBtn.disabled = true;
+    } else {
+      phone.classList.remove("is-invalid");
+      phoneError.classList.add("d-none");
+      registerBtn.disabled = false;
+    }
+  }
+
+  pw.addEventListener("input", validatePassword);
+  confirmPw.addEventListener("input", validatePassword);
+  phone.addEventListener("input", validatePhone);
+  </script>
+
+</body>
+</html>
