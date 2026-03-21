@@ -1,7 +1,0 @@
-i_business_type_id,c_business_code,c_business_name_kr,c_status,c_name,dt_created,i_created_by,dt_updated,i_updated_by
-1,PLATFORM,플랫폼,active,Platform,2026-03-19 15:43:51.347455,,,
-2,TUXEDO_RENTAL,턱시도 렌탈,active,Tuxedo Rental,2026-03-19 15:43:51.347458,,,
-3,RESTAURANT,레스토랑,active,Restaurant,2026-03-19 15:43:51.347459,,,
-4,LIQUOR_STORE,리커스토어,active,Liquor Store,2026-03-19 15:43:51.347460,,,
-5,SUPERMARKET,슈퍼마켓,active,Supermarket,2026-03-19 15:43:51.347461,,,
-6,DELI,델리,active,Deli,2026-03-19 15:43:51.347462,,,

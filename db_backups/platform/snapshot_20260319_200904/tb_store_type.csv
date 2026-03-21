@@ -1,6 +1,0 @@
-i_store_type_id,c_store_type_code,c_code_prefix,c_status,c_name,dt_created,i_created_by,dt_updated,i_updated_by
-1,PLATFORM,PLT,active,Platform,2026-03-19 15:43:51.355693,,,
-2,CUSTOMER,CUS,active,Customer,2026-03-19 15:43:51.355695,,,
-3,VENDOR,VEN,active,Vendor,2026-03-19 15:43:51.355696,,,
-4,PARTNER,PAR,active,Partner,2026-03-19 15:43:51.355697,,,
-5,BRANCH,BRA,active,Branch,2026-03-19 15:43:51.355698,,,

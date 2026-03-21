@@ -1,7 +1,0 @@
-i_role_id,c_name,c_description,c_status,dt_created,i_created_by,dt_updated,i_updated_by
-1,SuperAdmin,System Administrator,active,2026-03-19 15:43:51.351762,,,
-2,Admin,Store Administrator,active,2026-03-19 15:43:51.351767,,,
-3,CustomerAdmin,Customer Store Administrator,active,2026-03-19 15:43:51.351768,,,
-4,Manager,Store Manager,active,2026-03-19 15:43:51.351769,,,
-5,Staff,Store Staff,active,2026-03-19 15:43:51.351770,,,
-6,Customer,End Customer,active,2026-03-19 15:43:51.351770,,,

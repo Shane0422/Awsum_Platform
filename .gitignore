@@ -1,0 +1,55 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ==========================
+# Virtual environments
+# ==========================
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ==========================
+# Database files
+# ==========================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================
+# Database backups & snapshots
+# ==========================
+db_backups/
+db_admin/
+backend/database/admin/
+backend/db_backups/
+data/platform/
+
+# ==========================
+# Legacy tool output files
+# ==========================
+tools/legacy_tools/*.txt
+tools/tmp_*
+
+# ==========================
+# Logs
+# ==========================
+*.log
+logs/
+
+# ==========================
+# OS / Editor
+# ==========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
