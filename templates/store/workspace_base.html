@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }} - {{ store_name }} Workspace</title>
+  <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/brand.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --panel: #fff;
+      --border: rgba(15, 23, 42, 0.12);
+      --text: #0f172a;
+      --muted: rgba(15, 23, 42, 0.65);
+      --brand: #0d6efd;
+      --brand-2: #0a58ca;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .workspace-shell {
+      display: flex;
+      height: 100%;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .workspace-sidebar {
+      width: 260px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.92));
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .workspace-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      font-size: 1rem;
+      color: rgba(255, 255, 255, 0.92);
+      margin-bottom: 0.75rem;
+    }
+
+    .workspace-logo .brand-logo {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 6px;
+    }
+
+    .workspace-logo-sub {
+      margin-top: 0.15rem;
+      font-size: 0.8rem;
+      opacity: 0.72;
+    }
+
+    .workspace-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+
+    .workspace-nav a {
+      display: block;
+      padding: 0.55rem 0.75rem;
+      border-radius: 0.75rem;
+      color: rgba(255, 255, 255, 0.84);
+      text-decoration: none;
+      margin-bottom: 0.25rem;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    .workspace-nav a:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateX(2px);
+    }
+
+    .workspace-nav a.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .workspace-footer {
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .workspace-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .workspace-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: #fff;
+    }
+
+    .workspace-header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .workspace-header .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .workspace-content {
+      flex: 1;
+      overflow: auto;
+      padding: 1.5rem;
+      background: var(--bg);
+    }
+
+    .workspace-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      box-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.18);
+    }
+
+    .btn-ghost {
+      background: rgba(15, 23, 42, 0.07);
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      color: var(--text);
+      transition: background 0.2s ease;
+    }
+
+    .btn-ghost:hover {
+      background: rgba(15, 23, 42, 0.12);
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      width: 8px;
+    }
+    .no-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(15, 23, 42, 0.2);
+      border-radius: 999px;
+    }
+  </style>
+</head>
+<body>
+  <div class="workspace-shell">
+    <aside class="workspace-sidebar">
+      <div>
+        <div class="workspace-logo">
+          <img src="{{ brand_logo_path or brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-logo">
+          <span class="brand-text brand-text-light">{{ brand_display_name }}</span>
+        </div>
+        <div class="workspace-logo-sub">Store Workspace</div>
+      </div>
+
+      <nav class="workspace-nav">
+        <a href="/platform/store/{{ store_id }}/workspace" class="{% if active_module == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/platform/store/{{ store_id }}/workspace/master-code" class="{% if active_module == 'master-code' %}active{% endif %}">Master Code</a>
+        <a href="/platform/store/{{ store_id }}/workspace/employee" class="{% if active_module == 'employee' %}active{% endif %}">Employee</a>
+        <a href="/platform/store/{{ store_id }}/workspace/marketing" class="{% if active_module == 'marketing' %}active{% endif %}">Marketing</a>
+        <a href="/platform/store/{{ store_id }}/workspace/membership" class="{% if active_module == 'membership' %}active{% endif %}">Membership</a>
+        <a href="/platform/store/{{ store_id }}/workspace/sales" class="{% if active_module == 'sales' %}active{% endif %}">Sales</a>
+        <a href="/platform/store/{{ store_id }}/workspace/inventory" class="{% if active_module == 'inventory' %}active{% endif %}">Inventory</a>
+        <a href="/platform/store/{{ store_id }}/workspace/ledger" class="{% if active_module == 'ledger' %}active{% endif %}">Account Ledger</a>
+        <a href="/platform/store/{{ store_id }}/workspace/reports" class="{% if active_module == 'reports' %}active{% endif %}">Invoice / Reports</a>
+        <a href="/platform/store/{{ store_id }}/workspace/settings" class="{% if active_module == 'settings' %}active{% endif %}">Settings</a>
+      </nav>
+
+      <div class="workspace-footer">
+        <div><strong>{{ store_name }}</strong></div>
+        <div class="mt-1">User: {{ user.c_first_name }} {{ user.c_last_name }} ({{ role }})</div>
+        <div class="mt-2">
+          <a href="/platform/dashboard" class="btn btn-sm btn-ghost w-100">Back to Platform</a>
+        </div>
+        <div class="mt-2">
+          <a href="/auth/logout" class="btn btn-sm btn-danger w-100">Logout</a>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace-main">
+      <header class="workspace-header">
+        <div>
+          <h1>{{ store_name }}</h1>
+          <div class="meta">Workspace / {{ active_module | capitalize }}</div>
+        </div>
+        <div>
+          <span class="badge bg-primary">{{ role }}</span>
+        </div>
+      </header>
+
+      <main class="workspace-content">
+        {% block workspace_content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

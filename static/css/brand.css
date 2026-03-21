@@ -1,0 +1,106 @@
+:root {
+  --aw-brand-icon-size: 28px;
+  --aw-brand-gap: 0.55rem;
+  --aw-brand-text-size: 1.02rem;
+  --aw-brand-text-weight: 700;
+  --aw-brand-text-track: 0.01em;
+
+  /* Tesla-inspired clean SaaS light preset */
+  --aw-color-bg: #f4f6fa;
+  --aw-color-surface: #ffffff;
+  --aw-color-border: rgba(15, 23, 42, 0.14);
+  --aw-color-text: #0f172a;
+  --aw-color-subtext: rgba(15, 23, 42, 0.66);
+  --aw-color-brand: #0d6efd;
+  --aw-color-brand-strong: #0a58ca;
+
+  --aw-brand-text-dark: var(--aw-color-text);
+  --aw-brand-text-light: #f8fafc;
+
+  --aw-state-hover-bg: rgba(13, 110, 253, 0.1);
+  --aw-state-active-bg: rgba(13, 110, 253, 0.16);
+  --aw-state-active-text: var(--aw-color-brand);
+
+  --aw-dark-surface: rgba(15, 23, 42, 0.94);
+  --aw-dark-hover-bg: rgba(255, 255, 255, 0.08);
+  --aw-dark-active-bg: rgba(255, 255, 255, 0.16);
+  --aw-dark-active-text: #ffffff;
+}
+
+[data-theme="dark"],
+.theme-dark {
+  --aw-color-bg: #090d14;
+  --aw-color-surface: #111826;
+  --aw-color-border: rgba(148, 163, 184, 0.25);
+  --aw-color-text: #e5edf8;
+  --aw-color-subtext: rgba(226, 232, 240, 0.74);
+  --aw-color-brand: #63a4ff;
+  --aw-color-brand-strong: #8dbdff;
+
+  --aw-brand-text-dark: #e5edf8;
+  --aw-brand-text-light: #f8fafc;
+
+  --aw-state-hover-bg: rgba(99, 164, 255, 0.18);
+  --aw-state-active-bg: rgba(99, 164, 255, 0.28);
+  --aw-state-active-text: #dbeafe;
+
+  --aw-dark-surface: rgba(9, 13, 20, 0.92);
+  --aw-dark-hover-bg: rgba(148, 163, 184, 0.16);
+  --aw-dark-active-bg: rgba(148, 163, 184, 0.26);
+  --aw-dark-active-text: #f8fafc;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--aw-brand-gap);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.brand-icon {
+  height: var(--aw-brand-icon-size);
+  width: var(--aw-brand-icon-size);
+  display: block;
+}
+
+.brand-text {
+  font-size: var(--aw-brand-text-size);
+  font-weight: var(--aw-brand-text-weight);
+  letter-spacing: var(--aw-brand-text-track);
+  color: var(--aw-brand-text-dark);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-text-light {
+  color: var(--aw-brand-text-light);
+}
+
+.aw-subtext {
+  color: var(--aw-color-subtext);
+}
+
+.aw-surface {
+  background: var(--aw-color-surface);
+}
+
+.aw-border {
+  border-color: var(--aw-color-border);
+}
+
+.aw-interactive:hover {
+  background: var(--aw-state-hover-bg);
+}
+
+.aw-interactive.active,
+.aw-interactive.is-active {
+  background: var(--aw-state-active-bg);
+  color: var(--aw-state-active-text);
+}
+
+@media (max-width: 576px) {
+  :root {
+    --aw-brand-text-size: 0.94rem;
+  }
+}

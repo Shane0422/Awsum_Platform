@@ -1,0 +1,130 @@
+{% extends "store/workspace_base.html" %}
+
+{% block workspace_content %}
+  <div class="workspace-panel">
+    {% if active_module == "dashboard" %}
+      <div class="d-flex flex-column flex-md-row gap-4">
+        <div class="flex-fill">
+          <h2 class="h5">Store Overview</h2>
+          <p class="text-muted">Quick access to key metrics and recent activity for <strong>{{ store_name }}</strong>.</p>
+
+          <div class="row g-3">
+            <div class="col-12 col-md-4">
+              <div class="p-3 border rounded">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="text-muted small">Active Users</div>
+                    <div class="h3 mb-0">—</div>
+                  </div>
+                  <div class="badge bg-primary">Alpha</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-3 border rounded">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="text-muted small">Sales Today</div>
+                    <div class="h3 mb-0">—</div>
+                  </div>
+                  <div class="badge bg-secondary">Soon</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-3 border rounded">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="text-muted small">Inventory Alerts</div>
+                    <div class="h3 mb-0">—</div>
+                  </div>
+                  <div class="badge bg-secondary">Soon</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <h3 class="h6">Next Steps</h3>
+            <ul class="list-unstyled mb-0">
+              <li>• Use the left menu to navigate between modules.</li>
+              <li>• Explore Sales, Inventory, and Membership for store operations.</li>
+              <li>• Back to Platform to manage other stores or platform settings.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="flex-fill">
+          <h2 class="h5">Store Details</h2>
+          <div class="p-3 border rounded">
+            <dl class="row mb-0">
+              <dt class="col-4 text-muted">Store ID</dt>
+              <dd class="col-8">{{ store_id }}</dd>
+
+              <dt class="col-4 text-muted">Store Name</dt>
+              <dd class="col-8">{{ store_name }}</dd>
+
+              <dt class="col-4 text-muted">Current User</dt>
+              <dd class="col-8">{{ user.c_first_name }} {{ user.c_last_name }}</dd>
+
+              <dt class="col-4 text-muted">Role</dt>
+              <dd class="col-8">{{ role }}</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+    {% elif active_module == "reports" %}
+      <div class="d-flex flex-column flex-lg-row gap-4">
+        <div class="flex-fill">
+          <h2 class="h5 mb-3">Receipt Preview</h2>
+          <div class="p-4 border rounded bg-white">
+            <div class="text-center border-bottom pb-3 mb-3">
+              <div class="fw-semibold fs-5">{{ receipt_store_name or store_name }}</div>
+              {% if receipt_phone or store_phone %}<div>{{ receipt_phone or store_phone }}</div>{% endif %}
+              {% if receipt_email or store_email %}<div>{{ receipt_email or store_email }}</div>{% endif %}
+              {% if receipt_website_url or store_website %}<div>{{ receipt_website_url or store_website }}</div>{% endif %}
+            </div>
+            <div class="small text-muted mb-2">Sample footer message</div>
+            <div>{{ receipt_message or "Thank you for your visit." }}</div>
+          </div>
+        </div>
+
+        <div class="flex-fill">
+          <h2 class="h5 mb-3">Receipt Data Source</h2>
+          <div class="p-4 border rounded">
+            <p class="text-muted mb-3">This preview is populated from Store Receipt Info managed in Platform Master Management.</p>
+            <ul class="list-unstyled mb-0">
+              <li>• Receipt Store Name: {{ receipt_store_name or "-" }}</li>
+              <li>• Receipt Phone: {{ receipt_phone or "-" }}</li>
+              <li>• Receipt Email: {{ receipt_email or "-" }}</li>
+              <li>• Receipt Website URL: {{ receipt_website_url or "-" }}</li>
+              <li>• Receipt Message: {{ receipt_message or "-" }}</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    {% else %}
+      <h2 class="h5 mb-3">{{ active_module | replace('-', ' ') | title }}</h2>
+      <p class="text-muted mb-4">This section is your workspace for <strong>{{ store_name }}</strong>.<br>
+      The module will be implemented here as part of the store operations experience.</p>
+
+      <div class="row g-4">
+        <div class="col-12 col-md-6">
+          <div class="p-4 border rounded">
+            <h3 class="h6">Module placeholder</h3>
+            <p class="mb-0">Work in progress — this area will host the full-screen module UI for <strong>{{ active_module | replace('-', ' ') | title }}</strong>.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6">
+          <div class="p-4 border rounded">
+            <h3 class="h6">Need something quick?</h3>
+            <p class="mb-0">Use the left menu to jump between modules like Sales, Inventory, and Reports.</p>
+          </div>
+        </div>
+      </div>
+
+    {% endif %}
+  </div>
+{% endblock %}

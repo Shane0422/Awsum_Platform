@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }}</title>
+  <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
+  <!-- Bootstrap (오프라인) -->
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/brand.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <style>
+    :root {
+      --aw-login-nav-bg: var(--aw-dark-surface);
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--aw-color-surface);
+      color: var(--aw-color-text);
+    }
+    header.hero {
+      background: url('/static/images/platform/hero_platform.jpg') center/cover no-repeat;
+      height: 100vh;
+      position: relative;
+    }
+    header.hero .overlay {
+      background: rgba(0, 0, 0, 0.5);
+      position: absolute;
+      inset: 0;
+    }
+
+    .brand-icon {
+      --aw-brand-icon-size: 28px;
+    }
+
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: 700;
+      color: var(--aw-brand-text-light);
+    }
+
+    .brand-text {
+      color: var(--aw-brand-text-light);
+    }
+
+    .password-toggle-btn {
+      width: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .password-toggle-btn .icon-eye-slash {
+      display: none;
+    }
+
+    .password-toggle-btn[aria-pressed="true"] .icon-eye {
+      display: none;
+    }
+
+    .password-toggle-btn[aria-pressed="true"] .icon-eye-slash {
+      display: block;
+    }
+  </style>
+</head>
+<body class="bg-white text-dark">
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark fixed-top" style="background: var(--aw-login-nav-bg); border-bottom: 1px solid #e5e7eb;">
+    <div class="container-fluid px-2 px-lg-3">
+      <a class="navbar-brand brand-mark" href="/" aria-label="{{ brand_display_name }}">
+        <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
+        <span class="brand-text">{{ brand_display_name }}</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <button class="btn btn-sm btn-light me-2" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+          </li>
+          <li class="nav-item">
+            <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#registerModal">Sign Up</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero d-flex flex-column justify-content-center align-items-center text-center text-white">
+    <div class="overlay"></div>
+    <div class="position-relative z-1">
+      <h1 class="display-4 fw-bold mb-3">Elegance. Style. LG Tuxedo</h1>
+      <p class="lead mb-4">Premium tuxedo rentals for your most memorable moments</p>
+      <a href="#collection" class="btn btn-outline-light px-4">Explore Collection</a>
+    </div>
+  </header>
+
+  <!-- How It Works -->
+  <section class="py-5 bg-light text-center">
+    <div class="container">
+      <h2 class="h3 fw-bold mb-4">How It Works</h2>
+      <div class="row g-4">
+        <div class="col-6 col-md-3"><div class="p-3 bg-white rounded shadow-sm h-100">1. Choose</div></div>
+        <div class="col-6 col-md-3"><div class="p-3 bg-white rounded shadow-sm h-100">2. Fit</div></div>
+        <div class="col-6 col-md-3"><div class="p-3 bg-white rounded shadow-sm h-100">3. Deliver</div></div>
+        <div class="col-6 col-md-3"><div class="p-3 bg-white rounded shadow-sm h-100">4. Return</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Collection Preview -->
+  <section id="collection" class="py-5 text-center">
+    <div class="container">
+      <h2 class="h3 fw-bold mb-4">Our Collection</h2>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="bg-light rounded shadow-sm overflow-hidden h-100">
+            <img src="/static/images/collection_black.jpg" class="w-100" alt="Classic Black">
+            <div class="p-3"><h3 class="h6 fw-semibold">Classic Black</h3></div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="bg-light rounded shadow-sm overflow-hidden h-100">
+            <img src="/static/images/collection_navy.jpg" class="w-100" alt="Modern Navy">
+            <div class="p-3"><h3 class="h6 fw-semibold">Modern Navy</h3></div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="bg-light rounded shadow-sm overflow-hidden h-100">
+            <img src="/static/images/collection_white.jpg" class="w-100" alt="Elegant White">
+            <div class="p-3"><h3 class="h6 fw-semibold">Elegant White</h3></div>
+          </div>
+        </div>
+      </div>
+      <a href="#" class="btn btn-dark mt-4 px-4">View Full Collection</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-dark text-white text-center py-4">
+    <div class="container small">
+      <p class="mb-2 footer-brand">
+        <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
+        <span class="brand-text">{{ brand_display_name }}</span>
+      </p>
+      <p>Email: <a href="mailto:info@LGtuxedo.com" class="text-white text-decoration-underline">info@LGtuxedo.com</a></p>
+      <p>Phone: <a href="tel:+17031234567" class="text-white text-decoration-underline">+1 (703) 123-4567</a></p>
+      <p class="mt-3 mb-0">&copy; 2025. All Rights Reserved.</p>
+    </div>
+  </footer>
+
+  <!-- ============================ -->
+  <!-- Login Modal -->
+  <!-- ============================ -->
+  <div class="modal fade" id="loginModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="loginForm" method="post" action="/auth/login">
+          <div class="modal-header">
+            <h5 class="modal-title">Sign In</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="storeCode">Store Code</label>
+              <input id="storeCode" type="text" class="form-control" name="store_code" value="Admin" placeholder="Enter Store Code" required>
+              <div class="form-text">Platform admin Store ID is fixed to <strong>Admin</strong>.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="email">Email Address</label>
+              <input id="email" type="email" class="form-control" name="email" placeholder="Enter Email" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="password">Password</label>
+              <div class="input-group">
+                <input id="password" type="password" class="form-control" name="password" placeholder="Enter Password" required>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary password-toggle-btn"
+                  id="togglePassword"
+                  aria-label="Show password"
+                  aria-pressed="false"
+                  title="Show password"
+                >
+                  <svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13.1 13.1 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.1 13.1 0 0 1 1.172 8z"/>
+                    <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5m-4 2.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0"/>
+                  </svg>
+                  <svg class="icon-eye-slash" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M13.359 11.238C14.498 10.264 15.347 9.044 16 8c0 0-3-5.5-8-5.5-1.126 0-2.16.279-3.092.72l.772.772A6.5 6.5 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8a12 12 0 0 1-2.24 2.712z"/>
+                    <path d="M11.297 9.176a3.5 3.5 0 0 0-4.473-4.473l.823.823a2.5 2.5 0 0 1 2.824 2.824z"/>
+                    <path d="m2.354 1.646-.708.708 12 12 .708-.708z"/>
+                    <path d="M5.001 7.648l2.351 2.351a1.5 1.5 0 0 1-1.703-1.703z"/>
+                    <path d="M.172 8c.653 1.044 1.502 2.264 2.64 3.238l.771-.771A12 12 0 0 1 1.172 8a13.1 13.1 0 0 1 1.66-2.043l-.708-.708A13.7 13.7 0 0 0 .172 8"/>
+                    <path d="M8 12.5a6.5 6.5 0 0 1-2.32-.428l-.772.772A8 8 0 0 0 8 13.5c5 0 8-5.5 8-5.5a18 18 0 0 0-1.84-2.551l-.708.708A17 17 0 0 1 14.828 8C14.168 9.002 11.88 12.5 8 12.5"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div id="loginError" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="rememberStore">
+                <label class="form-check-label" for="rememberStore">Remember Store Code</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="rememberEmail">
+                <label class="form-check-label" for="rememberEmail">Remember Email</label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer d-flex justify-content-between gap-2">
+            <button type="button" id="clearSavedBtn" class="btn btn-outline-secondary">Remove Saved Info</button>
+            <button type="submit" class="btn btn-dark">Login</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ -->
+  <!-- Register Modal -->
+  <!-- ============================ -->
+  <div class="modal fade" id="registerModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="/auth/register">
+          <div class="modal-header">
+            <h5 class="modal-title">Sign Up</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" name="first_name" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Last Name</label>
+                <input type="text" class="form-control" name="last_name" required>
+              </div>
+            </div>
+            <div class="mb-3 mt-2">
+              <label class="form-label">Phone</label>
+              <input type="text" class="form-control" name="phone" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" name="email" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input type="password" class="form-control" name="password" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Confirm Password</label>
+              <input type="password" class="form-control" name="confirm_password" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-dark w-100">Register</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const form = document.getElementById("loginForm");
+      if (!form) return;
+
+      const storeInput = form.querySelector('input[name="store_code"]');
+      const emailInput = form.querySelector('input[name="email"]');
+      const passwordInput = form.querySelector('input[name="password"]');
+      const rememberStore = document.getElementById("rememberStore");
+      const rememberEmail = document.getElementById("rememberEmail");
+      const togglePassword = document.getElementById("togglePassword");
+      const loginErrorEl = document.getElementById("loginError");
+
+      function setLoginError(message) {
+        if (!loginErrorEl) return;
+        if (!message) {
+          loginErrorEl.textContent = "";
+          loginErrorEl.classList.add("d-none");
+          return;
+        }
+        loginErrorEl.textContent = message;
+        loginErrorEl.classList.remove("d-none");
+      }
+
+      const savedStoreCode = localStorage.getItem("storeCode") || localStorage.getItem("storeId");
+      const savedEmail = localStorage.getItem("email");
+      if (savedStoreCode && storeInput) {
+        storeInput.value = savedStoreCode;
+        rememberStore.checked = true;
+      }
+      if (savedEmail && emailInput) {
+        emailInput.value = savedEmail;
+        rememberEmail.checked = true;
+      }
+
+      if (storeInput) {
+        storeInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            emailInput?.focus();
+          }
+        });
+      }
+
+      if (emailInput) {
+        emailInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            passwordInput?.focus();
+          }
+        });
+      }
+
+      if (togglePassword && passwordInput) {
+        togglePassword.addEventListener("click", () => {
+          const isHidden = passwordInput.type === "password";
+          passwordInput.type = isHidden ? "text" : "password";
+          togglePassword.setAttribute("aria-pressed", isHidden ? "true" : "false");
+          togglePassword.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+          togglePassword.setAttribute("title", isHidden ? "Hide password" : "Show password");
+        });
+      }
+
+      const clearBtn = document.getElementById("clearSavedBtn");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+          setLoginError("");
+          localStorage.removeItem("storeCode");
+          localStorage.removeItem("storeId");
+          localStorage.removeItem("email");
+          if (storeInput) storeInput.value = "";
+          if (emailInput) emailInput.value = "";
+          if (passwordInput) passwordInput.value = "";
+          if (rememberStore) rememberStore.checked = false;
+          if (rememberEmail) rememberEmail.checked = false;
+        });
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        setLoginError("");
+
+        if (storeInput) storeInput.value = storeInput.value.trim();
+        if (emailInput) emailInput.value = emailInput.value.trim().toLowerCase();
+
+        const formData = new FormData(form);
+        let response;
+        try {
+          response = await fetch("/auth/login", {
+            method: "POST",
+            body: formData,
+          });
+        } catch (_) {
+          setLoginError("Invalid credentials.");
+          return;
+        }
+
+        if (response.redirected) {
+          if (rememberStore && rememberStore.checked && storeInput) {
+            localStorage.setItem("storeCode", storeInput.value);
+          } else {
+            localStorage.removeItem("storeCode");
+            localStorage.removeItem("storeId");
+          }
+
+          if (rememberEmail && rememberEmail.checked && emailInput) {
+            localStorage.setItem("email", emailInput.value);
+          } else {
+            localStorage.removeItem("email");
+          }
+
+          window.location.href = response.url;
+          return;
+        }
+
+        let message = "Invalid credentials.";
+        try {
+          const payload = await response.json();
+          if (payload && payload.message) {
+            message = payload.message;
+          }
+        } catch (_) {
+          const text = await response.text();
+          if (text && text.trim()) {
+            message = text;
+          }
+        }
+        setLoginError(message);
+
+      });
+    });
+  </script>
+</body>
+</html>

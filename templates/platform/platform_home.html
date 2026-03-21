@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ APP_NAME }} | Platform</title>
+  <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/brand.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <style>
+    .brand-icon {
+      --aw-brand-icon-size: 28px;
+    }
+
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .footer-brand .brand-text {
+      color: var(--aw-brand-text-light);
+    }
+
+    .password-toggle-btn {
+      width: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .password-toggle-btn .icon-eye-slash {
+      display: none;
+    }
+
+    .password-toggle-btn[aria-pressed="true"] .icon-eye {
+      display: none;
+    }
+
+    .password-toggle-btn[aria-pressed="true"] .icon-eye-slash {
+      display: block;
+    }
+  </style>
+</head>
+<body class="bg-white text-dark">
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top" style="border-bottom: 1px solid #e5e7eb;">
+    <div class="container-fluid px-2 px-lg-3">
+      <a class="navbar-brand brand-mark" href="/" aria-label="{{ brand_display_name }}">
+        <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
+        <span class="brand-text">{{ brand_display_name }}</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto align-items-center">
+          <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
+          <li class="nav-item"><a class="nav-link" href="#solutions">Solutions</a></li>
+          <li class="nav-item"><a class="nav-link" href="#features">Platform</a></li>
+          <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
+          <li class="nav-item ms-3">
+            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+          </li>
+          <li class="nav-item ms-2">
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#registerModal">Get Started</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header id="about" class="hero d-flex align-items-center">
+    <div class="overlay"></div>
+    <div class="container text-center text-white">
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+          <h1 class="display-5 fw-bold mb-3">Your Multi-Business Platform for Retail & Operations</h1>
+          <p class="lead mb-4">Securely manage stores, teams, and clients across locations with one scalable SaaS platform.</p>
+          <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <button class="btn btn-primary btn-lg px-5" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+            <button class="btn btn-outline-light btn-lg px-5" data-bs-toggle="modal" data-bs-target="#registerModal">Get Started</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Solutions -->
+  <section id="solutions" class="py-5">
+    <div class="container">
+      <div class="text-center mb-5">
+        <h2 class="h2 fw-bold">Solutions Built for Modern Multi-Location Operations</h2>
+        <p class="text-muted mb-0">From POS to analytics, manage every aspect of your business from a single platform.</p>
+      </div>
+      <div class="row g-4">
+        <div class="col-md-6 col-lg-3">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <div class="mb-3 icon-circle bg-primary text-white">🏢</div>
+              <h5 class="card-title mt-3">Multi-Store Platform</h5>
+              <p class="card-text text-muted">Run multiple brands, stores and locations under one centralized platform.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <div class="mb-3 icon-circle bg-success text-white">🛒</div>
+              <h5 class="card-title mt-3">POS & Store Operations</h5>
+              <p class="card-text text-muted">Streamline inventory, orders, and front-of-house operations in one place.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <div class="mb-3 icon-circle bg-warning text-white">👥</div>
+              <h5 class="card-title mt-3">User & Role Management</h5>
+              <p class="card-text text-muted">Control access with role-based dashboards and secure user management.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <div class="mb-3 icon-circle bg-info text-white">📊</div>
+              <h5 class="card-title mt-3">Analytics & Business Control</h5>
+              <p class="card-text text-muted">Track performance, revenue and operations with actionable dashboards.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-5 bg-light">
+    <div class="container">
+      <div class="text-center mb-5">
+        <h2 class="h2 fw-bold">Platform Features</h2>
+        <p class="text-muted mb-0">Designed to support enterprise-level workflows with a friendly user experience.</p>
+      </div>
+      <div class="row align-items-center gy-4">
+        <div class="col-lg-6">
+          <img src="/static/images/platform/feature_store.jpg" alt="Secure access" class="img-fluid rounded shadow-sm">
+        </div>
+        <div class="col-lg-6">
+          <h3 class="h4 fw-bold">Secure, Company-Level Access</h3>
+          <p class="text-muted">Each company and store gets dedicated access while platform admins manage across all tenants.</p>
+          <ul class="list-unstyled">
+            <li class="mb-2"><span class="badge bg-primary me-2">✓</span> Granular user roles and store-level permissions</li>
+            <li class="mb-2"><span class="badge bg-primary me-2">✓</span> Multi-factor & secure login support</li>
+            <li class="mb-2"><span class="badge bg-primary me-2">✓</span> Centralized tenant management dashboard</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="row align-items-center gy-4 mt-5">
+        <div class="col-lg-6 order-lg-2">
+          <img src="/static/images/platform/feature_dashboard.jpg" alt="Dashboard" class="img-fluid rounded shadow-sm">
+        </div>
+        <div class="col-lg-6 order-lg-1">
+          <h3 class="h4 fw-bold">Everything in One Dashboard</h3>
+          <p class="text-muted">From company health to user activity, get a consolidated view of performance and operations.</p>
+          <ul class="list-unstyled">
+            <li class="mb-2"><span class="badge bg-success me-2">✓</span> Real-time metrics & charts</li>
+            <li class="mb-2"><span class="badge bg-success me-2">✓</span> Platform notes and operational alerts</li>
+            <li class="mb-2"><span class="badge bg-success me-2">✓</span> Quick actions for rapid provisioning</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="row align-items-center gy-4 mt-5">
+        <div class="col-lg-6">
+          <img src="/static/images/platform/feature_users.jpg" alt="Team & Role Management" class="img-fluid rounded shadow-sm">
+        </div>
+        <div class="col-lg-6">
+          <h3 class="h4 fw-bold">Team & Role Management</h3>
+          <p class="text-muted">Easily assign roles, manage permissions, and onboard staff across stores.</p>
+          <ul class="list-unstyled">
+            <li class="mb-2"><span class="badge bg-warning me-2">✓</span> Role-based dashboard navigation</li>
+            <li class="mb-2"><span class="badge bg-warning me-2">✓</span> Store-level user segmentation</li>
+            <li class="mb-2"><span class="badge bg-warning me-2">✓</span> Audit and activity tracking</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how" class="py-5">
+    <div class="container">
+      <div class="text-center mb-5">
+        <h2 class="h2 fw-bold">How It Works</h2>
+        <p class="text-muted mb-0">From signup to scale, follow these simple steps to get your platform running.</p>
+      </div>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body text-center">
+              <div class="mb-3 display-6 text-primary">1</div>
+              <h5 class="card-title">Register & Setup</h5>
+              <p class="card-text text-muted">Create your platform account, register your first company, and configure store details.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body text-center">
+              <div class="mb-3 display-6 text-primary">2</div>
+              <h5 class="card-title">Login & Access</h5>
+              <p class="card-text text-muted">Sign in to access the platform dashboard or company dashboards with a secure token.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body text-center">
+              <div class="mb-3 display-6 text-primary">3</div>
+              <h5 class="card-title">Manage & Grow</h5>
+              <p class="card-text text-muted">Add users, provision stores, and monitor performance using adaptive dashboards.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Dashboard Preview -->
+  <section id="preview" class="py-5 bg-light">
+    <div class="container">
+      <div class="row align-items-center g-4">
+        <div class="col-lg-6">
+          <h2 class="h2 fw-bold">Platform Dashboard Preview</h2>
+          <p class="text-muted">Get a quick sense of how the platform dashboard looks and feels — built for platform admins.</p>
+          <ul class="list-unstyled">
+            <li class="mb-2"><span class="badge bg-secondary me-2">✔</span> Overview cards and quick actions</li>
+            <li class="mb-2"><span class="badge bg-secondary me-2">✔</span> Recent company & store activity</li>
+            <li class="mb-2"><span class="badge bg-secondary me-2">✔</span> Clean desktop + tablet layout</li>
+          </ul>
+        </div>
+        <div class="col-lg-6">
+          <div class="shadow-sm rounded overflow-hidden">
+            <div class="feature-image feature-image--preview"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section id="cta" class="py-5">
+    <div class="container text-center">
+      <h2 class="h2 fw-bold mb-3">Ready to scale your business with {{ brand_display_name }}?</h2>
+      <p class="text-muted mb-4">Start today with a secure, scalable platform designed for multi-store operations.</p>
+      <div class="d-flex justify-content-center gap-3 flex-wrap">
+        <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#registerModal">Get Started</button>
+        <button class="btn btn-outline-primary btn-lg" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section id="contact" class="py-5 bg-light">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+          <h2 class="h2 fw-bold mb-3">Need help?</h2>
+          <p class="text-muted mb-4">Reach out to us any time and we’ll help you get set up or answer questions about the platform.</p>
+          <p class="mb-1"><strong>Support:</strong> <a href="mailto:support@awsumsolution.com">support@awsumsolution.com</a></p>
+          <p class="mb-0"><strong>Phone:</strong> <a href="tel:+10000000000">+1 (000) 000-0000</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-dark text-white text-center py-5">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-md-8">
+          <p class="mb-2 footer-brand">
+            <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
+            <span class="brand-text">{{ brand_display_name }}</span>
+          </p>
+          <p class="text-muted mb-2">A modern platform for connected retailers and service providers.</p>
+          <p class="text-muted mb-0">&copy; 2026. All Rights Reserved. Since R&amp;D 1988</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Login / Register Modals (unchanged) -->
+  <div class="modal fade" id="loginModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="loginForm" autocomplete="off">
+          <div class="modal-header bg-dark text-white">
+            <h5 class="modal-title">Sign In</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" name="store_code" class="form-control mb-3" placeholder="Store Code (e.g. Admin)" required>
+            <input type="email" name="email" class="form-control mb-3" placeholder="Email" required>
+            <div class="input-group mb-3">
+              <input id="loginPassword" type="password" name="password" class="form-control" placeholder="Password" required>
+              <button
+                type="button"
+                class="btn btn-outline-secondary password-toggle-btn"
+                id="toggleLoginPassword"
+                aria-label="Show password"
+                aria-pressed="false"
+                title="Show password"
+              >
+                <svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13.1 13.1 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.1 13.1 0 0 1 1.172 8z"/>
+                  <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5m-4 2.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0"/>
+                </svg>
+                <svg class="icon-eye-slash" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M13.359 11.238C14.498 10.264 15.347 9.044 16 8c0 0-3-5.5-8-5.5-1.126 0-2.16.279-3.092.72l.772.772A6.5 6.5 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8a12 12 0 0 1-2.24 2.712z"/>
+                  <path d="M11.297 9.176a3.5 3.5 0 0 0-4.473-4.473l.823.823a2.5 2.5 0 0 1 2.824 2.824z"/>
+                  <path d="m2.354 1.646-.708.708 12 12 .708-.708z"/>
+                  <path d="M5.001 7.648l2.351 2.351a1.5 1.5 0 0 1-1.703-1.703z"/>
+                  <path d="M.172 8c.653 1.044 1.502 2.264 2.64 3.238l.771-.771A12 12 0 0 1 1.172 8a13.1 13.1 0 0 1 1.66-2.043l-.708-.708A13.7 13.7 0 0 0 .172 8"/>
+                  <path d="M8 12.5a6.5 6.5 0 0 1-2.32-.428l-.772.772A8 8 0 0 0 8 13.5c5 0 8-5.5 8-5.5a18 18 0 0 0-1.84-2.551l-.708.708A17 17 0 0 1 14.828 8C14.168 9.002 11.88 12.5 8 12.5"/>
+                </svg>
+              </button>
+            </div>
+            <div id="loginError" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="rememberStore">
+                <label class="form-check-label" for="rememberStore">Remember Store Code</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="rememberEmail">
+                <label class="form-check-label" for="rememberEmail">Remember Email</label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer d-flex justify-content-end">
+            <button type="submit" class="btn btn-dark">Login</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="registerModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="registerForm" method="post" action="/auth/register">
+          <div class="modal-header bg-dark text-white">
+            <h5 class="modal-title">Sign Up</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" name="store_id" class="form-control mb-2" placeholder="Store ID" required>
+            <input type="password" name="store_pw" class="form-control mb-2" placeholder="Store Password" required>
+            <div class="row">
+              <div class="col-md-6 mb-2"><input type="text" name="first_name" class="form-control" placeholder="First Name" required></div>
+              <div class="col-md-6 mb-2"><input type="text" name="last_name" class="form-control" placeholder="Last Name" required></div>
+            </div>
+            <input type="text" id="phone" name="phone" class="form-control mb-2" placeholder="Phone" maxlength="15" required>
+            <div id="phone_error" class="invalid-feedback d-none">Phone must contain only numbers</div>
+            <input type="email" name="email" class="form-control mb-2" placeholder="Email" required>
+            <input type="password" id="password" name="password" class="form-control mb-2" placeholder="Password" required>
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Confirm Password" required>
+            <div id="pw_error" class="invalid-feedback d-none">Passwords do not match</div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" id="registerBtn" class="btn btn-dark w-100">Register</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const loginForm = document.getElementById("loginForm");
+  const storeInput = loginForm.querySelector('input[name="store_code"]');
+  const emailInput = loginForm.querySelector('input[name="email"]');
+  const passwordInput = loginForm.querySelector('input[name="password"]');
+  const togglePasswordBtn = document.getElementById("toggleLoginPassword");
+  const rememberStore = document.getElementById("rememberStore");
+  const rememberEmail = document.getElementById("rememberEmail");
+  const loginErrorEl = document.getElementById("loginError");
+
+  function setLoginError(message) {
+    if (!loginErrorEl) return;
+    if (!message) {
+      loginErrorEl.textContent = "";
+      loginErrorEl.classList.add("d-none");
+      return;
+    }
+    loginErrorEl.textContent = message;
+    loginErrorEl.classList.remove("d-none");
+  }
+
+  const savedStoreCode = localStorage.getItem("storeCode") || localStorage.getItem("storeId");
+  const savedEmail = localStorage.getItem("email");
+
+  function populateLoginFromStorage() {
+    if (storeInput) {
+      storeInput.value = savedStoreCode || "";
+      rememberStore.checked = !!savedStoreCode;
+    }
+    if (emailInput) {
+      emailInput.value = savedEmail || "";
+      rememberEmail.checked = !!savedEmail;
+    }
+    if (passwordInput) {
+      passwordInput.value = "";
+    }
+  }
+
+  populateLoginFromStorage();
+
+  const loginModalEl = document.getElementById('loginModal');
+  if (loginModalEl) {
+    loginModalEl.addEventListener('show.bs.modal', populateLoginFromStorage);
+    loginModalEl.addEventListener('hidden.bs.modal', () => {
+      setLoginError("");
+      if (passwordInput) passwordInput.value = "";
+      if (togglePasswordBtn) {
+        togglePasswordBtn.setAttribute("aria-pressed", "false");
+        togglePasswordBtn.setAttribute("aria-label", "Show password");
+        togglePasswordBtn.setAttribute("title", "Show password");
+      }
+    });
+  }
+
+  if (togglePasswordBtn && passwordInput) {
+    togglePasswordBtn.addEventListener("click", () => {
+      const isHidden = passwordInput.type === "password";
+      passwordInput.type = isHidden ? "text" : "password";
+      togglePasswordBtn.setAttribute("aria-pressed", isHidden ? "true" : "false");
+      togglePasswordBtn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+      togglePasswordBtn.setAttribute("title", isHidden ? "Hide password" : "Show password");
+    });
+  }
+
+  if (storeInput && emailInput) {
+    storeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        emailInput.focus();
+      }
+    });
+  }
+
+  if (emailInput && passwordInput) {
+    emailInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        passwordInput.focus();
+      }
+    });
+  }
+
+  async function postAuthWithFallback(path, formData) {
+    try {
+      const primary = await fetch(path, { method: "POST", body: formData });
+      if (primary.ok || primary.redirected || primary.status < 500) {
+        return primary;
+      }
+    } catch (e) {
+      // Fallback to a stable local backend endpoint when current origin is unhealthy.
+    }
+    return fetch(`http://127.0.0.1:8001${path}`, { method: "POST", body: formData });
+  }
+
+  function navigatePostToStableAuth(path, formData) {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `http://127.0.0.1:8001${path}`;
+    form.style.display = "none";
+
+    for (const [key, value] of formData.entries()) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value ?? "");
+      form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  loginForm.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    setLoginError("");
+
+    if (storeInput) storeInput.value = storeInput.value.trim();
+    if (emailInput) emailInput.value = emailInput.value.trim().toLowerCase();
+
+    const formData = new FormData(this);
+    let response;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      response = await fetch("/auth/login", { method: "POST", body: formData, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      // If current origin auth is unstable, switch to stable backend by full-page POST navigation.
+      if (!response.redirected && response.status >= 500) {
+        navigatePostToStableAuth("/auth/login", formData);
+        return;
+      }
+    } catch (_) {
+      navigatePostToStableAuth("/auth/login", formData);
+      return;
+    }
+
+    if (response.redirected) {
+      // Only persist remembered values after a successful login
+      if (rememberStore && rememberStore.checked && storeInput && storeInput.value) {
+          localStorage.setItem("storeCode", storeInput.value);
+      } else {
+          localStorage.removeItem("storeCode");
+        localStorage.removeItem("storeId");
+      }
+
+      if (rememberEmail && rememberEmail.checked && emailInput && emailInput.value) {
+        localStorage.setItem("email", emailInput.value);
+      } else {
+        localStorage.removeItem("email");
+      }
+
+      const modal = bootstrap.Modal.getInstance(loginModalEl) || new bootstrap.Modal(loginModalEl);
+      modal.hide();
+      window.location.href = response.url;
+    } else {
+      let message = "Invalid credentials.";
+      try {
+        const payload = await response.json();
+        if (payload && payload.message) {
+          message = payload.message;
+        }
+      } catch (_) {
+        const text = await response.text();
+        if (text && text.trim()) {
+          message = text;
+        }
+      }
+      setLoginError(message);
+    }
+  });
+
+  document.getElementById("registerForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const response = await postAuthWithFallback("/auth/register", formData);
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success) {
+        const modalEl = document.getElementById('registerModal');
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.hide();
+
+        const loginFormData = new FormData();
+        loginFormData.append("store_code", formData.get("store_id"));
+        loginFormData.append("email", formData.get("email"));
+        loginFormData.append("password", formData.get("password"));
+        const loginResponse = await postAuthWithFallback("/auth/login", loginFormData);
+        if (loginResponse.redirected) {
+          window.location.href = loginResponse.url;
+        } else {
+          alert("⚠️ Register success but auto-login failed. Please login manually.");
+        }
+      } else {
+        alert(result.message || "⚠️ Register failed");
+      }
+    } else {
+      alert("Register failed: " + await response.text());
+    }
+  });
+
+  const pw = document.getElementById("password");
+  const confirmPw = document.getElementById("confirm_password");
+  const pwError = document.getElementById("pw_error");
+  const phone = document.getElementById("phone");
+  const phoneError = document.getElementById("phone_error");
+  const registerBtn = document.getElementById("registerBtn");
+
+  function validatePassword() {
+    if (pw.value && confirmPw.value && pw.value !== confirmPw.value) {
+      confirmPw.classList.add("is-invalid");
+      pwError.classList.remove("d-none");
+      registerBtn.disabled = true;
+    } else {
+      confirmPw.classList.remove("is-invalid");
+      pwError.classList.add("d-none");
+      registerBtn.disabled = false;
+    }
+  }
+
+  function validatePhone() {
+    const onlyNumbers = /^\d+$/;
+    if (phone.value && !onlyNumbers.test(phone.value)) {
+      phone.classList.add("is-invalid");
+      phoneError.classList.remove("d-none");
+      registerBtn.disabled = true;
+    } else {
+      phone.classList.remove("is-invalid");
+      phoneError.classList.add("d-none");
+      registerBtn.disabled = false;
+    }
+  }
+
+  pw.addEventListener("input", validatePassword);
+  confirmPw.addEventListener("input", validatePassword);
+  phone.addEventListener("input", validatePhone);
+  </script>
+
+</body>
+</html>

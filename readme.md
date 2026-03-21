@@ -1,16 +1,20 @@
 # Awsum Platform
 
-## Landing page routes
+Multi-store SaaS platform
 
-- `GET /` → platform landing page (`platform_home.html`)
-- `GET /customer/{account_code}` → customer-branded landing page (`customer_home.html`)
-  - Account matching currently uses a normalized form of `tb_account.c_account_name`.
-  - If no matching account is found, a clean `customer_not_found.html` page is returned with HTTP 404.
+Backend
+- FastAPI
+- SQLAlchemy
 
-## Auth flow
+Frontend
+- Svelte
 
-Existing auth flow is unchanged:
-- `POST /auth/login`
-- `POST /auth/register`
+Database
+- AdminDB
+- StoreDB
 
-Both landing templates keep the current modal-based login/register forms with Store ID + Email + Password login.
+Platform Admin Policy (fixed)
+- Store ID: Admin (fixed, do not change)
+- Email: is2ceo@gmail.com (can be changed internally)
+- Password: Awsum123! (can be changed internally)
+- Login/auth flows must prioritize Store ID=Admin for Platform Admin routing

@@ -1,0 +1,29 @@
+{% extends "client/client_base.html" %}
+
+{% block page_title %}Deli Dashboard{% endblock %}
+
+{% block dashboard_heading %}Deli Dashboard{% endblock %}
+
+{% block dashboard_subheading %}Client dashboard configured for deli operations{% endblock %}
+
+{% block content %}
+<div class="card-clean shadow-sm p-3 p-lg-4">
+  <div class="row g-3">
+    <div class="col-md-4">
+      {% set card_title = "Pending Orders" %}
+      {% set card_value = "0" %}
+      {% include "client/components/card_stat.html" %}
+    </div>
+    <div class="col-md-4">
+      {% set card_title = "Prep Line" %}
+      {% set card_value = "0" %}
+      {% include "client/components/card_stat.html" %}
+    </div>
+    <div class="col-md-4">
+      {% set card_title = "Ready Pickup" %}
+      {% set card_value = "0" %}
+      {% include "client/components/card_stat.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

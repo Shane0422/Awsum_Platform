@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block page_title %}Client Dashboard{% endblock %} | {{ APP_NAME }}</title>
+  <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/brand.css">
+  <style>
+    :root {
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --border: #e7ebef;
+      --text: #111827;
+      --muted: #6b7280;
+      --brand: #2563eb;
+      --brand-soft: #eaf1ff;
+      --sidebar-width: 260px;
+      --topbar-height: 64px;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1030;
+      height: var(--topbar-height);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem;
+    }
+
+    .topbar-title {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #1f2937;
+    }
+
+    .topbar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      line-height: 1;
+    }
+
+    .topbar-brand .brand-icon {
+      --aw-brand-icon-size: 26px;
+    }
+
+    .topbar-brand .brand-text {
+      --aw-brand-text-size: 1rem;
+      color: var(--aw-brand-text-dark);
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+      padding-top: var(--topbar-height);
+    }
+
+    .sidebar {
+      width: var(--sidebar-width);
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 1rem;
+      position: fixed;
+      top: var(--topbar-height);
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar .menu-title {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.75rem;
+    }
+
+    .sidebar .nav-link {
+      color: #374151;
+      border-radius: 0.65rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.25rem;
+      font-weight: 500;
+    }
+
+    .sidebar .nav-link:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .sidebar .nav-link.active {
+      background: var(--brand-soft);
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+
+    .content {
+      margin-left: var(--sidebar-width);
+      width: calc(100% - var(--sidebar-width));
+      padding: 1.25rem;
+    }
+
+    .page-header {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+    }
+
+    .page-header h1 {
+      font-size: 1.2rem;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .page-header p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+    }
+
+    .card-clean {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      box-shadow: 0 8px 20px -18px rgba(15, 23, 42, 0.3);
+    }
+
+    .card-stat {
+      border-radius: 1rem;
+    }
+
+    @media (max-width: 991.98px) {
+      .sidebar {
+        position: static;
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .layout {
+        display: block;
+      }
+
+      .content {
+        margin-left: 0;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title topbar-brand">
+      <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
+      <span class="brand-text">{{ brand_display_name }}</span>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+      <span class="badge text-bg-light border">Store ID: {{ login_store }}</span>
+      <span class="badge text-bg-light border">Type: {{ (dashboard_type or 'STANDARD') | upper }}</span>
+      <span class="text-secondary small">{{ user.c_first_name }} {{ user.c_last_name }}</span>
+      <a href="/auth/logout" class="btn btn-sm btn-outline-secondary">Logout</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="menu-title">Navigation</div>
+      <nav class="nav flex-column">
+        <a class="nav-link{% if active_menu == 'dashboard' %} active{% endif %}" href="/client/dashboard/standard">Dashboard</a>
+        <a class="nav-link{% if active_menu == 'sales' %} active{% endif %}" href="/client/sales">Sales</a>
+        <a class="nav-link{% if active_menu == 'employees' %} active{% endif %}" href="/client/employees">Employees</a>
+        <a class="nav-link{% if active_menu == 'schedule' %} active{% endif %}" href="/client/schedule">Schedule</a>
+        <a class="nav-link{% if active_menu == 'settings' %} active{% endif %}" href="/client/settings">Settings</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <section class="page-header">
+        <h1>{% block dashboard_heading %}Client Dashboard{% endblock %}</h1>
+        <p>{% block dashboard_subheading %}Store dashboard workspace{% endblock %}</p>
+      </section>
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

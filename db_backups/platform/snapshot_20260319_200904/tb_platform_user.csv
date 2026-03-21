@@ -1,0 +1,2 @@
+i_platform_user_id,i_store_id,c_email,c_password,c_first_name,c_last_name,c_phone,i_must_change_password,dt_password_changed,c_status,dt_created,dt_updated
+1,1000001,is2ceo@gmail.com,$2b$12$Jeo1XQcXlhmXIY482393EOlzMb7LtU66N8QK43/JeV7CWZE0w.wUy,Platform,Admin,,0,,active,2026-03-19 16:18:50.120830,

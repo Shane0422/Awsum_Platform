@@ -1,24 +1,25 @@
-import os
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# D:\Awsum_Projects\tuxedo_rental\db_store\store_1001\store_1001.db
-# D:\Awsum_Projects\tuxedo_rental\db_store\store_1001\backups\
-# ⚙️ backend/database/ → ../../ 올라가면 프로젝트 루트 (tuxedo_rental)
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+# ==========================================
+# 매장/회사 DB 경로
+# - 회사 DB: data/company/{company_id}/main.db
+# - 백업:   db_backups/company/{company_id}/
+# ==========================================
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 StoreBase = declarative_base()
 
 
 def get_store_engine(store_code: str):
-    """
-    특정 매장의 DB 엔진을 반환.
-    store_code 예: "1001"
-    """
-    store_dir = os.path.join(PROJECT_ROOT, "db_store", f"store_{store_code}")
-    os.makedirs(store_dir, exist_ok=True)
+    """특정 매장의 DB 엔진을 반환. store_code 예: "1001""" 
+    store_dir = PROJECT_ROOT / "data" / "company" / store_code
+    store_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = os.path.join(store_dir, f"store_{store_code}.db")
+    db_path = store_dir / "main.db"
     return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
 
@@ -31,9 +32,7 @@ def get_store_session(store_code: str):
 
 
 def get_store_backup_dir(store_code: str):
-    """
-    특정 매장의 백업 디렉토리 반환 (자동 생성).
-    """
-    store_dir = os.path.join(PROJECT_ROOT, "db_store", f"store_{store_code}", "backups")
-    os.makedirs(store_dir, exist_ok=True)
-    return store_dir
+    """특정 매장의 백업 디렉토리 반환 (자동 생성)."""
+    backup_dir = PROJECT_ROOT / "db_backups" / "company" / store_code
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return str(backup_dir)

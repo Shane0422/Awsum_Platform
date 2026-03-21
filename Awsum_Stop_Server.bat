@@ -1,6 +1,12 @@
-for /f "tokens=2 delims=," %%a in ('tasklist /v /fo csv ^| findstr /i "uvicorn"') do (
-    echo Terminating uvicorn process with PID %%a ...
-    taskkill /PID %%a /F
-)
+REM .\Awsum_Stop_Server.bat
 
-pause
+@echo off
+setlocal
+cd /d "%~dp0"
+
+for %%P in (8000 8001) do (
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":%%P .*LISTENING"') do (
+        echo Terminating PID %%a on port %%P ...
+        taskkill /PID %%a /F >nul 2>&1
+    )
+)

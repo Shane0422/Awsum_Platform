@@ -1,80 +1,142 @@
+import os
+from urllib.parse import urlparse
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from backend.database.admin_db import AdminBase, AdminSessionLocal, admin_engine, get_admin_backup_dir, init_admin_db
-from backend.utils.safe_schema_migrate import safe_schema_migrate
+from backend.database.pg_platform import (
+    ensure_platform_database_exists,
+    PlatformSessionLocal,
+    get_platform_db_url,
+    get_platform_db_url_source,
+    mask_db_url,
+)
+from backend.database.db_init_platform import init_platform_db
 from backend.config.messages import popup_multi_choice
 from backend.config.settings import APP_NAME
-from backend.models_admin.account import Account
+from backend.config.templates import templates, get_brand_context
+from backend.models_admin.account import Client
 from backend.routers import auth, store, dashboard, common
+from backend.routers import platform_store
 
 app = FastAPI(title=f"{APP_NAME} API")
 
+
+def _set_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+def _came_from_protected_page(request: Request) -> bool:
+    referer = request.headers.get("referer") or ""
+    if not referer:
+        return False
+    try:
+        path = urlparse(referer).path or ""
+    except Exception:
+        return False
+    return path.startswith("/platform") or path.startswith("/dashboard")
+
+# ------------------------------------
+# Paths (ensure this works regardless of working directory)
+# ------------------------------------
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
 # ✅ 정적 파일 & 템플릿 경로
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
-templates = Jinja2Templates(directory="backend/templates")
-templates.env.globals["APP_NAME"] = APP_NAME
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# ✅ Startup 이벤트 (AdminDB 자동 마이그레이션 + Seed 데이터 등록)
+# ✅ Startup 이벤트 (PostgreSQL awsum_platform 초기화 + Seed 데이터 등록)
 @app.on_event("startup")
 def on_startup():
-    backup_dir = get_admin_backup_dir()
-    safe_schema_migrate(AdminBase, admin_engine, backup_dir)  # 구조 변경 자동 보정 + 백업
-    init_admin_db()  # 기본 Seed (StoreType, BusinessType, Role, SuperAdmin) 삽입
+    source = get_platform_db_url_source()
+    masked_url = mask_db_url(get_platform_db_url())
+    if source == "default":
+        print("[WARN] AWSUM_PLATFORM_DATABASE_URL is not set. Falling back to default PostgreSQL URL.")
+    else:
+        print(f"[INFO] Platform DB URL source: {source}")
+    print(f"[INFO] Platform DB URL (masked): {masked_url}")
+
+    ensure_platform_database_exists()
+    init_platform_db()
 
 
 # ✅ 플랫폼 홈
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("platform_home.html", {"request": request})
+    resp = templates.TemplateResponse("platform/platform_home.html", {"request": request})
+
+    # If user moves from protected dashboard/platform pages to home, force logout.
+    if request.cookies.get("access_token") and _came_from_protected_page(request):
+        resp.delete_cookie("access_token")
+
+    return _set_no_cache_headers(resp)
 
 
-def _normalize_account_code(value: str) -> str:
+def _normalize_client_code(value: str) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum())
 
 
-@app.get("/customer/{account_code}", response_class=HTMLResponse)
-async def customer_home(request: Request, account_code: str):
-    db: Session = AdminSessionLocal()
-    try:
-        # 계정코드 컬럼이 현재 스키마에 없어 account_name slug 매핑으로 처리
-        accounts = db.query(Account).all()
+def _client_brand_code(client_id: int | None) -> str | None:
+    if not client_id:
+        return None
+    return f"CLT_{int(client_id):05d}"
 
-        matched_account = next(
+
+@app.get("/client/{client_code}", response_class=HTMLResponse)
+async def client_home(request: Request, client_code: str):
+    db: Session = PlatformSessionLocal()
+    try:
+        clients = db.query(Client).all()
+
+        matched_client = next(
             (
-                account
-                for account in accounts
-                if _normalize_account_code(account.c_account_name or "") == _normalize_account_code(account_code)
+                client
+                for client in clients
+                if _normalize_client_code(client.c_client_code or "") == _normalize_client_code(client_code)
+                or _normalize_client_code(client.c_client_name or "") == _normalize_client_code(client_code)
             ),
             None,
         )
 
-        if not matched_account:
+        if not matched_client:
             return templates.TemplateResponse(
-                "customer_not_found.html",
-                {"request": request, "account_code": account_code},
+                "shared/client_not_found.html",
+                {"request": request, "client_code": client_code},
                 status_code=404,
             )
 
-        account_name = matched_account.c_account_name or APP_NAME
+        client_name = matched_client.c_client_name or APP_NAME
         return templates.TemplateResponse(
-            "customer_home.html",
+            "shared/client_home.html",
             {
                 "request": request,
-                "account_name": account_name,
-                "hero_title": f"Elegance. Style. {account_name}",
+                "client_name": client_name,
+                "hero_title": f"Elegance. Style. {client_name}",
                 "hero_subtitle": "Premium formalwear rentals for your most memorable moments.",
-                "contact_email": matched_account.c_email or "support@awsumsolution.com",
-                "contact_phone": matched_account.c_phone or "+1 (000) 000-0000",
+                "contact_email": matched_client.c_email or "support@awsumsolution.com",
+                "contact_phone": matched_client.c_phone or "+1 (000) 000-0000",
+                **get_brand_context(
+                    context_type="client",
+                    brand_display_name=client_name,
+                    client_code=_client_brand_code(matched_client.i_client_id),
+                ),
             },
         )
     finally:
         db.close()
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_alias():
+    return RedirectResponse(url="/auth/change-password", status_code=303)
 
 # ✅ 404 처리 → 팝업 출력
 @app.exception_handler(StarletteHTTPException)
@@ -93,5 +155,6 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 # ✅ 라우터 등록
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(store.router, prefix="/store", tags=["Store"])
+app.include_router(platform_store.router, prefix="", tags=["PlatformStore"])
 app.include_router(dashboard.router, prefix="", tags=["Dashboard"])
 app.include_router(common.router, prefix="", tags=["Common"])

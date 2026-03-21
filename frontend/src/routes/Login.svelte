@@ -1,15 +1,31 @@
 <script>
+  import { onMount } from "svelte";
+
   let storeId = "";
   let email = "";
   let password = "";
   let error = "";
+  let rememberStore = false;
+  let rememberEmail = false;
+
+  onMount(() => {
+    const storedStore = localStorage.getItem("storeId");
+    if (storedStore) storeId = storedStore;
+
+    const storedEmail = localStorage.getItem("email");
+    if (storedEmail) email = storedEmail;
+  });
 
   async function handleLogin() {
     error = "";
 
+    // normalize input
+    storeId = storeId.trim();
+    email = email.trim().toLowerCase();
+
     if (!storeId || !email || !password) {
       error = "Please fill in all fields.";  
-     // 모든 입력 필드를 입력하지 않았을 때 경고
+      // 모든 입력 필드를 입력하지 않았을 때 경고
       return;
     }
 
@@ -27,6 +43,19 @@
       }
 
       const data = await res.json();
+
+      // Remember fields based on user choice (never store password)
+      if (rememberStore) {
+        localStorage.setItem("storeId", storeId);
+      } else {
+        localStorage.removeItem("storeId");
+      }
+      if (rememberEmail) {
+        localStorage.setItem("email", email);
+      } else {
+        localStorage.removeItem("email");
+      }
+
       // 로그인 성공 시 서버에서 받은 JWT 토큰 저장
       localStorage.setItem("token", data.access_token);
 
@@ -53,6 +82,17 @@
         <label for="storeId" class="block text-gray-600 text-sm font-medium mb-1">Store ID</label>
         <input id="storeId" type="text" bind:value={storeId} placeholder="Ex: 1001"
           class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+      </div>
+
+      <div class="flex gap-4">
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" bind:checked={rememberStore} class="form-checkbox" />
+          Remember Store ID
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" bind:checked={rememberEmail} class="form-checkbox" />
+          Remember Email
+        </label>
       </div>
 
       <div>

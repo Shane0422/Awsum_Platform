@@ -12,16 +12,16 @@ D:\Awsum_Projects\tuxedo_rental\
  │    │     └── store_db.py
  │    └── utils\
  │          └── safe_schema_migrate.py
- ├── db_admin\
- │    ├── db_Admin.db
- │    └── backups\
- └── db_store\
-      ├── store_1001\
-      │     ├── store_1001.db
-      │     └── backups\
-      ├── store_1002\
-      │     ├── store_1002.db
-      │     └── backups\
+ ├── data\
+ │    ├── platform\
+ │    │     └── admin.db
+ │    └── company\
+ │          └── {company_id}\
+ │                └── main.db
+ └── db_backups\
+      ├── platform\
+      └── company\
+           └── {company_id}\
 
 
 fastapi

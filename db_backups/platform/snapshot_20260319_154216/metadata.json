@@ -1,0 +1,5 @@
+{
+  "timestamp": "20260319_154216",
+  "db_url_masked": "postgresql://***@127.0.0.1:5432/awsum_platform",
+  "tables": {}
+}

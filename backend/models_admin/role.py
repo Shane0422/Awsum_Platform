@@ -1,9 +1,9 @@
 # backend/models_admin/role.py
 from sqlalchemy import Column, Integer, String
-from backend.database.admin_db import AdminBase
+from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
 
-class Role(AdminBase, AuditMixin):
+class Role(PlatformBase, AuditMixin):
     __tablename__ = "tb_role"
 
     i_role_id     = Column(Integer, primary_key=True, autoincrement=True, index=True)

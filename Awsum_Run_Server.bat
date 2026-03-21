@@ -1,24 +1,34 @@
+REM .\Awsum_Run_Server.bat
+
 @echo off
+setlocal
 chcp 65001 >nul
 REM ===============================
-REM FastAPI (Uvicorn) run script (force kill by port 8000)
+REM FastAPI (Uvicorn) run script (single-process, stable)
 REM ===============================
 
-cd /d D:\Awsum_Projects\Awsum_Platform
+cd /d "%~dp0"
+set PYTHON_EXE=C:\Users\Awsum\AppData\Local\Programs\Python\Python314\python.exe
+set PORT=8001
 
-REM Kill any process using port 8000
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000') do (
-    echo Port 8000 in use by PID %%a. Terminating...
-    taskkill /PID %%a /F
-    timeout /t 2 >nul
+if not exist "%PYTHON_EXE%" (
+    echo [WARN] Configured Python not found. Falling back to system python.
+    set PYTHON_EXE=python
 )
 
-REM Log file location
-set LOGFILE=D:\Awsum_Projects\Awsum_Platform\server.log
+if "%AWSUM_PLATFORM_DATABASE_URL%"=="" (
+    set "AWSUM_PLATFORM_DATABASE_URL=postgresql+psycopg://postgres:Awsum123!@127.0.0.1:5432/awsum_platform"
+    echo [WARN] AWSUM_PLATFORM_DATABASE_URL was not set. Applied default local URL with password.
+) else (
+    echo [INFO] AWSUM_PLATFORM_DATABASE_URL is set. Masked DB URL will be logged at app startup.
+)
 
-echo Starting new Uvicorn server...
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+REM Stop existing listeners on 8000/8001 before starting
+call Awsum_Stop_Server.bat <nul >nul
+timeout /t 1 >nul
 
-REM start "Uvicorn" python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-REM python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-pause
+echo Starting Uvicorn on http://127.0.0.1:%PORT% ...
+"%PYTHON_EXE%" -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT%
+
+set EXIT_CODE=%errorlevel%
+endlocal & exit /b %EXIT_CODE%

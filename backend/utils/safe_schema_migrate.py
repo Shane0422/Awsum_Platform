@@ -13,10 +13,11 @@ def backup_table_to_csv(engine, table_name, backup_dir):
     )
     with engine.connect() as conn, open(file_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        rows = conn.execute(text(f"SELECT * FROM {table_name}")).fetchall()
+        result = conn.execute(text(f"SELECT * FROM {table_name}"))
+        rows = result.mappings().all()
         if rows:
             writer.writerow(rows[0].keys())  # 헤더
-            writer.writerows(rows)
+            writer.writerows([list(r.values()) for r in rows])
     return file_path
 
 
@@ -57,7 +58,20 @@ def recreate_table(table_class, engine, backup_dir):
     backup_table_to_csv(engine, table_name, backup_dir)
 
     with engine.begin() as conn:
+        # Clean up any previous intermediate tables/indexes
+        conn.execute(text(f"DROP TABLE IF EXISTS {table_name}_old"))
         conn.execute(text(f"ALTER TABLE {table_name} RENAME TO {table_name}_old"))
+
+        # SQLite does not rename indexes when renaming a table; drop old indexes to avoid conflicts
+        idx_list = conn.execute(text(f"PRAGMA index_list('{table_name}_old')")).mappings().all()
+        for idx in idx_list:
+            idx_name = idx.get("name") or idx.get("index") or idx.get(1)
+            if idx_name:
+                try:
+                    conn.execute(text(f"DROP INDEX IF EXISTS {idx_name}"))
+                except Exception:
+                    # Some indexes (e.g., sqlite_autoindex for PK/UNIQUE) cannot be dropped
+                    pass
 
     # 새 구조로 테이블 생성
     table_class.__table__.create(bind=engine, checkfirst=True)

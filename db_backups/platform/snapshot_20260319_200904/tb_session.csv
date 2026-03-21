@@ -1,0 +1,2 @@
+i_session_id,i_user_id,c_jwt_token,dt_login,dt_last_active,c_status,dt_terminated,dt_created,i_created_by,dt_updated,i_updated_by,i_platform_user_id
+1,3,fixture-token-1773902770-3,,,terminated,2026-03-19 15:46:10.232688,,,2026-03-19 15:46:10.232696,1,

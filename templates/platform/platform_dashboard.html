@@ -1,0 +1,133 @@
+{% extends "platform/platform_base.html" %}
+
+{% block page_title %}Platform Dashboard{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card-modern p-4 h-100">
+      <div class="d-flex align-items-start justify-content-between gap-3">
+        <div>
+          <h6 class="text-uppercase text-muted mb-2">Total Companies</h6>
+          <h2 class="mb-1">{{ total_companies }}</h2>
+          <div class="text-muted">Registered companies</div>
+        </div>
+        <span class="badge bg-primary py-2 px-3">Companies</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card-modern p-4 h-100">
+      <div class="d-flex align-items-start justify-content-between gap-3">
+        <div>
+          <h6 class="text-uppercase text-muted mb-2">Active Stores</h6>
+          <h2 class="mb-1">{{ active_stores }}</h2>
+          <div class="text-muted">Currently active</div>
+        </div>
+        <span class="badge bg-success py-2 px-3">Active</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card-modern p-4 h-100">
+      <div class="d-flex align-items-start justify-content-between gap-3">
+        <div>
+          <h6 class="text-uppercase text-muted mb-2">Inactive Stores</h6>
+          <h2 class="mb-1">{{ inactive_stores }}</h2>
+          <div class="text-muted">Currently inactive</div>
+        </div>
+        <span class="badge bg-secondary py-2 px-3">Inactive</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card-modern p-4 h-100">
+      <div class="d-flex align-items-start justify-content-between gap-3">
+        <div>
+          <h6 class="text-uppercase text-muted mb-2">Total Users</h6>
+          <h2 class="mb-1">{{ total_users }}</h2>
+          <div class="text-muted">Including admins and staff</div>
+        </div>
+        <span class="badge bg-info text-dark py-2 px-3">Users</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12 col-xl-8">
+    <div class="card-modern mb-4">
+      <div class="card-body">
+        <div class="d-flex align-items-start justify-content-between mb-4 gap-3">
+          <div>
+            <h5 class="mb-1">Recent Companies</h5>
+            <p class="text-muted small mb-0">Latest created companies and stores</p>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="/admin/store" class="btn btn-sm btn-outline-primary btn-modern">View All</a>
+            <a href="/admin/store" class="btn btn-sm btn-primary btn-modern">Add Company</a>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Company</th>
+                <th scope="col">Status</th>
+                <th scope="col">Created</th>
+                <th scope="col" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for store in recent_companies %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ store.c_store_name or "(Unnamed)" }}</div>
+                  <small class="text-muted">ID: {{ store.i_store_id }}</small>
+                </td>
+                <td>
+                  {% if store.c_status == 'active' %}
+                    <span class="badge bg-success">Active</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ store.dt_created.strftime('%Y-%m-%d') if store.dt_created else '-' }}
+                </td>
+                <td class="text-end">
+                  <a href="/admin/store/{{ store.i_store_id }}" class="btn btn-sm btn-outline-secondary btn-modern">View</a>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">No companies found.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-4">
+    <div class="card-modern mb-4">
+      <div class="card-body">
+        <h5 class="mb-2">Platform Notes</h5>
+        <p class="text-muted mb-3">Quick reminders, deployment notes, or key process steps.</p>
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item">
+            <strong>Default admin:</strong> Store ID=Admin, Email=is2ceo@gmail.com, Password=Awsum123!
+          </li>
+          <li class="list-group-item">
+            <strong>New tenant:</strong> Add company &amp; store to enable user registration.
+          </li>
+          <li class="list-group-item">
+            <strong>Support:</strong> Reach out to <a href="mailto:support@awsumsolution.com">support@awsumsolution.com</a>.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

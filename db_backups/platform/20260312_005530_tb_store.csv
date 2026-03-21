@@ -1,0 +1,2 @@
+i_store_id,c_store_name,c_store_pw,dt_pw_expire,i_account_id,i_store_type_id,i_business_type_id,c_store_code,c_owner_name,c_business_no,c_website,c_db_path,dt_license_expire,c_remark,c_status,c_first_name,c_last_name,c_email,c_phone,c_address_line1,c_address_line2,c_city,c_state,c_zip,c_country,dt_created,i_created_by,dt_updated,i_updated_by
+1000001,Admin,$2b$12$2Ji6xLvXUkZGimNxLKGSUeoCPZzOcLN8ML8CwFfpF4dsyDG3ozooG,,,1,1,,,,,,,,active,,,,,,,,,,USA,2026-03-12 00:55:27.151833,,,

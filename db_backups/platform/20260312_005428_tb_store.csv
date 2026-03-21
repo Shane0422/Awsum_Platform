@@ -1,0 +1,2 @@
+i_store_id,c_store_name,c_store_pw,dt_pw_expire,i_account_id,i_store_type_id,i_business_type_id,c_owner_name,c_business_no,c_status,c_first_name,c_last_name,c_email,c_phone,c_address_line1,c_address_line2,c_city,c_state,c_zip,c_country,dt_created,i_created_by,dt_updated,i_updated_by,c_website,c_remark,c_store_code,dt_license_expire,c_db_path
+1000001,Admin,$2b$12$sOXwosatiHMdcO6HLm0BO.VKxL7i4oESrgQZAaAV/TQ1NzyqwI.qC,,,1,1,,,active,,,IS2CEO@gmail.com,7032097233,25778 South Village Dr,,Chantilly,VA,20152,USA,2026-03-11 22:34:48.115004,,,,awsumsolution.com,,,,

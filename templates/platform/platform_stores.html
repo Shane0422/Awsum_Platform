@@ -1,0 +1,522 @@
+{% extends "platform/platform_base.html" %}
+
+{% block page_title %}Store Management{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-start justify-content-between mb-3 gap-3">
+  <div>
+    <h2 class="h5 mb-1">Store Management</h2>
+    <p class="text-muted mb-0">Unified store registry managed by Business Type and store-level operation/channel/device attributes.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap align-items-center no-print">
+    <button id="btnNew" class="btn btn-sm btn-primary btn-modern">New Store</button>
+    <button id="btnSave" class="btn btn-sm btn-dark btn-modern">Save</button>
+    <button id="btnDelete" class="btn btn-sm btn-outline-danger btn-modern">Delete</button>
+    <button id="btnEnterWorkspace" class="btn btn-sm btn-outline-primary btn-modern" disabled>Enter Workspace</button>
+    <button id="btnPrint" class="btn btn-sm btn-outline-secondary btn-modern">Print</button>
+    <button id="btnExport" class="btn btn-sm btn-outline-secondary btn-modern">Export</button>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-4">
+    <div class="card-modern p-3 h-100">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <h6 class="mb-0">Stores</h6>
+        <span class="badge bg-secondary">Filter</span>
+      </div>
+
+      <div class="mb-3">
+        <input id="searchInput" class="form-control" type="search" placeholder="Search stores..." autocomplete="off">
+      </div>
+
+      <div class="mb-3">
+        <select id="statusFilter" class="form-select">
+          <option value="">All statuses</option>
+          <option value="active" {% if filter.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if filter.status == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <select id="businessTypeFilter" class="form-select">
+          <option value="">All business types</option>
+          {% for bt in business_types %}
+          <option value="{{ bt.c_name }}" {% if filter.business_type == bt.c_name %}selected{% endif %}>{{ bt.c_business_name or bt.c_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <select id="channelTypeFilter" class="form-select">
+          <option value="">All channel types</option>
+          <option value="POS" {% if filter.channel_type == 'POS' %}selected{% endif %}>POS</option>
+          <option value="Kiosk" {% if filter.channel_type == 'Kiosk' %}selected{% endif %}>Kiosk</option>
+          <option value="Mobile" {% if filter.channel_type == 'Mobile' %}selected{% endif %}>Mobile</option>
+          <option value="Admin" {% if filter.channel_type == 'Admin' %}selected{% endif %}>Admin</option>
+          <option value="Other" {% if filter.channel_type == 'Other' %}selected{% endif %}>Other</option>
+        </select>
+      </div>
+
+      <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+        <table class="table table-hover table-premium align-middle mb-0" id="storeListTable">
+          <thead>
+            <tr>
+              <th scope="col" style="width: 140px;">Store Code</th>
+              <th scope="col">Name</th>
+              <th scope="col" style="width: 170px;">Business Type</th>
+              <th scope="col" style="width: 110px;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="storeListBody">
+            <tr><td class="text-muted text-center py-4" colspan="4">Loading stores...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-8">
+    <div class="card-modern p-4">
+      <div class="row gy-4">
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <h6 id="formModeTitle" class="mb-0">Create Store</h6>
+            <span id="formModeHint" class="text-muted small">Store functionality is defined by operation/channel/device attributes.</span>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <h6 class="mb-2">Basic Information</h6>
+          <div class="row g-3">
+            <div class="col-md-2">
+              <label class="form-label">ID</label>
+              <input id="fieldStoreId" class="form-control" type="text" placeholder="Auto" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Store Name</label>
+              <input id="fieldStoreName" class="form-control" type="text" placeholder="Store name">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Store Code (Auto)</label>
+              <input id="fieldStoreCode" class="form-control" type="text" placeholder="Auto-generated on create" readonly>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Business Type</label>
+              <select id="fieldBusinessType" class="form-select">
+                <option value="">Select</option>
+                {% for bt in business_types %}
+                <option value="{{ bt.c_name }}">{{ bt.c_business_name or bt.c_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Operation Type / Purpose</label>
+              <input id="fieldOperationType" class="form-control" type="text" placeholder="e.g. Information POS, CheckIn Kiosk">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Channel Type</label>
+              <select id="fieldChannelType" class="form-select">
+                <option value="">Select</option>
+                <option value="POS">POS</option>
+                <option value="Kiosk">Kiosk</option>
+                <option value="Mobile">Mobile</option>
+                <option value="Admin">Admin</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Device Type</label>
+              <input id="fieldDeviceType" class="form-control" type="text" placeholder="e.g. Windows POS, Android Kiosk">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Owner Name</label>
+              <input id="fieldOwnerName" class="form-control" type="text" placeholder="Owner / Manager">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Status</label>
+              <select id="fieldStatus" class="form-select">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <h6 class="mb-2">Store Details</h6>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Address</label>
+              <input id="fieldAddress" class="form-control" type="text" placeholder="Address">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Phone</label>
+              <input id="fieldPhone" class="form-control" type="text" placeholder="Phone">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input id="fieldEmail" class="form-control" type="email" placeholder="Email">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Contract Date</label>
+              <input id="fieldContractDate" class="form-control" type="date">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Contract Start Date</label>
+              <input id="fieldContractStartDate" class="form-control" type="date">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Contract End Date</label>
+              <input id="fieldContractEndDate" class="form-control" type="date">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">License Type</label>
+              <input id="fieldLicenseType" class="form-control" type="text" placeholder="e.g. Basic / Premium">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Max User Count</label>
+              <input id="fieldMaxUserCount" class="form-control" type="number" min="0" placeholder="0">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Max Terminal Count</label>
+              <input id="fieldMaxTerminalCount" class="form-control" type="number" min="0" placeholder="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <h6 class="mb-2">Notes</h6>
+          <textarea id="fieldRemark" class="form-control" rows="4" placeholder="Remarks or internal notes"></textarea>
+        </div>
+
+        <input type="hidden" id="selectedStoreId" value="">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const apiBase = "/platform";
+  let selectedStoreId = null;
+
+  const storeListBody = document.getElementById('storeListBody');
+  const searchInput = document.getElementById('searchInput');
+  const statusFilter = document.getElementById('statusFilter');
+  const businessTypeFilter = document.getElementById('businessTypeFilter');
+  const channelTypeFilter = document.getElementById('channelTypeFilter');
+  const formModeTitle = document.getElementById('formModeTitle');
+  const formModeHint = document.getElementById('formModeHint');
+
+  const field = {
+    storeId: document.getElementById('fieldStoreId'),
+    storeName: document.getElementById('fieldStoreName'),
+    storeCode: document.getElementById('fieldStoreCode'),
+    businessType: document.getElementById('fieldBusinessType'),
+    operationType: document.getElementById('fieldOperationType'),
+    channelType: document.getElementById('fieldChannelType'),
+    deviceType: document.getElementById('fieldDeviceType'),
+    ownerName: document.getElementById('fieldOwnerName'),
+    address: document.getElementById('fieldAddress'),
+    phone: document.getElementById('fieldPhone'),
+    email: document.getElementById('fieldEmail'),
+    contractDate: document.getElementById('fieldContractDate'),
+    contractStartDate: document.getElementById('fieldContractStartDate'),
+    contractEndDate: document.getElementById('fieldContractEndDate'),
+    licenseType: document.getElementById('fieldLicenseType'),
+    maxUserCount: document.getElementById('fieldMaxUserCount'),
+    maxTerminalCount: document.getElementById('fieldMaxTerminalCount'),
+    status: document.getElementById('fieldStatus'),
+    remark: document.getElementById('fieldRemark'),
+    selectedId: document.getElementById('selectedStoreId'),
+  };
+
+  const btnNew = document.getElementById('btnNew');
+  const btnSave = document.getElementById('btnSave');
+  const btnDelete = document.getElementById('btnDelete');
+  const btnPrint = document.getElementById('btnPrint');
+  const btnExport = document.getElementById('btnExport');
+
+  function buildQuery() {
+    const params = new URLSearchParams();
+    if (searchInput.value.trim()) params.set('q', searchInput.value.trim());
+    if (statusFilter.value) params.set('status', statusFilter.value);
+    if (businessTypeFilter.value) params.set('business_type', businessTypeFilter.value);
+    if (channelTypeFilter.value) params.set('channel_type', channelTypeFilter.value);
+    return params.toString();
+  }
+
+  function updateFormModeTitle() {
+    const mode = selectedStoreId ? 'Edit' : 'Create';
+    formModeTitle.textContent = `${mode} Store`;
+    formModeHint.textContent = 'Store functionality is defined by operation/channel/device attributes.';
+  }
+
+  function toIsoDateOrNull(dateValue) {
+    if (!dateValue) return null;
+    return `${dateValue}T00:00:00`;
+  }
+
+  async function loadStores() {
+    const query = buildQuery();
+    const res = await fetch(`${apiBase}/stores?${query}`, { headers: { Accept: 'application/json' } });
+    const stores = await res.json();
+    renderStoreList(stores);
+  }
+
+  function renderStoreList(stores) {
+    storeListBody.innerHTML = '';
+    if (!stores || stores.length === 0) {
+      storeListBody.innerHTML = '<tr><td class="text-center text-muted py-4" colspan="4">No stores found.</td></tr>';
+      return;
+    }
+
+    stores.forEach(store => {
+      const tr = document.createElement('tr');
+      tr.dataset.storeId = store.store_id;
+      tr.classList.add('cursor-pointer');
+
+      tr.innerHTML = `
+        <td>
+          <div class="fw-semibold">${store.store_code || '-'}</div>
+        </td>
+        <td>
+          <div class="fw-semibold">${store.store_name || '(No name)'}</div>
+        </td>
+        <td>${store.business_type || ''}</td>
+        <td>
+          ${store.status === 'active' ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}
+        </td>
+      `;
+
+      tr.addEventListener('click', () => {
+        selectStoreRow(store.store_id, tr);
+      });
+
+      storeListBody.appendChild(tr);
+    });
+  }
+
+  function highlightSelectedRow(row) {
+    document.querySelectorAll('#storeListBody tr').forEach(r => r.classList.remove('table-primary'));
+    if (row) row.classList.add('table-primary');
+  }
+
+  async function loadStoreDetail(storeId) {
+    if (!storeId) return;
+    const res = await fetch(`${apiBase}/store/${storeId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    populateForm(data);
+  }
+
+  function populateForm(data) {
+    selectedStoreId = data.store_id;
+    field.storeId.value = data.store_id ?? '';
+    field.selectedId.value = data.store_id;
+    field.storeName.value = data.store_name || '';
+    field.storeCode.value = data.store_code || '';
+    field.businessType.value = data.business_type || '';
+    field.operationType.value = data.operation_type || data.store_purpose || '';
+    field.channelType.value = data.channel_type || '';
+    field.deviceType.value = data.device_type || '';
+    field.ownerName.value = data.owner_name || '';
+    field.address.value = data.address || '';
+    field.phone.value = data.phone || '';
+    field.email.value = data.email || '';
+    field.contractDate.value = data.contract_date ? data.contract_date.slice(0, 10) : '';
+    field.contractStartDate.value = data.contract_start_date ? data.contract_start_date.slice(0, 10) : '';
+    field.contractEndDate.value = data.contract_end_date ? data.contract_end_date.slice(0, 10) : '';
+    field.licenseType.value = data.license_type || '';
+    field.maxUserCount.value = data.max_user_count ?? '';
+    field.maxTerminalCount.value = data.max_terminal_count ?? '';
+    field.status.value = data.store_status || 'active';
+    field.remark.value = data.remark || '';
+    updateFormModeTitle();
+    updateEnterWorkspaceButton();
+  }
+
+  function clearForm() {
+    selectedStoreId = null;
+    field.storeId.value = '';
+    field.selectedId.value = '';
+    field.storeName.value = '';
+    field.storeCode.value = '';
+    field.businessType.value = '';
+    field.operationType.value = '';
+    field.channelType.value = '';
+    field.deviceType.value = '';
+    field.ownerName.value = '';
+    field.address.value = '';
+    field.phone.value = '';
+    field.email.value = '';
+    field.contractDate.value = '';
+    field.contractStartDate.value = '';
+    field.contractEndDate.value = '';
+    field.licenseType.value = '';
+    field.maxUserCount.value = '';
+    field.maxTerminalCount.value = '';
+    field.status.value = 'active';
+    field.remark.value = '';
+    highlightSelectedRow(null);
+    updateFormModeTitle();
+    updateEnterWorkspaceButton();
+  }
+
+  function collectFormData() {
+    const payload = {
+      store_name: field.storeName.value.trim(),
+      store_status: field.status.value,
+      remark: field.remark.value.trim(),
+      business_type: field.businessType.value.trim(),
+      operation_type: field.operationType.value.trim(),
+      channel_type: field.channelType.value.trim(),
+      device_type: field.deviceType.value.trim(),
+      owner_name: field.ownerName.value.trim(),
+      address: field.address.value.trim(),
+      phone: field.phone.value.trim(),
+      email: field.email.value.trim(),
+      contract_date: toIsoDateOrNull(field.contractDate.value),
+      contract_start_date: toIsoDateOrNull(field.contractStartDate.value),
+      contract_end_date: toIsoDateOrNull(field.contractEndDate.value),
+      license_type: field.licenseType.value.trim(),
+      max_user_count: field.maxUserCount.value ? Number(field.maxUserCount.value) : null,
+      max_terminal_count: field.maxTerminalCount.value ? Number(field.maxTerminalCount.value) : null,
+    };
+
+    return payload;
+  }
+
+  async function saveStore() {
+    const payload = collectFormData();
+    if (!payload.store_name) {
+      alert('Store name is required.');
+      return;
+    }
+
+    const method = selectedStoreId ? 'PUT' : 'POST';
+    const url = selectedStoreId ? `${apiBase}/store/${selectedStoreId}` : `${apiBase}/store`;
+
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      alert('Save failed: ' + text);
+      return;
+    }
+
+    const json = await res.json().catch(() => ({}));
+    if (!selectedStoreId && json.store_id) {
+      selectedStoreId = json.store_id;
+    }
+
+    await loadStores();
+    if (selectedStoreId) {
+      await loadStoreDetail(selectedStoreId);
+    }
+    alert('Saved successfully');
+  }
+
+  async function deleteStore() {
+    if (!selectedStoreId) {
+      alert('Select a store first');
+      return;
+    }
+
+    if (!confirm('Delete this store (soft delete)?')) return;
+
+    const res = await fetch(`${apiBase}/store/${selectedStoreId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const text = await res.text();
+      alert('Delete failed: ' + text);
+      return;
+    }
+
+    clearForm();
+    await loadStores();
+  }
+
+  async function exportStores() {
+    const query = buildQuery();
+    const url = `${apiBase}/store/export?${query}`;
+    window.location.href = url;
+  }
+
+  function selectStoreRow(storeId, rowElement) {
+    highlightSelectedRow(rowElement);
+    selectedStoreId = storeId;
+    loadStoreDetail(storeId);
+  }
+
+  btnNew.addEventListener('click', () => {
+    clearForm();
+    field.storeName.focus();
+  });
+
+  btnSave.addEventListener('click', saveStore);
+  btnDelete.addEventListener('click', deleteStore);
+  btnPrint.addEventListener('click', () => window.print());
+  btnExport.addEventListener('click', exportStores);
+
+  searchInput.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') loadStores();
+  });
+
+  statusFilter.addEventListener('change', loadStores);
+  businessTypeFilter.addEventListener('change', loadStores);
+  channelTypeFilter.addEventListener('change', loadStores);
+
+  // Enter store workspace
+  const btnEnterWorkspace = document.getElementById('btnEnterWorkspace');
+  function updateEnterWorkspaceButton() {
+    if (selectedStoreId) {
+      btnEnterWorkspace.disabled = false;
+      btnEnterWorkspace.title = `Enter workspace for store ${selectedStoreId}`;
+    } else {
+      btnEnterWorkspace.disabled = true;
+      btnEnterWorkspace.title = 'Select a store to enter its workspace';
+    }
+  }
+
+  btnEnterWorkspace.addEventListener('click', () => {
+    if (!selectedStoreId) return;
+    window.location.href = `/store/${selectedStoreId}/workspace`;
+  });
+
+  // Initial load
+  clearForm();
+  updateFormModeTitle();
+  loadStores();
+  updateEnterWorkspaceButton();
+</script>
+
+<style>
+  .cursor-pointer { cursor: pointer; }
+  .table-premium thead th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #334155;
+    border-bottom: 1px solid #cbd5e1;
+    z-index: 1;
+  }
+  .table-premium tbody td {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    border-bottom-color: #e2e8f0;
+  }
+  .table-premium tbody tr:hover {
+    background: #f8fafc;
+  }
+</style>
+
+{% endblock %}

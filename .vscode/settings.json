@@ -1,0 +1,20 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^python -c \"from backend\\.config\\.templates import templates; print\\(templates\\.env\\.loader\\.searchpath\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -m py_compile backend/routers/platform_store\\.py backend/models_admin/store\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Get-CimInstance Win32_Process -Filter \"ProcessId = 7528 OR ProcessId = 32364 OR ProcessId = 19112\" \\| Select-Object ProcessId,Name,CommandLine \\| Format-List$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^tasklist /FI \"PID eq 7528\"; tasklist /FI \"PID eq 30484\"; tasklist /FI \"PID eq 30008\"; tasklist /FI \"PID eq 19112\"; tasklist /FI \"PID eq 24772\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

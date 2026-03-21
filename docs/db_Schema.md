@@ -10,6 +10,12 @@
 모든 참조(FK)는 숫자 ID(PK) 로만 연결 → c_name 은 변경 가능, ID는 불변
 Seed 데이터는 영문 코드 저장 + Python 코드에 한글 주석
 
+1.1 용어 원칙 (B2B/B2C 구분)
+
+Account: 상위 B2B 테넌트(회사/가맹/파트너) 단위
+Customer: 최종 소비자(End Consumer) 문맥에서만 사용
+UI/문서/코드에서 상위 회사 의미의 Customer 표기는 사용하지 않음
+
 2. 주요 테이블
 2.1 tb_store_type (업체 구분)
 HeadOffice (# 본사)
