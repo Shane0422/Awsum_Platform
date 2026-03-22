@@ -158,6 +158,46 @@
     padding: 0.45rem 0.5rem;
   }
 
+  body.page-master #masterRoleView #masterListTable thead th.sortable-col,
+  body.page-master #masterRoleView .store-device-table thead th.sortable-col {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  body.page-master #masterRoleView #masterListTable thead th.sortable-col:hover,
+  body.page-master #masterRoleView .store-device-table thead th.sortable-col:hover {
+    background: #f1f6ff;
+    color: #1e3a8a;
+  }
+
+  body.page-master #masterRoleView #masterListTable thead th.sortable-col:focus-visible,
+  body.page-master #masterRoleView .store-device-table thead th.sortable-col:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+    background: #f1f6ff;
+    color: #1e3a8a;
+  }
+
+  body.page-master #masterRoleView #masterListTable thead th.sortable-col.is-sorted,
+  body.page-master #masterRoleView .store-device-table thead th.sortable-col.is-sorted {
+    background: #eaf2ff;
+    color: #1e3a8a;
+    font-weight: 700;
+  }
+
+  body.page-master #masterRoleView .sort-indicator {
+    display: inline-block;
+    min-width: 0.8rem;
+    margin-left: 0.3rem;
+    font-size: 0.7rem;
+    color: #475569;
+  }
+
+  body.page-master #masterRoleView th.sortable-col.is-sorted .sort-indicator {
+    color: #1d4ed8;
+  }
+
   body.page-master #masterRoleView #masterListTable th.role-col-id,
   body.page-master #masterRoleView #masterListTable td.role-col-id {
     width: 70px;
@@ -352,7 +392,9 @@
     color: #4b5563;
   }
 
-  body.page-master #masterRoleView .module-status-badge {
+  body.page-master #masterRoleView .module-status-badge,
+  body.page-master #masterEditModal .module-status-badge,
+  body.page-master #clientStoreModal .module-status-badge {
     display: inline-block;
     min-width: 74px;
     padding: 0.16rem 0.5rem;
@@ -363,18 +405,26 @@
     letter-spacing: 0.01em;
   }
 
-  body.page-master #masterRoleView .module-status-badge.active {
+  body.page-master #masterRoleView .module-status-badge.active,
+  body.page-master #masterEditModal .module-status-badge.active,
+  body.page-master #clientStoreModal .module-status-badge.active {
     background: #dcfce7;
     color: #166534;
   }
 
   body.page-master #masterRoleView .module-status-badge.inactive,
-  body.page-master #masterRoleView .module-status-badge.terminated {
+  body.page-master #masterRoleView .module-status-badge.terminated,
+  body.page-master #masterEditModal .module-status-badge.inactive,
+  body.page-master #masterEditModal .module-status-badge.terminated,
+  body.page-master #clientStoreModal .module-status-badge.inactive,
+  body.page-master #clientStoreModal .module-status-badge.terminated {
     background: #e5e7eb;
     color: #4b5563;
   }
 
-  body.page-master #masterRoleView .module-status-badge.pending {
+  body.page-master #masterRoleView .module-status-badge.pending,
+  body.page-master #masterEditModal .module-status-badge.pending,
+  body.page-master #clientStoreModal .module-status-badge.pending {
     background: #eaf2ff;
     color: #315f9e;
   }
@@ -647,7 +697,9 @@
     letter-spacing: 0.01em;
   }
 
-  body.page-master #masterRoleView .client-detail-tabs {
+  body.page-master #masterRoleView .client-detail-tabs,
+  body.page-master #masterEditModal .client-detail-tabs,
+  body.page-master #clientStoreModal .client-detail-tabs {
     display: flex;
     gap: 0.52rem;
     padding-bottom: 0.22rem;
@@ -655,7 +707,9 @@
     margin-bottom: 0.44rem;
   }
 
-  body.page-master #masterRoleView .client-tab-btn {
+  body.page-master #masterRoleView .client-tab-btn,
+  body.page-master #masterEditModal .client-tab-btn,
+  body.page-master #clientStoreModal .client-tab-btn {
     border: 0;
     border-bottom: 2px solid transparent;
     background: transparent;
@@ -668,21 +722,33 @@
     border-radius: 0;
     line-height: 1.2;
     transition: color 120ms ease, border-color 120ms ease;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 0.22rem;
   }
 
-  body.page-master #masterRoleView .client-tab-btn:hover {
+  body.page-master #masterRoleView .client-tab-btn:hover,
+  body.page-master #masterEditModal .client-tab-btn:hover,
+  body.page-master #clientStoreModal .client-tab-btn:hover {
     color: #2a3442;
     border-bottom-color: #b8c9e8;
+    text-decoration-color: #b8c9e8;
   }
 
-  body.page-master #masterRoleView .client-tab-btn.active {
+  body.page-master #masterRoleView .client-tab-btn.active,
+  body.page-master #masterEditModal .client-tab-btn.active,
+  body.page-master #clientStoreModal .client-tab-btn.active {
     color: #0f172a;
     border-bottom-color: #2f6fe4;
     background: transparent;
     font-weight: 640;
+    text-decoration-color: #2f6fe4;
   }
 
-  body.page-master #masterRoleView .client-tab-panel {
+  body.page-master #masterRoleView .client-tab-panel,
+  body.page-master #masterEditModal .client-tab-panel,
+  body.page-master #clientStoreModal .client-tab-panel {
     display: none;
     border: 1px solid #f0f3f8;
     border-radius: 8px;
@@ -690,18 +756,24 @@
     padding: 0.54rem 0.58rem 0.6rem;
   }
 
-  body.page-master #masterRoleView .client-tab-panel.active {
+  body.page-master #masterRoleView .client-tab-panel.active,
+  body.page-master #masterEditModal .client-tab-panel.active,
+  body.page-master #clientStoreModal .client-tab-panel.active {
     display: block;
   }
 
-  body.page-master #masterRoleView .client-tab-summary {
+  body.page-master #masterRoleView .client-tab-summary,
+  body.page-master #masterEditModal .client-tab-summary,
+  body.page-master #clientStoreModal .client-tab-summary {
     margin-bottom: 0.48rem;
     font-size: 0.73rem;
     color: #8b97aa;
     letter-spacing: 0.01em;
   }
 
-  body.page-master #masterRoleView .client-store-panel {
+  body.page-master #masterRoleView .client-store-panel,
+  body.page-master #masterEditModal .client-store-panel,
+  body.page-master #clientStoreModal .client-store-panel {
     border: 1px solid #edf2f8;
     border-radius: 8px;
     background: #fbfdff;
@@ -709,14 +781,18 @@
     height: 100%;
   }
 
-  body.page-master #masterRoleView .client-store-panel-head {
+  body.page-master #masterRoleView .client-store-panel-head,
+  body.page-master #masterEditModal .client-store-panel-head,
+  body.page-master #clientStoreModal .client-store-panel-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.46rem;
   }
 
-  body.page-master #masterRoleView .client-store-title {
+  body.page-master #masterRoleView .client-store-title,
+  body.page-master #masterEditModal .client-store-title,
+  body.page-master #clientStoreModal .client-store-title {
     margin: 0;
     font-size: 0.8rem;
     font-weight: 620;
@@ -724,7 +800,9 @@
     letter-spacing: 0.01em;
   }
 
-  body.page-master #masterRoleView .client-store-list {
+  body.page-master #masterRoleView .client-store-list,
+  body.page-master #masterEditModal .client-store-list,
+  body.page-master #clientStoreModal .client-store-list {
     border: 1px solid #edf2f8;
     border-radius: 8px;
     background: #fff;
@@ -733,7 +811,9 @@
     margin-bottom: 0.52rem;
   }
 
-  body.page-master #masterRoleView .client-store-row {
+  body.page-master #masterRoleView .client-store-row,
+  body.page-master #masterEditModal .client-store-row,
+  body.page-master #clientStoreModal .client-store-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -743,33 +823,45 @@
     cursor: pointer;
   }
 
-  body.page-master #masterRoleView .client-store-row:last-child {
+  body.page-master #masterRoleView .client-store-row:last-child,
+  body.page-master #masterEditModal .client-store-row:last-child,
+  body.page-master #clientStoreModal .client-store-row:last-child {
     border-bottom: 0;
   }
 
-  body.page-master #masterRoleView .client-store-row:hover {
+  body.page-master #masterRoleView .client-store-row:hover,
+  body.page-master #masterEditModal .client-store-row:hover,
+  body.page-master #clientStoreModal .client-store-row:hover {
     background: #f5f8fd;
   }
 
-  body.page-master #masterRoleView .client-store-row.active {
+  body.page-master #masterRoleView .client-store-row.active,
+  body.page-master #masterEditModal .client-store-row.active,
+  body.page-master #clientStoreModal .client-store-row.active {
     background: #edf3fb;
     box-shadow: inset 2px 0 0 #9db5d7;
   }
 
-  body.page-master #masterRoleView .client-store-code {
+  body.page-master #masterRoleView .client-store-code,
+  body.page-master #masterEditModal .client-store-code,
+  body.page-master #clientStoreModal .client-store-code {
     font-size: 0.7rem;
     color: #8a96a9;
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
 
-  body.page-master #masterRoleView .client-store-name {
+  body.page-master #masterRoleView .client-store-name,
+  body.page-master #masterEditModal .client-store-name,
+  body.page-master #clientStoreModal .client-store-name {
     font-size: 0.8rem;
     color: #172033;
     font-weight: 560;
   }
 
-  body.page-master #masterRoleView .client-store-form .form-label {
+  body.page-master #masterRoleView .client-store-form .form-label,
+  body.page-master #masterEditModal .client-store-form .form-label,
+  body.page-master #clientStoreModal .client-store-form .form-label {
     font-size: 0.7rem;
   }
 
@@ -1128,12 +1220,32 @@
   body.page-master #masterRoleView .brand-logo-preview {
     width: 84px;
     height: 84px;
+    min-width: 84px;
+    min-height: 84px;
+    max-width: 84px;
+    max-height: 84px;
     object-fit: contain;
     border: 1px solid #d6dfec;
     border-radius: 10px;
     background: #fff;
     padding: 6px;
     transition: opacity 160ms ease;
+  }
+
+  body.page-master #masterEditModal .brand-logo-preview,
+  body.page-master #clientStoreModal .brand-logo-preview {
+    width: 84px !important;
+    height: 84px !important;
+    min-width: 84px !important;
+    min-height: 84px !important;
+    max-width: 84px !important;
+    max-height: 84px !important;
+    object-fit: contain;
+    border: 1px solid #d6dfec;
+    border-radius: 10px;
+    background: #fff;
+    padding: 6px;
+    flex: 0 0 84px;
   }
 
   body.page-master #masterRoleView .logo-fade-out {
@@ -1163,12 +1275,924 @@
     max-width: 320px;
   }
 
+  body.page-master #masterRoleView .store-device-table {
+    margin-bottom: 0;
+    font-size: 0.79rem;
+  }
+
+  body.page-master #masterRoleView .store-device-form-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fbfdff;
+    padding: 0.9rem;
+    margin-bottom: 0.95rem;
+  }
+
+  body.page-master #masterRoleView .store-device-list-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-card,
+  body.page-master #masterRoleView .store-device-log-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.95rem;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+    gap: 0.95rem;
+    margin-top: 0.95rem;
+  }
+
+  body.page-master #masterRoleView .store-device-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
+  }
+
+  body.page-master #masterRoleView .store-device-section-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #masterRoleView .store-device-section-subtitle {
+    margin-top: 0.12rem;
+    font-size: 0.73rem;
+    color: #64748b;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-body {
+    min-height: 236px;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-empty,
+  body.page-master #masterRoleView .store-device-log-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+    color: #64748b;
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-code {
+    margin-top: 0.16rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #64748b;
+  }
+
+  body.page-master #masterRoleView .store-device-badge-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.7rem 0.75rem;
+    background: #f8fafc;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-item.full {
+    grid-column: 1 / -1;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-label {
+    font-size: 0.69rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  body.page-master #masterRoleView .store-device-detail-value {
+    margin-top: 0.28rem;
+    font-size: 0.83rem;
+    color: #0f172a;
+    word-break: break-word;
+  }
+
+  body.page-master #masterRoleView .store-device-log-scroll {
+    max-height: 430px;
+    overflow: auto;
+  }
+
+  body.page-master #masterRoleView .store-device-log-table {
+    margin-bottom: 0;
+    font-size: 0.77rem;
+  }
+
+  body.page-master #masterRoleView .store-device-log-table th {
+    font-size: 0.71rem;
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  body.page-master #masterRoleView .store-device-log-table td {
+    vertical-align: top;
+  }
+
+  body.page-master #masterRoleView .device-event-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    padding: 0.18rem 0.52rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 0.71rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  body.page-master #masterRoleView .device-event-badge.activated,
+  body.page-master #masterRoleView .device-event-badge.login {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #masterRoleView .device-event-badge.offline,
+  body.page-master #masterRoleView .device-event-badge.reset {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #masterRoleView .device-event-badge.created,
+  body.page-master #masterRoleView .device-event-badge.updated {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  body.page-master #masterRoleView .store-device-list-scroll {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  body.page-master #masterRoleView .store-device-list,
+  body.page-master #clientStoreModal .store-device-list {
+    border: 1px solid #edf2f8;
+    border-radius: 8px;
+    background: #fff;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  body.page-master #masterRoleView .store-device-row,
+  body.page-master #clientStoreModal .store-device-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.48rem 0.56rem;
+    border-bottom: 1px solid #f1f4f9;
+    cursor: pointer;
+  }
+
+  body.page-master #masterRoleView .store-device-row:last-child,
+  body.page-master #clientStoreModal .store-device-row:last-child {
+    border-bottom: 0;
+  }
+
+  body.page-master #masterRoleView .store-device-row:hover,
+  body.page-master #clientStoreModal .store-device-row:hover {
+    background: #f5f8fd;
+  }
+
+  body.page-master #masterRoleView .store-device-row.active,
+  body.page-master #clientStoreModal .store-device-row.active {
+    background: #edf3fb;
+    box-shadow: inset 2px 0 0 #9db5d7;
+  }
+
+  body.page-master #masterRoleView .store-device-main,
+  body.page-master #clientStoreModal .store-device-main {
+    min-width: 0;
+  }
+
+  body.page-master #masterRoleView .store-device-code,
+  body.page-master #clientStoreModal .store-device-code {
+    font-size: 0.7rem;
+    color: #8a96a9;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  body.page-master #masterRoleView .store-device-name,
+  body.page-master #clientStoreModal .store-device-name {
+    font-size: 0.82rem;
+    color: #172033;
+    font-weight: 580;
+    line-height: 1.24;
+    word-break: break-word;
+  }
+
+  body.page-master #masterRoleView .store-device-sub,
+  body.page-master #clientStoreModal .store-device-sub {
+    margin-top: 0.12rem;
+    font-size: 0.72rem;
+    color: #6b7280;
+    line-height: 1.2;
+  }
+
+  body.page-master #masterRoleView .store-device-actions,
+  body.page-master #clientStoreModal .store-device-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+
+  body.page-master #masterRoleView .store-device-edit-btn,
+  body.page-master #clientStoreModal .store-device-edit-btn {
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d5deea;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #475569;
+    padding: 0;
+    transition: all 120ms ease;
+  }
+
+  body.page-master #masterRoleView .store-device-edit-btn:hover,
+  body.page-master #clientStoreModal .store-device-edit-btn:hover {
+    border-color: #9fb6d8;
+    background: #eff4fb;
+    color: #1f2937;
+  }
+
+  body.page-master #masterRoleView .store-device-edit-btn svg,
+  body.page-master #clientStoreModal .store-device-edit-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  body.page-master #masterRoleView .store-device-info-tabs,
+  body.page-master #clientStoreModal .store-device-info-tabs {
+    display: flex;
+    gap: 0.52rem;
+    padding: 0 0 0.22rem;
+    border-bottom: 1px solid #eaedf3;
+    margin: 0.82rem 0 0.62rem;
+    flex-wrap: wrap;
+  }
+
+  body.page-master #masterRoleView .store-device-info-tab,
+  body.page-master #clientStoreModal .store-device-info-tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: #6f7b8d;
+    font-size: 0.77rem;
+    font-weight: 550;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.12rem 0.36rem;
+    border-radius: 0;
+    line-height: 1.2;
+    transition: color 120ms ease, border-color 120ms ease;
+    cursor: pointer;
+  }
+
+  body.page-master #masterRoleView .store-device-info-tab:hover,
+  body.page-master #clientStoreModal .store-device-info-tab:hover {
+    color: #2a3442;
+    border-bottom-color: #b8c9e8;
+  }
+
+  body.page-master #masterRoleView .store-device-info-tab.active,
+  body.page-master #clientStoreModal .store-device-info-tab.active {
+    color: #0f172a;
+    border-bottom-color: #2f6fe4;
+    font-weight: 640;
+  }
+
+  body.page-master #masterRoleView .store-device-info-panel,
+  body.page-master #clientStoreModal .store-device-info-panel {
+    display: none;
+  }
+
+  body.page-master #masterRoleView .store-device-info-panel.active,
+  body.page-master #clientStoreModal .store-device-info-panel.active {
+    display: block;
+  }
+
+  body.page-master #masterRoleView .store-device-table th {
+    font-size: 0.73rem;
+    font-weight: 650;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  body.page-master #masterRoleView .store-device-table td {
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  body.page-master #masterRoleView .store-device-table tbody tr {
+    cursor: pointer;
+  }
+
+  body.page-master #masterRoleView .store-device-table tbody tr.active {
+    background: #eef4ff;
+  }
+
+  body.page-master #masterRoleView .device-license-badge,
+  body.page-master #masterRoleView .device-state-badge {
+    display: inline-block;
+    min-width: 92px;
+    padding: 0.16rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #masterRoleView .device-license-badge.active,
+  body.page-master #masterRoleView .device-state-badge.active,
+  body.page-master #masterRoleView .device-state-badge.activated {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #masterRoleView .device-license-badge.expired,
+  body.page-master #masterRoleView .device-license-badge.suspended,
+  body.page-master #masterRoleView .device-state-badge.inactive {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  body.page-master #masterRoleView .device-license-badge.trial,
+  body.page-master #masterRoleView .device-state-badge.offline {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #masterRoleView .device-license-badge.unassigned {
+    background: #e5e7eb;
+    color: #4b5563;
+  }
+
+  body.page-master #clientStoreModal .store-device-form-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fbfdff;
+    padding: 0.9rem;
+    margin-bottom: 0.95rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-list-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-card,
+  body.page-master #clientStoreModal .store-device-log-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.95rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-section-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #clientStoreModal .store-device-section-subtitle {
+    margin-top: 0.12rem;
+    font-size: 0.73rem;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-body {
+    min-height: 236px;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-empty,
+  body.page-master #clientStoreModal .store-device-log-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+    color: #64748b;
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-code {
+    margin-top: 0.16rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreModal .store-device-badge-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.7rem 0.75rem;
+    background: #f8fafc;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-item.full {
+    grid-column: 1 / -1;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-label {
+    font-size: 0.69rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreModal .store-device-detail-value {
+    margin-top: 0.28rem;
+    font-size: 0.83rem;
+    color: #0f172a;
+    word-break: break-word;
+  }
+
+  body.page-master #clientStoreModal .store-device-log-scroll {
+    max-height: 430px;
+    overflow: auto;
+  }
+
+  body.page-master #clientStoreModal .store-device-log-table {
+    margin-bottom: 0;
+    font-size: 0.77rem;
+  }
+
+  body.page-master #clientStoreModal .store-device-log-table th {
+    font-size: 0.71rem;
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  body.page-master #clientStoreModal .store-device-log-table td {
+    vertical-align: top;
+  }
+
+  body.page-master #clientStoreModal .device-event-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    padding: 0.18rem 0.52rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 0.71rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  body.page-master #clientStoreModal .device-event-badge.activated,
+  body.page-master #clientStoreModal .device-event-badge.login {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #clientStoreModal .device-event-badge.offline,
+  body.page-master #clientStoreModal .device-event-badge.reset {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #clientStoreModal .device-event-badge.created,
+  body.page-master #clientStoreModal .device-event-badge.updated {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  body.page-master #clientStoreModal .store-device-list-scroll {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  body.page-master #clientStoreModal .device-license-badge,
+  body.page-master #clientStoreModal .device-state-badge {
+    display: inline-block;
+    min-width: 92px;
+    padding: 0.16rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #clientStoreModal .device-license-badge.active,
+  body.page-master #clientStoreModal .device-state-badge.active,
+  body.page-master #clientStoreModal .device-state-badge.activated {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #clientStoreModal .device-license-badge.expired,
+  body.page-master #clientStoreModal .device-license-badge.suspended,
+  body.page-master #clientStoreModal .device-state-badge.inactive {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  body.page-master #clientStoreModal .device-license-badge.trial,
+  body.page-master #clientStoreModal .device-state-badge.offline {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #clientStoreModal .device-license-badge.unassigned {
+    background: #e5e7eb;
+    color: #4b5563;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-form-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fbfdff;
+    padding: 0.9rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-card,
+  body.page-master #clientStoreDeviceModal .store-device-log-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.95rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-section-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-section-subtitle {
+    margin-top: 0.12rem;
+    font-size: 0.73rem;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-body {
+    min-height: 236px;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-empty,
+  body.page-master #clientStoreDeviceModal .store-device-log-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+    color: #64748b;
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-code {
+    margin-top: 0.16rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-badge-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.7rem 0.75rem;
+    background: #f8fafc;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-item.full {
+    grid-column: 1 / -1;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-label {
+    font-size: 0.69rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-detail-value {
+    margin-top: 0.28rem;
+    font-size: 0.83rem;
+    color: #0f172a;
+    word-break: break-word;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-log-scroll {
+    max-height: 430px;
+    overflow: auto;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-log-table {
+    margin-bottom: 0;
+    font-size: 0.77rem;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-log-table th {
+    font-size: 0.71rem;
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-log-table td {
+    vertical-align: top;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-event-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    padding: 0.18rem 0.52rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 0.71rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-event-badge.activated,
+  body.page-master #clientStoreDeviceModal .device-event-badge.login {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-event-badge.offline,
+  body.page-master #clientStoreDeviceModal .device-event-badge.reset {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-event-badge.created,
+  body.page-master #clientStoreDeviceModal .device-event-badge.updated {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-tabs {
+    display: flex;
+    gap: 0.52rem;
+    padding: 0 0 0.22rem;
+    border-bottom: 1px solid #eaedf3;
+    margin: 0.82rem 0 0.62rem;
+    flex-wrap: wrap;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: #6f7b8d;
+    font-size: 0.77rem;
+    font-weight: 550;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.12rem 0.36rem;
+    border-radius: 0;
+    line-height: 1.2;
+    transition: color 120ms ease, border-color 120ms ease;
+    cursor: pointer;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-tab:hover {
+    color: #2a3442;
+    border-bottom-color: #b8c9e8;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-tab.active {
+    color: #0f172a;
+    border-bottom-color: #2f6fe4;
+    font-weight: 640;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-panel {
+    display: none;
+  }
+
+  body.page-master #clientStoreDeviceModal .store-device-info-panel.active {
+    display: block;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-license-badge,
+  body.page-master #clientStoreDeviceModal .device-state-badge {
+    display: inline-block;
+    min-width: 92px;
+    padding: 0.16rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-license-badge.active,
+  body.page-master #clientStoreDeviceModal .device-state-badge.active,
+  body.page-master #clientStoreDeviceModal .device-state-badge.activated {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-license-badge.expired,
+  body.page-master #clientStoreDeviceModal .device-license-badge.suspended,
+  body.page-master #clientStoreDeviceModal .device-state-badge.inactive {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-license-badge.trial,
+  body.page-master #clientStoreDeviceModal .device-state-badge.offline {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  body.page-master #clientStoreDeviceModal .device-license-badge.unassigned {
+    background: #e5e7eb;
+    color: #4b5563;
+  }
+
   body.page-master #masterRoleView .role-action-group {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.28rem;
     justify-content: flex-end;
+  }
+
+  body.page-master #masterRoleView .master-list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.42rem;
+    margin-bottom: 0.6rem;
+  }
+
+  body.page-master #masterRoleView .master-list-toolbar-left,
+  body.page-master #masterRoleView .master-list-toolbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.34rem;
+  }
+
+  body.page-master #masterRoleView .master-list-filter {
+    min-width: 128px;
+    height: 31px;
+    font-size: 0.8rem;
+    border-radius: 7px;
+  }
+
+  body.page-master #masterRoleView .master-form-section-title {
+    margin-top: 0.2rem;
+    padding-top: 0.55rem;
+    border-top: 1px dashed #d1d5db;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #334155;
+    letter-spacing: 0.01em;
   }
 
   body.page-master #masterRoleView .dropdown-menu {
@@ -1180,6 +2204,20 @@
       padding: 0.75rem;
     }
 
+    body.page-master #masterRoleView .store-device-detail-grid,
+    body.page-master #masterRoleView .store-device-detail-fields {
+      grid-template-columns: 1fr;
+    }
+
+    body.page-master #masterRoleView .store-device-detail-summary {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    body.page-master #masterRoleView .store-device-badge-group {
+      justify-content: flex-start;
+    }
+
     body.page-master #masterRoleView .role-panel-left,
     body.page-master #masterRoleView .role-panel-right {
       padding: 0.72rem !important;
@@ -1188,7 +2226,9 @@
 </style>
 
 <div id="masterRoleView" class="row g-3">
-  <div class="col-12 col-xl-3">
+  <div id="masterSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  <div id="deviceSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  <div id="masterListCol" class="col-12 col-xl-3">
     <div class="card-modern role-panel-left h-100">
       <div class="d-flex justify-content-between align-items-start mb-3">
         <h6 id="masterListTitle" class="role-section-title">{{ active_module | replace('-', ' ') | title }} List</h6>
@@ -1197,6 +2237,32 @@
 
       <div class="mb-3">
         <input id="masterSearch" class="form-control" type="search" placeholder="Search..." autocomplete="off">
+      </div>
+
+      <div id="masterListToolbar" class="master-list-toolbar d-none">
+        <div class="master-list-toolbar-left">
+          <select id="masterStatusFilter" class="form-select master-list-filter">
+            <option value="">All Status</option>
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+            <option value="terminated">terminated</option>
+          </select>
+        </div>
+        <div class="master-list-toolbar-right">
+          <button id="btnListAdd" class="btn btn-sm btn-primary role-action-btn">Add</button>
+          <button id="btnListEdit" class="btn btn-sm btn-outline-secondary role-action-btn" disabled>Edit</button>
+          <button id="btnListDelete" class="btn btn-sm btn-outline-danger role-action-btn" disabled>Delete</button>
+          <div class="btn-group">
+            <button id="btnListExport" type="button" class="btn btn-sm btn-outline-secondary role-action-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+              Export
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><button type="button" class="dropdown-item" data-export-format="excel">Export Excel</button></li>
+              <li><button type="button" class="dropdown-item" data-export-format="csv">Export CSV</button></li>
+              <li><button type="button" class="dropdown-item" data-export-format="pdf">Export PDF</button></li>
+            </ul>
+          </div>
+        </div>
       </div>
 
       <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
@@ -1212,7 +2278,7 @@
     </div>
   </div>
 
-  <div class="col-12 col-xl-9">
+  <div id="masterEditorCol" class="col-12 col-xl-9">
     <div class="card-modern role-panel-right">
       <div class="d-flex justify-content-between align-items-start mb-2">
         <div>
@@ -1271,6 +2337,27 @@
   </div>
 </div>
 
+<div class="modal fade" id="masterEditModal" tabindex="-1" aria-labelledby="masterEditModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="masterEditModalTitle">Edit Record</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="masterFormModal" class="row g-3"></div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <button type="button" id="btnModalCancel" class="btn btn-sm btn-outline-secondary role-action-btn" data-bs-dismiss="modal">Close</button>
+        <div class="d-flex gap-2">
+          <button type="button" id="btnModalSave" class="btn btn-sm btn-dark role-action-btn">Save</button>
+          <button type="button" id="btnModalDelete" class="btn btn-sm btn-outline-danger role-action-btn">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade client-store-modal" id="clientStoreModal" tabindex="-1" aria-labelledby="clientStoreModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
     <div class="modal-content">
@@ -1288,6 +2375,7 @@
           <button type="button" class="client-tab-btn" data-store-modal-tab="contact">Contact</button>
           <button type="button" class="client-tab-btn" data-store-modal-tab="address">Address</button>
           <button type="button" class="client-tab-btn" data-store-modal-tab="receipt">Receipt</button>
+          <button type="button" class="client-tab-btn" data-store-modal-tab="devices">Devices</button>
         </div>
         <div id="clientStoreForm" class="client-store-form">
           <input type="hidden" id="field_client_store_id" value="">
@@ -1369,6 +2457,19 @@
                 <label class="form-label">Contact Phone</label>
                 <input id="field_client_store_phone" type="text" class="form-control" placeholder="Phone">
               </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label">Installed By Agent</label>
+                <select id="field_client_store_installed_by_agent_id" class="form-select">
+                  <option value="">Select agent</option>
+                  {% for agent in agents %}
+                  <option value="{{ agent.i_agent_id }}">{{ agent.c_agent_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Memo</label>
+                <textarea id="field_client_store_memo" class="form-control" rows="3" placeholder="Memo"></textarea>
+              </div>
             </div>
           </div>
 
@@ -1437,6 +2538,22 @@
               </div>
             </div>
           </div>
+
+          <div class="client-tab-panel" data-store-modal-panel="devices">
+            <div id="clientStoreDevicesHint" class="text-muted small mb-3">Save Store first to manage devices.</div>
+
+            <div class="d-flex justify-content-end mb-2">
+              <button type="button" id="btnClientStoreDeviceAdd" class="btn btn-sm btn-outline-secondary role-action-btn">Add Device</button>
+            </div>
+
+            <div class="store-device-list-card">
+              <div class="store-device-list-scroll">
+                <div id="clientStoreDeviceList" class="store-device-list">
+                  <div class="text-muted px-2 py-2 small">No devices loaded.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer d-flex justify-content-between">
@@ -1444,6 +2561,107 @@
         <div class="d-flex gap-2">
           <button type="button" id="btnClientStoreSave" class="btn btn-sm btn-dark role-action-btn">Save Store</button>
           <button type="button" id="btnClientStoreDelete" class="btn btn-sm btn-outline-danger role-action-btn">Delete Store</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade client-store-device-modal" id="clientStoreDeviceModal" tabindex="-1" aria-labelledby="clientStoreDeviceModalTitle" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="clientStoreDeviceModalTitle">Device</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="store-device-form-card mb-3">
+          <input type="hidden" id="field_client_store_device_id" value="">
+          <div class="row g-2">
+            <div class="col-12 col-md-4">
+            <label class="form-label">Device Name</label>
+            <input id="field_client_store_device_name" type="text" class="form-control" placeholder="Device name">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Device Type</label>
+              <select id="field_client_store_device_type" class="form-select">
+                <option value="POS">POS</option>
+                <option value="Kiosk">Kiosk</option>
+                <option value="Tablet">Tablet</option>
+                <option value="Mobile">Mobile</option>
+                <option value="Server">Server</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Status</label>
+              <select id="field_client_store_device_status" class="form-select">
+                <option value="active">active</option>
+                <option value="activated">activated</option>
+                <option value="inactive">inactive</option>
+                <option value="offline">offline</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Note</label>
+              <textarea id="field_client_store_device_note" class="form-control" rows="2" placeholder="Device note"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="store-device-info-tabs" id="clientStoreDeviceInfoTabs">
+          <button type="button" class="store-device-info-tab active" data-device-info-tab="detail">Detail</button>
+          <button type="button" class="store-device-info-tab" data-device-info-tab="logs">Logs</button>
+        </div>
+
+        <div class="store-device-info-panel active" data-device-info-panel="detail">
+          <div class="store-device-detail-card">
+            <div class="store-device-section-head">
+              <div>
+                <div class="store-device-section-title">Device Detail</div>
+                <div class="store-device-section-subtitle">Current status, activation, and runtime state.</div>
+              </div>
+            </div>
+            <div id="clientStoreDeviceDetailBody" class="store-device-detail-body">
+              <div class="store-device-detail-empty">Select a device from the list to view detail.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="store-device-info-panel" data-device-info-panel="logs">
+          <div class="store-device-log-card">
+            <div class="store-device-section-head">
+              <div>
+                <div class="store-device-section-title">Device Logs</div>
+                <div class="store-device-section-subtitle">Lifecycle and runtime event history for the selected device.</div>
+              </div>
+            </div>
+            <div class="store-device-log-scroll">
+              <table class="table table-sm align-middle store-device-log-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Time</th>
+                    <th>Hardware</th>
+                    <th>IP</th>
+                    <th>Runtime</th>
+                    <th>Action By</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody id="clientStoreDeviceLogBody">
+                  <tr><td colspan="7" class="store-device-log-empty">Select a device from the list to view logs.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" data-bs-dismiss="modal">Close</button>
+        <div class="d-flex gap-2">
+          <button type="button" id="btnClientStoreDeviceSave" class="btn btn-sm btn-dark role-action-btn">Save Device</button>
+          <button type="button" id="btnClientStoreDeviceDelete" class="btn btn-sm btn-outline-danger role-action-btn">Delete Device</button>
         </div>
       </div>
     </div>
@@ -1480,6 +2698,12 @@
     "clients": [
       {% for client in clients %}{"value": "{{ client.i_account_id }}", "label": "{{ client.c_account_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
+    "agents": [
+      {% for agent in agents %}{"value": "{{ agent.i_agent_id }}", "label": "{{ agent.c_agent_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
+    ],
+    "agentTypes": [
+      {% for at in agent_types %}{"value": "{{ at.i_agent_type_id }}", "label": "{{ at.c_agent_type_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
+    ],
     "stores": [
       {% for s in stores %}{"value": "{{ s.i_store_id }}", "label": "{{ s.c_store_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ]
@@ -1494,8 +2718,13 @@
   const masterListBody = document.getElementById('masterListBody');
   const masterListTable = document.getElementById('masterListTable');
   const masterSearch = document.getElementById('masterSearch');
+  const masterStatusFilter = document.getElementById('masterStatusFilter');
   const masterForm = document.getElementById('masterForm');
+  const masterFormModal = document.getElementById('masterFormModal');
   const selectedMasterId = document.getElementById('selectedMasterId');
+  const masterListCol = document.getElementById('masterListCol');
+  const masterEditorCol = document.getElementById('masterEditorCol');
+  const masterListToolbar = document.getElementById('masterListToolbar');
   const masterListTitle = document.getElementById('masterListTitle');
   const masterEditorTitle = document.getElementById('masterEditorTitle');
   const masterEditorSubtitle = document.getElementById('masterEditorSubtitle');
@@ -1516,15 +2745,25 @@
   const moduleDetailName = document.getElementById('moduleDetailName');
   const moduleDetailStatus = document.getElementById('moduleDetailStatus');
   const moduleDetailHint = document.getElementById('moduleDetailHint');
+  const masterSortLive = document.getElementById('masterSortLive');
+  const deviceSortLive = document.getElementById('deviceSortLive');
 
   const btnNewRecord = document.getElementById('btnNewRecord');
   const btnSaveRecord = document.getElementById('btnSaveRecord');
   const btnCancelRecord = document.getElementById('btnCancelRecord');
   const btnDeleteRecord = document.getElementById('btnDeleteRecord');
+  const btnListAdd = document.getElementById('btnListAdd');
+  const btnListEdit = document.getElementById('btnListEdit');
+  const btnListDelete = document.getElementById('btnListDelete');
+  const btnModalSave = document.getElementById('btnModalSave');
+  const btnModalDelete = document.getElementById('btnModalDelete');
+  const masterEditModalElement = document.getElementById('masterEditModal');
+  const masterEditModalTitle = document.getElementById('masterEditModalTitle');
   const btnExportRecord = document.getElementById('btnExportRecord');
   const btnMasterRefresh = document.getElementById('btnMasterRefresh');
   const exportMenuItems = document.querySelectorAll('[data-export-format]');
   const clientStoreModalElement = document.getElementById('clientStoreModal');
+  const clientStoreDeviceModalElement = document.getElementById('clientStoreDeviceModal');
   const appConfirmModalElement = document.getElementById('appConfirmModal');
   const appConfirmModalTitle = document.getElementById('appConfirmModalTitle');
   const appConfirmModalMessage = document.getElementById('appConfirmModalMessage');
@@ -1534,11 +2773,14 @@
   const clientStoreModalTitle = document.getElementById('clientStoreModalTitle');
   const clientStoreModalHint = document.getElementById('clientStoreModalHint');
   const clientStoreModalClientMeta = document.getElementById('clientStoreModalClientMeta');
+  const clientStoreDeviceModalTitle = document.getElementById('clientStoreDeviceModalTitle');
 
   const masterSeedData = JSON.parse(document.getElementById('masterSeedData')?.textContent || '{}');
   const masterRoleOptions = masterSeedData.roles || [];
   const masterBusinessTypeOptions = masterSeedData.businessTypes || [];
   const masterClientOptions = masterSeedData.clients || [];
+  const masterAgentOptions = masterSeedData.agents || [];
+  const masterAgentTypeOptions = masterSeedData.agentTypes || [];
   const masterStoreOptions = masterSeedData.stores || [];
 
   const masterConfig = {
@@ -1550,10 +2792,6 @@
         { name: 'description', label: 'Description', type: 'text' },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
       ],
-      tabs: [
-        { id: 'overview', label: 'Overview', summary: 'Role identity and purpose.', fields: ['name', 'description'] },
-        { id: 'settings', label: 'Settings', summary: 'Lifecycle and activation controls.', fields: ['status'] },
-      ],
     },
     'business-type': {
       endpoint: 'business-type',
@@ -1563,17 +2801,24 @@
         { name: 'code', label: 'Code', type: 'text' },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
       ],
-      tabs: [
-        { id: 'overview', label: 'Overview', summary: 'Business classification identity.', fields: ['name', 'code'] },
-        { id: 'settings', label: 'Settings', summary: 'Lifecycle and activation controls.', fields: ['status'] },
+    },
+    'agent-type': {
+      endpoint: 'agent-type',
+      headers: ['ID', 'Type Code', 'Type Name', 'Status'],
+      fields: [
+        { name: 'agent_type_code', label: 'Agent Type Code', type: 'text' },
+        { name: 'agent_type_name', label: 'Agent Type Name', type: 'text' },
+        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
       ],
     },
     client: {
       endpoint: 'client',
-        headers: ['ID', 'code', 'Client Name', 'Status'],
+      headers: ['ID', 'code', 'Client Name', 'Primary Agent', 'Status'],
+      statusIndex: 4,
       fields: [
         { name: 'c_client_code', label: 'Client Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save (CLT_11001)' },
         { name: 'client_name', label: 'Client Name', type: 'text' },
+        { name: 'primary_agent_id', label: 'Primary Agent', type: 'select', options: [{ value: '', label: '' }, ...masterAgentOptions] },
         { name: 'business_type', label: 'Business Type', type: 'select', options: ['', ...masterBusinessTypeOptions] },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
         { name: 'channel_type', label: 'Channel', type: 'select', options: ['', 'Direct', 'Reseller', 'Partner', 'Online', 'Franchise', 'Internal'] },
@@ -1581,6 +2826,7 @@
         { name: 'last_name', label: 'Contact Last Name', type: 'text' },
         { name: 'email', label: 'Email', type: 'email' },
         { name: 'phone', label: 'Phone', type: 'text' },
+        { name: 'memo', label: 'Memo', type: 'textarea', rows: 4, colClass: 'col-12' },
         { name: 'address_line1', label: 'Address Line 1', type: 'text', colClass: 'col-12' },
         { name: 'address_line2', label: 'Address Line 2', type: 'text', colClass: 'col-12' },
         { name: 'zip', label: 'ZIP Code', type: 'text', placeholder: '12345 or 12345-6789', pattern: '^\\d{5}(-\\d{4})?$', title: 'Use US ZIP format: 12345 or 12345-6789', colClass: 'col-12 col-md-6 col-lg-3' },
@@ -1589,10 +2835,69 @@
         { name: 'country', label: 'Country', type: 'text', placeholder: 'USA', colClass: 'col-12 col-md-6 col-lg-3' },
       ],
       tabs: [
-        { id: 'overview', label: 'Overview', summary: 'Core identity, classification, and lifecycle status.', fields: ['c_client_code', 'client_name', 'business_type', 'status', 'channel_type'] },
-        { id: 'contact', label: 'Contact', summary: 'Primary contact details for day-to-day communication.', fields: ['first_name', 'last_name', 'email', 'phone'] },
+        { id: 'overview', label: 'Overview', summary: 'Core identity, classification, and lifecycle status.', fields: ['c_client_code', 'client_name', 'primary_agent_id', 'business_type', 'status', 'channel_type'] },
+        { id: 'contact', label: 'Contact', summary: 'Primary contact details for day-to-day communication.', fields: ['first_name', 'last_name', 'email', 'phone', 'memo'] },
         { id: 'address', label: 'Address', summary: 'Structured mailing address with US ZIP code support.', fields: ['zip', 'city', 'state', 'country', 'address_line1', 'address_line2'] },
         { id: 'stores', label: 'Stores', summary: 'Manage stores that belong to this client.', fields: [] },
+      ],
+    },
+    agent: {
+      endpoint: 'agent',
+      headers: ['Code', 'Agent Type', 'Company', 'Contact Name', 'Phone', 'Commission', 'Status'],
+      statusIndex: 6,
+      fields: [
+        { name: 'agent_code', label: 'Agent Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save' },
+        { name: 'agent_type_id', label: 'Agent Type', type: 'select', options: [{ value: '', label: '' }, ...masterAgentTypeOptions] },
+        { name: 'company_name', label: 'Company Name', type: 'text', colClass: 'col-12' },
+        { name: 'contact_name', label: 'Contact Name', type: 'text', colClass: 'col-12 col-md-6' },
+        { name: 'phone', label: 'Phone', type: 'text', colClass: 'col-12 col-md-6' },
+        { name: 'email', label: 'Email', type: 'email', colClass: 'col-12 col-md-6' },
+        { name: 'commission_rate', label: 'Commission Rate', type: 'number', colClass: 'col-12 col-md-6' },
+        { type: 'section', label: 'Address', colClass: 'col-12' },
+        { name: 'zip', label: 'Zip Code', type: 'text', placeholder: '12345 or 12345-6789', pattern: '^\\d{5}(-\\d{4})?$', title: 'Use US ZIP format: 12345 or 12345-6789', colClass: 'col-12 col-md-6 col-lg-3' },
+        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
+        { name: 'state', label: 'State', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
+        { name: 'country', label: 'Country', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
+        { name: 'address_line1', label: 'Address Line 1', type: 'text', colClass: 'col-12' },
+        { name: 'address_line2', label: 'Address Line 2', type: 'text', colClass: 'col-12' },
+        { name: 'memo', label: 'Memo', type: 'textarea', rows: 6, colClass: 'col-12' },
+        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
+        { name: 'created_at', label: 'Created At', type: 'text', readonly: true, colClass: 'col-12' },
+      ],
+    },
+    license: {
+      endpoint: 'license',
+      headers: ['ID', 'License Key', 'Plan', 'Store', 'Status'],
+      statusIndex: 4,
+      fields: [
+        { name: 'license_key', label: 'License Key', type: 'text' },
+        { name: 'plan_name', label: 'Plan Name', type: 'text' },
+        { name: 'license_type', label: 'License Type', type: 'select', options: ['', 'monthly', 'yearly', 'trial', 'enterprise'] },
+        { name: 'store_id', label: 'Store', type: 'select', options: [{ value: '', label: '' }, ...masterStoreOptions] },
+        { name: 'client_id', label: 'Client', type: 'select', options: [{ value: '', label: '' }, ...masterClientOptions] },
+        { name: 'agent_id', label: 'Agent', type: 'select', options: [{ value: '', label: '' }, ...masterAgentOptions] },
+        { name: 'max_devices', label: 'Max Devices', type: 'number' },
+        { name: 'max_users', label: 'Max Users', type: 'number' },
+        { name: 'start_date', label: 'Start Date', type: 'datetime-local' },
+        { name: 'end_date', label: 'End Date', type: 'datetime-local' },
+        { name: 'monthly_fee', label: 'Monthly Fee', type: 'number' },
+        { name: 'agent_commission', label: 'Agent Commission', type: 'number' },
+        { name: 'platform_fee', label: 'Platform Fee', type: 'number' },
+        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive', 'suspended', 'trial', 'expired'] },
+      ],
+    },
+    'payment-method': {
+      endpoint: 'payment-method',
+      headers: ['ID', 'Client', 'Payment Type', 'Billing Cycle', 'Next Billing', 'Status'],
+      statusIndex: 5,
+      fields: [
+        { name: 'client_id', label: 'Client', type: 'select', options: [{ value: '', label: '' }, ...masterClientOptions] },
+        { name: 'payment_type', label: 'Payment Type', type: 'select', options: ['card', 'bank_transfer', 'cash', 'other'] },
+        { name: 'card_token', label: 'Card Token', type: 'text', colClass: 'col-12' },
+        { name: 'bank_account', label: 'Bank Account', type: 'text', colClass: 'col-12' },
+        { name: 'billing_cycle', label: 'Billing Cycle', type: 'select', options: ['', 'monthly', 'quarterly', 'yearly', 'manual'] },
+        { name: 'next_billing', label: 'Next Billing', type: 'datetime-local' },
+        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
       ],
     },
     store: {
@@ -1641,10 +2946,6 @@
         { name: 'role', label: 'Role', type: 'select', options: masterRoleOptions },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
       ],
-      tabs: [
-        { id: 'overview', label: 'Overview', summary: 'User identity and core profile.', fields: ['email', 'first_name', 'last_name', 'status'] },
-        { id: 'settings', label: 'Settings', summary: 'Access scope and role assignment.', fields: ['store_id', 'role'] },
-      ],
     },
     session: {
       endpoint: 'session',
@@ -1669,6 +2970,7 @@
   };
 
   const config = masterConfig[activeModule] || masterConfig.role;
+  const isListCentricModule = true;
   const reportMeta = {
     companyName: "{{ APP_NAME }}",
     printedBy: "{{ user.c_first_name }} {{ user.c_last_name }}",
@@ -1676,7 +2978,11 @@
   const moduleLabels = {
     role: { list: 'Roles', singular: 'Role' },
     'business-type': { list: 'Business Types', singular: 'Business Type' },
+    'agent-type': { list: 'Agent Types', singular: 'Agent Type' },
     client: { list: 'Clients', singular: 'Client' },
+    agent: { list: 'Agents', singular: 'Agent' },
+    license: { list: 'Licenses', singular: 'License' },
+    'payment-method': { list: 'Payment Methods', singular: 'Payment Method' },
     store: { list: 'Stores', singular: 'Store' },
     user: { list: 'Users', singular: 'User' },
     session: { list: 'Sessions', singular: 'Session' },
@@ -1688,6 +2994,12 @@
   let selectedOriginalRecord = null;
   let clientStoreItems = [];
   let selectedClientStoreId = null;
+  let clientStoreDeviceItems = [];
+  let selectedClientStoreDeviceId = null;
+  let selectedClientStoreDeviceDetail = null;
+  let clientStoreDeviceLogs = [];
+  let masterSortState = { columnIndex: 0, direction: 'asc' };
+  let deviceSortState = { key: 'device_id', direction: 'asc' };
   let suppressClientStoreRowClickUntil = 0;
   let clientStoreModalPinnedPosition = null;
   let clientStoreModalMode = 'add';
@@ -1757,11 +3069,100 @@
     if (isReadOnlyModule) {
       btnSaveRecord.disabled = !selectedMasterId.value;
       if (btnCancelRecord) btnCancelRecord.disabled = true;
+      if (btnModalSave) btnModalSave.disabled = !selectedMasterId.value;
       return;
     }
     const dirty = isFormDirty();
     btnSaveRecord.disabled = !dirty;
+    if (btnModalSave) btnModalSave.disabled = !dirty;
     if (btnCancelRecord) btnCancelRecord.disabled = !dirty;
+  }
+
+  function updateListCentricActionButtons() {
+    if (!isListCentricModule) return;
+    const hasSelection = Boolean(String(selectedMasterId.value || '').trim());
+    if (btnListEdit) btnListEdit.disabled = !hasSelection;
+    if (btnListDelete) btnListDelete.disabled = !hasSelection;
+    if (btnModalDelete) btnModalDelete.disabled = !hasSelection;
+  }
+
+  function getMasterEditModalInstance() {
+    if (!masterEditModalElement || !window.bootstrap?.Modal) return null;
+    return bootstrap.Modal.getOrCreateInstance(masterEditModalElement);
+  }
+
+  function openMasterEditModal(mode = 'edit') {
+    if (!isListCentricModule) return;
+    const modal = getMasterEditModalInstance();
+    if (!modal) return;
+    if (masterEditModalTitle) {
+      masterEditModalTitle.textContent = mode === 'create'
+        ? `Add ${activeLabel.singular}`
+        : `Edit ${activeLabel.singular}`;
+    }
+    modal.show();
+  }
+
+  function openSelectedMasterEditFromList() {
+    if (!isListCentricModule) return;
+    if (!String(selectedMasterId.value || '').trim()) {
+      alert('Please select an item first.');
+      return;
+    }
+    updateSectionTitles('edit');
+    openMasterEditModal('edit');
+  }
+
+  function closeMasterEditModal() {
+    const modal = getMasterEditModalInstance();
+    if (!modal) return;
+    modal.hide();
+  }
+
+  function applyMasterLayoutMode() {
+    if (!masterListCol || !masterEditorCol) return;
+    if (isListCentricModule) {
+      masterListCol.classList.remove('col-xl-3');
+      masterListCol.classList.add('col-xl-12');
+      masterEditorCol.classList.add('d-none');
+      if (masterListToolbar) masterListToolbar.classList.remove('d-none');
+      return;
+    }
+
+    masterListCol.classList.remove('col-xl-12');
+    masterListCol.classList.add('col-xl-3');
+    masterEditorCol.classList.remove('d-none');
+    if (masterListToolbar) masterListToolbar.classList.add('d-none');
+  }
+
+  function configureMasterStatusFilter() {
+    if (!masterStatusFilter) return;
+    const optionSets = {
+      session: ['', 'active', 'terminated'],
+      license: ['', 'active', 'inactive', 'suspended', 'trial', 'expired'],
+      'payment-method': ['', 'active', 'inactive'],
+      default: ['', 'active', 'inactive'],
+    };
+    const values = optionSets[activeModule] || optionSets.default;
+    const current = String(masterStatusFilter.value || '');
+
+    masterStatusFilter.innerHTML = values.map((value) => {
+      const label = value ? value : 'All Status';
+      return `<option value="${value}">${label}</option>`;
+    }).join('');
+
+    masterStatusFilter.value = values.includes(current) ? current : '';
+  }
+
+  function applyListCentricLabels() {
+    if (!isListCentricModule) return;
+
+    if (btnListAdd) btnListAdd.textContent = `Add ${activeLabel.singular}`;
+    if (btnListEdit) btnListEdit.textContent = 'Edit';
+    if (btnListDelete) btnListDelete.textContent = config.deleteLabel || 'Delete';
+    if (btnModalSave) btnModalSave.textContent = 'Save';
+    if (btnModalDelete) btnModalDelete.textContent = config.deleteLabel || 'Delete';
+    if (masterEditModalTitle) masterEditModalTitle.textContent = `Edit ${activeLabel.singular}`;
   }
 
   function setBaselineSnapshot() {
@@ -1789,6 +3190,71 @@
       bindZipAutoFill('field_zip', 'field_city', 'field_state', 'field_country', 'field_default_tax_rate', 'field_timezone', 'field_tax_source');
       bindTaxSourceManualOverride('field_default_tax_rate', 'field_tax_source');
     }
+    if (activeModule === 'agent-type') {
+      bindAgentTypeCodeValidation();
+    }
+  }
+
+  function normalizeAgentTypeCode(raw) {
+    return String(raw || '')
+      .toUpperCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^A-Z0-9_]/g, '')
+      .trim();
+  }
+
+  function isDuplicateAgentTypeCode(code) {
+    const normalized = normalizeAgentTypeCode(code);
+    if (!normalized) return false;
+
+    const currentId = String(selectedMasterId.value || '').trim();
+    return (currentItems || []).some((item) => {
+      const rowCode = normalizeAgentTypeCode(item?.agent_type_code || item?.code || '');
+      const rowId = String(item?.id ?? item?.store_id ?? item?.i_store_id ?? '').trim();
+      if (!rowCode) return false;
+      if (currentId && rowId === currentId) return false;
+      return rowCode === normalized;
+    });
+  }
+
+  function applyAgentTypeCodeValidation() {
+    if (activeModule !== 'agent-type') return true;
+    const codeInput = document.getElementById('field_agent_type_code');
+    if (!codeInput) return true;
+
+    const normalized = normalizeAgentTypeCode(codeInput.value);
+    if (codeInput.value !== normalized) {
+      codeInput.value = normalized;
+    }
+
+    if (!normalized) {
+      codeInput.setCustomValidity('Agent Type Code is required.');
+      return false;
+    }
+
+    if (isDuplicateAgentTypeCode(normalized)) {
+      codeInput.setCustomValidity('Agent Type Code already exists.');
+      return false;
+    }
+
+    codeInput.setCustomValidity('');
+    return true;
+  }
+
+  function bindAgentTypeCodeValidation() {
+    const codeInput = document.getElementById('field_agent_type_code');
+    if (!codeInput || codeInput.dataset.boundAgentTypeValidation === '1') return;
+    codeInput.dataset.boundAgentTypeValidation = '1';
+
+    codeInput.addEventListener('input', () => {
+      applyAgentTypeCodeValidation();
+      updateActionButtonsState();
+    });
+
+    codeInput.addEventListener('blur', () => {
+      const ok = applyAgentTypeCodeValidation();
+      if (!ok) codeInput.reportValidity();
+    });
   }
 
   const STATE_DEFAULT_TAX_RATE = {
@@ -2019,7 +3485,7 @@
   function renderModuleDetailHero(mode, item) {
     if (activeModule === 'client' || activeModule === 'store') return;
 
-    const statusRaw = item?.status || (mode === 'edit' ? 'inactive' : 'pending');
+    const statusRaw = item?.status || (activeModule === 'payment-method' ? 'active' : (mode === 'edit' ? 'inactive' : 'pending'));
     const statusValue = String(statusRaw).toLowerCase();
     const statusClass = statusValue === 'active'
       ? 'active'
@@ -2028,6 +3494,10 @@
     const metaByModule = {
       role: item?.name || 'Role',
       'business-type': item?.code || 'Business Type',
+      'agent-type': item?.agent_type_code || 'Agent Type',
+      agent: item?.company_name || 'Agent Partner',
+      license: item?.license_type || 'License',
+      'payment-method': item?.payment_type || 'Payment Method',
       user: 'User Account',
       session: 'Session Log',
     };
@@ -2039,6 +3509,10 @@
     const codeByModule = {
       role: `ROLE_${pad(numericId)}`,
       'business-type': `BTYPE_${pad(numericId)}`,
+      'agent-type': item?.agent_type_code || `ATYPE_${pad(numericId)}`,
+      agent: item?.agent_code || `AGT_${pad(numericId)}`,
+      license: item?.license_key || `LIC_${pad(numericId)}`,
+      'payment-method': `PAY_${pad(numericId)}`,
       user: `USER_${pad(numericId)}`,
       session: `SESS_${pad(numericId)}`,
     };
@@ -2046,6 +3520,10 @@
     const nameByModule = {
       role: item?.name || 'New Role',
       'business-type': item?.name || 'New Business Type',
+      'agent-type': item?.agent_type_name || 'New Agent Type',
+      agent: item?.contact_name || 'New Agent Contact',
+      license: item?.plan_name || item?.license_key || 'New License',
+      'payment-method': item?.client_name || 'New Payment Method',
       user: (`${item?.first_name || ''} ${item?.last_name || ''}`.trim() || item?.email || 'New User'),
       session: [item?.store_name || '', item?.client_name || ''].filter(Boolean).join(' / ') || 'Session Record',
     };
@@ -2078,8 +3556,31 @@
     if (activeModule === 'business-type') {
       return [resolvedId, item.name || '', item.code || '', item.status || ''];
     }
+    if (activeModule === 'agent-type') {
+      return [resolvedId, item.agent_type_code || '', item.agent_type_name || '', item.status || ''];
+    }
     if (activeModule === 'client') {
-      return [resolvedId, item.c_client_code || item.client_code || '', item.client_name || '', item.status || ''];
+      return [resolvedId, item.c_client_code || item.client_code || '', item.client_name || '', item.primary_agent_name || '', item.status || ''];
+    }
+    if (activeModule === 'agent') {
+      const commissionText = item.commission_rate === null || item.commission_rate === undefined || item.commission_rate === ''
+        ? ''
+        : `${item.commission_rate}%`;
+      return [
+        item.agent_code || '',
+        item.agent_type_name || '',
+        item.company_name || '',
+        item.contact_name || '',
+        item.phone || '',
+        commissionText,
+        item.status || '',
+      ];
+    }
+    if (activeModule === 'license') {
+      return [resolvedId, item.license_key || '', item.plan_name || item.license_type || '', item.store_name || '', item.status || ''];
+    }
+    if (activeModule === 'payment-method') {
+      return [resolvedId, item.client_name || '', item.payment_type || '', item.billing_cycle || '', item.next_billing || '', item.status || ''];
     }
     if (activeModule === 'store') {
       return [resolvedId, item.store_code || '', item.store_name || '', item.status || ''];
@@ -2096,9 +3597,106 @@
 
   function getReportRowValues(item) {
     const resolvedId = item.id ?? item.store_id ?? item.i_store_id ?? '';
-    const name = item.name || item.client_name || item.store_name || item.email || item.user_email || `${item.first_name || ''} ${item.last_name || ''}`.trim() || '';
-    const description = item.description || item.code || item.role || item.business_type || item.operation_type || item.channel_type || '';
+    const name = item.name || item.contact_name || item.agent_name || item.client_name || item.store_name || item.email || item.user_email || `${item.first_name || ''} ${item.last_name || ''}`.trim() || '';
+    const description = item.description || item.license_key || item.payment_type || item.agent_code || item.code || item.role || item.business_type || item.operation_type || item.channel_type || '';
     return [resolvedId, name, description, item.status || ''];
+  }
+
+  function toComparableValue(value) {
+    const raw = value ?? '';
+    const text = String(raw).trim();
+    if (!text) return { type: 'empty', value: '' };
+
+    const asNumber = Number(text);
+    if (!Number.isNaN(asNumber) && /^-?\d+(\.\d+)?$/.test(text)) {
+      return { type: 'number', value: asNumber };
+    }
+
+    const asDate = Date.parse(text);
+    if (!Number.isNaN(asDate) && /\d{4}-\d{2}-\d{2}/.test(text)) {
+      return { type: 'date', value: asDate };
+    }
+
+    return { type: 'text', value: text.toLowerCase() };
+  }
+
+  function compareComparableValues(left, right) {
+    if (left.type === 'empty' && right.type === 'empty') return 0;
+    if (left.type === 'empty') return -1;
+    if (right.type === 'empty') return 1;
+
+    if (left.type === right.type) {
+      if (left.value < right.value) return -1;
+      if (left.value > right.value) return 1;
+      return 0;
+    }
+
+    const leftText = String(left.value);
+    const rightText = String(right.value);
+    return leftText.localeCompare(rightText, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function getSortedMasterItems(items) {
+    const directionMultiplier = masterSortState.direction === 'asc' ? 1 : -1;
+    const columnIndex = masterSortState.columnIndex;
+    const firstHeader = String((config.headers || [])[0] || '').trim().toLowerCase();
+    const isIdFirstColumn = firstHeader === 'id';
+
+    return [...(items || [])].sort((a, b) => {
+      if (columnIndex === 0 && isIdFirstColumn) {
+        const leftId = Number(a?.id ?? a?.store_id ?? a?.i_store_id ?? 0);
+        const rightId = Number(b?.id ?? b?.store_id ?? b?.i_store_id ?? 0);
+        if (leftId === rightId) return 0;
+        return (leftId < rightId ? -1 : 1) * directionMultiplier;
+      }
+
+      const leftRowValues = getRowValues(a);
+      const rightRowValues = getRowValues(b);
+      const leftComparable = toComparableValue(leftRowValues[columnIndex]);
+      const rightComparable = toComparableValue(rightRowValues[columnIndex]);
+      const result = compareComparableValues(leftComparable, rightComparable);
+      return result * directionMultiplier;
+    });
+  }
+
+  function updateMasterSortIndicators() {
+    const headers = masterListHeader.querySelectorAll('th');
+    headers.forEach((th, idx) => {
+      const indicator = th.querySelector('.sort-indicator');
+      th.classList.toggle('is-sorted', idx === masterSortState.columnIndex);
+      th.setAttribute(
+        'aria-sort',
+        idx === masterSortState.columnIndex
+          ? (masterSortState.direction === 'asc' ? 'ascending' : 'descending')
+          : 'none'
+      );
+      if (!indicator) return;
+      if (idx === masterSortState.columnIndex) {
+        indicator.textContent = masterSortState.direction === 'asc' ? '▲' : '▼';
+      } else {
+        indicator.textContent = '';
+      }
+    });
+  }
+
+  function toggleMasterSort(columnIndex) {
+    if (masterSortState.columnIndex === columnIndex) {
+      masterSortState.direction = masterSortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      masterSortState.columnIndex = columnIndex;
+      masterSortState.direction = 'asc';
+    }
+    updateMasterSortIndicators();
+    announceMasterSortChange();
+    renderList(currentItems, selectedMasterId.value || null);
+  }
+
+  function announceMasterSortChange() {
+    if (!masterSortLive) return;
+    const headers = config.headers || [];
+    const label = headers[masterSortState.columnIndex] || 'Column';
+    const direction = masterSortState.direction === 'asc' ? 'ascending' : 'descending';
+    masterSortLive.textContent = `${label} sorted ${direction}`;
   }
 
   function renderListHeader() {
@@ -2106,7 +3704,12 @@
     const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
     config.headers.forEach((col, idx) => {
       const th = document.createElement('th');
-      th.textContent = col;
+      th.classList.add('sortable-col');
+      th.innerHTML = `${col}<span class="sort-indicator"></span>`;
+      th.setAttribute('tabindex', '0');
+      th.setAttribute('role', 'button');
+      th.setAttribute('aria-label', `${col} sort`);
+      th.setAttribute('aria-sort', 'none');
       if (idx === 0) {
         th.classList.add('role-col-id');
       }
@@ -2116,7 +3719,7 @@
       if (activeModule === 'store' && idx === 3) {
         th.classList.add('store-col-status');
       }
-      if (activeModule === 'client' && idx === 3) {
+      if (activeModule === 'client' && idx === statusIdx) {
         th.classList.add('client-col-status');
       }
       if (activeModule === 'user' && idx === 1) th.classList.add('user-col-name');
@@ -2125,13 +3728,21 @@
       if (activeModule === 'session' && idx === 1) th.classList.add('session-col-user');
       if (activeModule === 'session' && idx === 2) th.classList.add('session-col-store');
       if (activeModule === 'session' && idx === 3) th.classList.add('session-col-client');
+      th.addEventListener('click', () => toggleMasterSort(idx));
+      th.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleMasterSort(idx);
+      });
       masterListHeader.appendChild(th);
     });
+    updateMasterSortIndicators();
   }
 
   function buildQuery() {
     const params = new URLSearchParams();
     if (masterSearch.value.trim()) params.set('q', masterSearch.value.trim());
+    if (masterStatusFilter && masterStatusFilter.value) params.set('status', masterStatusFilter.value);
     return params.toString();
   }
 
@@ -2152,7 +3763,12 @@
       return;
     }
 
-    items.forEach(item => {
+    const targetHighlightId = highlightId || selectedMasterId.value || null;
+    const sortedItems = getSortedMasterItems(items);
+    const firstHeader = String((config.headers || [])[0] || '').trim().toLowerCase();
+    const isIdFirstColumn = firstHeader === 'id';
+
+    sortedItems.forEach(item => {
       const tr = document.createElement('tr');
       const resolvedId = item.id ?? item.store_id ?? item.i_store_id ?? '';
       tr.dataset.itemId = resolvedId;
@@ -2160,7 +3776,7 @@
 
       const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
       const cells = getRowValues(item).map((value, idx) => {
-        if (idx === 0) {
+        if (idx === 0 && isIdFirstColumn) {
           const n = Number.parseInt(String(resolvedId || "0"), 10);
           const roleIdLabel = Number.isFinite(n)
             ? `#${String(Math.max(0, n)).padStart(3, '0')}`
@@ -2189,7 +3805,7 @@
         if (activeModule === 'client' && idx === 2) {
           return `<td><span class="client-row-name">${value ?? ''}</span></td>`;
         }
-        if (activeModule === 'client' && idx === 3) {
+        if (activeModule === 'client' && idx === statusIdx) {
           const normalized = String(value ?? '').toLowerCase() === 'active' ? 'active' : 'inactive';
           return `<td class="client-col-status"><span class="client-status-badge ${normalized}">${normalized}</span></td>`;
         }
@@ -2224,9 +3840,13 @@
 
       tr.innerHTML = cells.join('');
       tr.addEventListener('click', () => selectItem(item, tr));
+      tr.addEventListener('dblclick', () => {
+        selectItem(item, tr);
+        openSelectedMasterEditFromList();
+      });
       masterListBody.appendChild(tr);
 
-      if (highlightId && String(resolvedId) === String(highlightId)) {
+      if (targetHighlightId && String(resolvedId) === String(targetHighlightId)) {
         selectItem(item, tr);
       }
     });
@@ -2235,6 +3855,14 @@
   function createField(field) {
     const wrapper = document.createElement('div');
     wrapper.className = field.colClass || 'col-12 col-md-6';
+
+    if (field.type === 'section') {
+      const title = document.createElement('div');
+      title.className = 'master-form-section-title';
+      title.textContent = field.label || '';
+      wrapper.appendChild(title);
+      return wrapper;
+    }
 
     const label = document.createElement('label');
     label.className = 'form-label';
@@ -2739,6 +4367,30 @@
     return bootstrap.Modal.getOrCreateInstance(clientStoreModalElement);
   }
 
+  function getClientStoreDeviceModalInstance() {
+    if (!clientStoreDeviceModalElement || !window.bootstrap?.Modal) return null;
+    return bootstrap.Modal.getOrCreateInstance(clientStoreDeviceModalElement);
+  }
+
+  function openClientStoreDeviceEditor(mode = 'edit') {
+    const modal = getClientStoreDeviceModalInstance();
+    if (!modal) return;
+
+    const normalizedMode = mode === 'add' ? 'add' : 'edit';
+    if (clientStoreDeviceModalTitle) {
+      clientStoreDeviceModalTitle.textContent = normalizedMode === 'add' ? 'Add Device' : 'Edit Device';
+    }
+    setClientStoreDeviceInfoTab('detail');
+    modal.show();
+
+    window.setTimeout(() => {
+      const editorNameInput = document.getElementById('field_client_store_device_name');
+      if (!editorNameInput) return;
+      editorNameInput.focus();
+      if (normalizedMode === 'edit') editorNameInput.select();
+    }, 120);
+  }
+
   function lockClientStoreModalPosition() {
     const dialog = clientStoreModalElement?.querySelector('.modal-dialog');
     if (!dialog) return;
@@ -2795,6 +4447,10 @@
     window.requestAnimationFrame(() => {
       reapplyClientStoreModalPosition();
     });
+
+    if (tabId === 'devices' && selectedClientStoreId) {
+      loadClientStoreDevices();
+    }
   }
 
   function initClientStoreModalTabs() {
@@ -2879,6 +4535,8 @@
       receipt_email: document.getElementById('field_client_store_receipt_email'),
       receipt_website_url: document.getElementById('field_client_store_receipt_website_url'),
       receipt_message: document.getElementById('field_client_store_receipt_message'),
+      memo: document.getElementById('field_client_store_memo'),
+      installed_by_agent_id: document.getElementById('field_client_store_installed_by_agent_id'),
     };
     if (fields.id) fields.id.value = '';
     if (fields.code) fields.code.value = '';
@@ -2903,7 +4561,513 @@
     if (fields.receipt_email) fields.receipt_email.value = '';
     if (fields.receipt_website_url) fields.receipt_website_url.value = '';
     if (fields.receipt_message) fields.receipt_message.value = '';
+    if (fields.memo) fields.memo.value = '';
+    if (fields.installed_by_agent_id) fields.installed_by_agent_id.value = '';
+    resetClientStoreDeviceEditor();
     refreshClientStoreModalLogoPreview();
+  }
+
+  function resetClientStoreDeviceEditor() {
+    selectedClientStoreDeviceId = null;
+    selectedClientStoreDeviceDetail = null;
+    clientStoreDeviceItems = [];
+    clientStoreDeviceLogs = [];
+
+    const idInput = document.getElementById('field_client_store_device_id');
+    const nameInput = document.getElementById('field_client_store_device_name');
+    const typeInput = document.getElementById('field_client_store_device_type');
+    const statusInput = document.getElementById('field_client_store_device_status');
+    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+    const noteInput = document.getElementById('field_client_store_device_note');
+    const hintEl = document.getElementById('clientStoreDevicesHint');
+    const listEl = document.getElementById('clientStoreDeviceList');
+    const saveBtn = document.getElementById('btnClientStoreDeviceSave');
+    const deleteBtn = document.getElementById('btnClientStoreDeviceDelete');
+
+    if (idInput) idInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (typeInput) typeInput.value = 'POS';
+    if (statusInput) statusInput.value = 'active';
+    if (installedByAgentInput) installedByAgentInput.value = '';
+    if (noteInput) noteInput.value = '';
+    if (hintEl) hintEl.textContent = 'Save Store first to manage devices.';
+    if (saveBtn) saveBtn.disabled = true;
+    if (deleteBtn) deleteBtn.disabled = true;
+    if (listEl) {
+      listEl.innerHTML = '<div class="text-muted px-2 py-2 small">No devices loaded.</div>';
+    }
+    setClientStoreDeviceInfoTab('detail');
+    renderClientStoreDeviceDetail();
+  }
+
+  function setClientStoreDeviceInfoTab(tabId) {
+    const tabsWrap = document.getElementById('clientStoreDeviceInfoTabs');
+    const validTab = tabId === 'logs' ? 'logs' : 'detail';
+    if (!tabsWrap) return;
+
+    tabsWrap.querySelectorAll('[data-device-info-tab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.deviceInfoTab === validTab);
+    });
+
+    document.querySelectorAll('[data-device-info-panel]').forEach((panel) => {
+      panel.classList.toggle('active', panel.dataset.deviceInfoPanel === validTab);
+    });
+  }
+
+  function initClientStoreDeviceInfoTabs() {
+    const tabsWrap = document.getElementById('clientStoreDeviceInfoTabs');
+    if (!tabsWrap || tabsWrap.dataset.boundTabs === '1') return;
+    tabsWrap.dataset.boundTabs = '1';
+
+    tabsWrap.querySelectorAll('[data-device-info-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setClientStoreDeviceInfoTab(btn.dataset.deviceInfoTab || 'detail');
+      });
+    });
+
+    setClientStoreDeviceInfoTab('detail');
+  }
+
+  function escapeClientStoreDeviceHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatClientStoreDeviceDateTime(value) {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString();
+  }
+
+  function populateClientStoreDeviceEditor(device) {
+    const idInput = document.getElementById('field_client_store_device_id');
+    const nameInput = document.getElementById('field_client_store_device_name');
+    const typeInput = document.getElementById('field_client_store_device_type');
+    const statusInput = document.getElementById('field_client_store_device_status');
+    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+    const noteInput = document.getElementById('field_client_store_device_note');
+    const saveBtn = document.getElementById('btnClientStoreDeviceSave');
+    const deleteBtn = document.getElementById('btnClientStoreDeviceDelete');
+
+    if (idInput) idInput.value = String(device?.device_id || '');
+    if (nameInput) nameInput.value = device?.device_name || '';
+    if (typeInput) typeInput.value = device?.device_type || 'POS';
+    if (statusInput) statusInput.value = String(device?.status || 'active').toLowerCase();
+    if (installedByAgentInput) installedByAgentInput.value = device?.installed_by_agent_id ? String(device.installed_by_agent_id) : '';
+    if (noteInput) noteInput.value = device?.note || '';
+    if (saveBtn) saveBtn.disabled = !selectedClientStoreId;
+    if (deleteBtn) deleteBtn.disabled = !selectedClientStoreDeviceId;
+  }
+
+  function renderClientStoreDeviceDetail() {
+    const detailBody = document.getElementById('clientStoreDeviceDetailBody');
+    const logBody = document.getElementById('clientStoreDeviceLogBody');
+    if (!detailBody || !logBody) return;
+
+    if (!selectedClientStoreDeviceId || !selectedClientStoreDeviceDetail) {
+      detailBody.innerHTML = '<div class="store-device-detail-empty">Select a device from the list to view detail.</div>';
+      logBody.innerHTML = '<tr><td colspan="7" class="store-device-log-empty">Select a device from the list to view logs.</td></tr>';
+      return;
+    }
+
+    const device = selectedClientStoreDeviceDetail;
+    const badgeClass = (value, fallback = 'inactive') => String(value || fallback).trim().toLowerCase().replace(/\s+/g, '-');
+
+    detailBody.innerHTML = `
+      <div class="store-device-detail-summary">
+        <div>
+          <div class="store-device-detail-name">${escapeClientStoreDeviceHtml(device.device_name || 'Unnamed Device')}</div>
+          <div class="store-device-detail-code">${escapeClientStoreDeviceHtml(device.device_code || '-')} · ${escapeClientStoreDeviceHtml(device.device_type || 'Unknown')}</div>
+        </div>
+        <div class="store-device-badge-group">
+          <span class="device-license-badge ${badgeClass(device.license_status, 'unassigned')}">${escapeClientStoreDeviceHtml(device.license_status || 'Unassigned')}</span>
+          <span class="device-state-badge ${badgeClass(device.status, 'inactive')}">${escapeClientStoreDeviceHtml(String(device.status || 'inactive').replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()))}</span>
+        </div>
+      </div>
+      <div class="store-device-detail-fields">
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Installed By Agent</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.installed_by_agent_name || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Activation Code</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.activation_code || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">First Activated</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(formatClientStoreDeviceDateTime(device.first_activated_at))}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Activated By</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.activated_by || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Bound Hardware ID</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.bound_hardware_id || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Last IP</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.last_ip || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Last Seen</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(formatClientStoreDeviceDateTime(device.last_seen))}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">OS</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.os || '-')}</div>
+        </div>
+        <div class="store-device-detail-item">
+          <div class="store-device-detail-label">Version</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.app_version || '-')}</div>
+        </div>
+        <div class="store-device-detail-item full">
+          <div class="store-device-detail-label">Note</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.note || '-')}</div>
+        </div>
+      </div>
+    `;
+
+    if (!clientStoreDeviceLogs.length) {
+      logBody.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-3">No event logs for this device.</td></tr>';
+      return;
+    }
+
+    logBody.innerHTML = clientStoreDeviceLogs.map((log) => {
+      const runtime = [log.os, log.version].filter(Boolean).join(' / ') || '-';
+      const badgeClassName = badgeClass(log.event_type, 'updated');
+      return `
+        <tr>
+          <td><span class="device-event-badge ${badgeClassName}">${escapeClientStoreDeviceHtml(log.event_type || 'UPDATED')}</span></td>
+          <td>${escapeClientStoreDeviceHtml(formatClientStoreDeviceDateTime(log.event_time))}</td>
+          <td>${escapeClientStoreDeviceHtml(log.hardware_id || '-')}</td>
+          <td>${escapeClientStoreDeviceHtml(log.ip_address || '-')}</td>
+          <td>${escapeClientStoreDeviceHtml(runtime)}</td>
+          <td>${escapeClientStoreDeviceHtml(log.action_by || '-')}</td>
+          <td>${escapeClientStoreDeviceHtml(log.note || '-')}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function loadClientStoreDeviceDetail(deviceId) {
+    const { clientId } = getSelectedClientContext();
+    if (!clientId || !selectedClientStoreId || !deviceId) {
+      selectedClientStoreDeviceDetail = null;
+      clientStoreDeviceLogs = [];
+      renderClientStoreDeviceDetail();
+      return;
+    }
+
+    const res = await fetch(
+      `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}/devices/${encodeURIComponent(deviceId)}?t=${Date.now()}`,
+      {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      }
+    );
+
+    if (!res.ok) {
+      selectedClientStoreDeviceDetail = null;
+      clientStoreDeviceLogs = [];
+      renderClientStoreDeviceDetail();
+      return;
+    }
+
+    const payload = await res.json();
+    selectedClientStoreDeviceDetail = payload?.device || null;
+    clientStoreDeviceLogs = Array.isArray(payload?.logs) ? payload.logs : [];
+    if (selectedClientStoreDeviceDetail) {
+      populateClientStoreDeviceEditor(selectedClientStoreDeviceDetail);
+    }
+    renderClientStoreDeviceDetail();
+  }
+
+  function renderClientStoreDeviceList() {
+    const listEl = document.getElementById('clientStoreDeviceList');
+    if (!listEl) return;
+
+    const formatDeviceStatusLabel = (value) => String(value || 'inactive')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+    const toBadgeClass = (value, fallback = 'unassigned') => String(value || fallback)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-');
+
+    if (!clientStoreDeviceItems.length) {
+      listEl.innerHTML = '<div class="text-muted px-2 py-2 small">No devices for this store.</div>';
+      return;
+    }
+
+    const sortedDevices = getSortedClientStoreDevices(clientStoreDeviceItems);
+
+    listEl.innerHTML = sortedDevices.map((device) => {
+      const isActive = String(device.device_id) === String(selectedClientStoreDeviceId);
+      const deviceCode = device.device_code || `DEV-${String(device.device_id || '').trim() || 'NEW'}`;
+      const lastSeenLabel = formatClientStoreDeviceDateTime(device.last_seen);
+      const detailLabel = [device.device_type || '-', lastSeenLabel === '-' ? 'Never seen' : `Seen ${lastSeenLabel}`].join(' · ');
+      return `
+        <div class="store-device-row ${isActive ? 'active' : ''}" data-device-id="${device.device_id}">
+          <div class="store-device-main">
+            <div class="store-device-code">${escapeClientStoreDeviceHtml(deviceCode)}</div>
+            <div class="store-device-name">${escapeClientStoreDeviceHtml(device.device_name || 'Unnamed Device')}</div>
+            <div class="store-device-sub">${escapeClientStoreDeviceHtml(detailLabel)}</div>
+          </div>
+          <div class="store-device-actions">
+            <span class="device-state-badge ${toBadgeClass(device.status, 'inactive')}">${escapeClientStoreDeviceHtml(formatDeviceStatusLabel(device.status))}</span>
+            <button type="button" class="store-device-edit-btn" data-device-edit-id="${device.device_id}" aria-label="Edit device" title="Edit device">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path>
+                <path d="M12.5 5.5l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.store-device-row[data-device-id]').forEach((row) => {
+      row.addEventListener('click', async () => {
+        const deviceId = row.dataset.deviceId;
+        const found = clientStoreDeviceItems.find((item) => String(item.device_id) === String(deviceId));
+        if (!found) return;
+
+        selectedClientStoreDeviceId = found.device_id;
+        selectedClientStoreDeviceDetail = found;
+        populateClientStoreDeviceEditor(found);
+        renderClientStoreDeviceList();
+        await loadClientStoreDeviceDetail(found.device_id);
+        openClientStoreDeviceEditor('edit');
+      });
+    });
+
+    listEl.querySelectorAll('.store-device-edit-btn[data-device-edit-id]').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const deviceId = btn.dataset.deviceEditId;
+        const found = clientStoreDeviceItems.find((item) => String(item.device_id) === String(deviceId));
+        if (!found) return;
+
+        selectedClientStoreDeviceId = found.device_id;
+        selectedClientStoreDeviceDetail = found;
+        populateClientStoreDeviceEditor(found);
+        renderClientStoreDeviceList();
+        await loadClientStoreDeviceDetail(found.device_id);
+        openClientStoreDeviceEditor('edit');
+      });
+    });
+  }
+
+  function getSortedClientStoreDevices(items) {
+    const directionMultiplier = deviceSortState.direction === 'asc' ? 1 : -1;
+    const key = deviceSortState.key;
+
+    return [...(items || [])].sort((a, b) => {
+      if (key === 'device_id') {
+        const leftId = Number(a?.device_id ?? 0);
+        const rightId = Number(b?.device_id ?? 0);
+        if (leftId === rightId) return 0;
+        return (leftId < rightId ? -1 : 1) * directionMultiplier;
+      }
+
+      const leftComparable = toComparableValue(a?.[key]);
+      const rightComparable = toComparableValue(b?.[key]);
+      const result = compareComparableValues(leftComparable, rightComparable);
+      return result * directionMultiplier;
+    });
+  }
+
+  function updateClientStoreDeviceSortIndicators() {
+    const headers = document.querySelectorAll('[data-device-sort-key]');
+    headers.forEach((th) => {
+      th.classList.add('sortable-col');
+      const key = th.dataset.deviceSortKey;
+      th.classList.toggle('is-sorted', key === deviceSortState.key);
+      th.setAttribute(
+        'aria-sort',
+        key === deviceSortState.key
+          ? (deviceSortState.direction === 'asc' ? 'ascending' : 'descending')
+          : 'none'
+      );
+      const indicator = th.querySelector('.sort-indicator');
+      if (!indicator) return;
+      if (key === deviceSortState.key) {
+        indicator.textContent = deviceSortState.direction === 'asc' ? '▲' : '▼';
+      } else {
+        indicator.textContent = '';
+      }
+    });
+  }
+
+  function toggleClientStoreDeviceSort(key) {
+    if (!key) return;
+    if (deviceSortState.key === key) {
+      deviceSortState.direction = deviceSortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      deviceSortState.key = key;
+      deviceSortState.direction = 'asc';
+    }
+    announceDeviceSortChange();
+    renderClientStoreDeviceList();
+  }
+
+  function announceDeviceSortChange() {
+    if (!deviceSortLive) return;
+    const activeHeader = document.querySelector(`[data-device-sort-key="${deviceSortState.key}"]`);
+    const label = String(activeHeader?.textContent || 'Column').replace(/[▲▼]/g, '').trim();
+    const direction = deviceSortState.direction === 'asc' ? 'ascending' : 'descending';
+    deviceSortLive.textContent = `${label} sorted ${direction}`;
+  }
+
+  function initClientStoreDeviceSortHandlers() {
+    const headers = document.querySelectorAll('[data-device-sort-key]');
+    headers.forEach((th) => {
+      th.setAttribute('tabindex', '0');
+      th.setAttribute('role', 'button');
+      th.setAttribute('aria-label', `${(th.textContent || '').replace(/[▲▼]/g, '').trim()} sort`);
+      th.setAttribute('aria-sort', 'none');
+      if (th.dataset.sortBound === '1') return;
+      th.dataset.sortBound = '1';
+      th.addEventListener('click', () => toggleClientStoreDeviceSort(th.dataset.deviceSortKey));
+      th.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleClientStoreDeviceSort(th.dataset.deviceSortKey);
+      });
+    });
+    updateClientStoreDeviceSortIndicators();
+  }
+
+  async function loadClientStoreDevices() {
+    const { clientId } = getSelectedClientContext();
+    const hintEl = document.getElementById('clientStoreDevicesHint');
+    const saveBtn = document.getElementById('btnClientStoreDeviceSave');
+    const addBtn = document.getElementById('btnClientStoreDeviceAdd');
+    const deleteBtn = document.getElementById('btnClientStoreDeviceDelete');
+
+    if (!clientId || !selectedClientStoreId) {
+      resetClientStoreDeviceEditor();
+      if (addBtn) addBtn.disabled = true;
+      return;
+    }
+
+    if (hintEl) hintEl.textContent = 'Manage devices for this store.';
+    if (addBtn) addBtn.disabled = false;
+    if (saveBtn) saveBtn.disabled = true;
+    if (deleteBtn) deleteBtn.disabled = true;
+
+    const res = await fetch(`${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}/devices?t=${Date.now()}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+      if (hintEl) hintEl.textContent = 'Failed to load devices.';
+      clientStoreDeviceItems = [];
+      selectedClientStoreDeviceDetail = null;
+      clientStoreDeviceLogs = [];
+      renderClientStoreDeviceList();
+      renderClientStoreDeviceDetail();
+      return;
+    }
+
+    clientStoreDeviceItems = await res.json();
+    if (!clientStoreDeviceItems.some((item) => String(item.device_id) === String(selectedClientStoreDeviceId))) {
+      selectedClientStoreDeviceId = null;
+      selectedClientStoreDeviceDetail = null;
+      clientStoreDeviceLogs = [];
+    }
+    renderClientStoreDeviceList();
+    if (selectedClientStoreDeviceId) {
+      await loadClientStoreDeviceDetail(selectedClientStoreDeviceId);
+    } else {
+      renderClientStoreDeviceDetail();
+    }
+  }
+
+  function collectClientStoreDevicePayload() {
+    return {
+      device_name: document.getElementById('field_client_store_device_name')?.value || '',
+      device_type: document.getElementById('field_client_store_device_type')?.value || 'POS',
+      status: document.getElementById('field_client_store_device_status')?.value || 'active',
+      installed_by_agent_id: document.getElementById('field_client_store_device_installed_by_agent_id')?.value || '',
+      note: document.getElementById('field_client_store_device_note')?.value || '',
+    };
+  }
+
+  async function saveClientStoreDevice() {
+    const { clientId } = getSelectedClientContext();
+    if (!clientId || !selectedClientStoreId) {
+      alert('Please save and select a Store first.');
+      return;
+    }
+
+    const payload = collectClientStoreDevicePayload();
+    if (!String(payload.device_name || '').trim()) {
+      alert('Device name is required.');
+      return;
+    }
+
+    const isEditing = Boolean(selectedClientStoreDeviceId);
+    const method = isEditing ? 'PUT' : 'POST';
+    const url = isEditing
+      ? `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}/devices/${encodeURIComponent(selectedClientStoreDeviceId)}`
+      : `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}/devices`;
+
+    const res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      alert('Unable to save device: ' + text);
+      return;
+    }
+
+    const saved = await res.json();
+    selectedClientStoreDeviceId = saved?.device_id || selectedClientStoreDeviceId;
+    await loadClientStoreDevices();
+    const modal = getClientStoreDeviceModalInstance();
+    if (modal) modal.hide();
+  }
+
+  async function deleteClientStoreDevice() {
+    const { clientId } = getSelectedClientContext();
+    if (!clientId || !selectedClientStoreId || !selectedClientStoreDeviceId) {
+      alert('Please select a device first.');
+      return;
+    }
+
+    if (!(await showCenteredConfirm('Delete this device?', 'Delete Device', { variant: 'danger', okText: 'Delete', cancelText: 'No' }))) {
+      return;
+    }
+
+    const res = await fetch(
+      `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}/devices/${encodeURIComponent(selectedClientStoreDeviceId)}`,
+      { method: 'DELETE', credentials: 'same-origin' }
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      alert('Unable to delete device: ' + text);
+      return;
+    }
+
+    selectedClientStoreDeviceId = null;
+    await loadClientStoreDevices();
+    const modal = getClientStoreDeviceModalInstance();
+    if (modal) modal.hide();
   }
 
   function populateClientStoreEditor(store) {
@@ -2933,6 +5097,8 @@
     const receiptEmailInput = document.getElementById('field_client_store_receipt_email');
     const receiptWebsiteInput = document.getElementById('field_client_store_receipt_website_url');
     const receiptMessageInput = document.getElementById('field_client_store_receipt_message');
+    const memoInput = document.getElementById('field_client_store_memo');
+    const installedByAgentInput = document.getElementById('field_client_store_installed_by_agent_id');
 
     if (idInput) idInput.value = String(store.store_id || '');
   if (codeInput) codeInput.value = store.store_code || '';
@@ -2957,9 +5123,12 @@
     if (receiptEmailInput) receiptEmailInput.value = store.receipt_email || '';
     if (receiptWebsiteInput) receiptWebsiteInput.value = store.receipt_website_url || '';
     if (receiptMessageInput) receiptMessageInput.value = store.receipt_message || '';
+    if (memoInput) memoInput.value = store.memo || '';
+    if (installedByAgentInput) installedByAgentInput.value = store.installed_by_agent_id ? String(store.installed_by_agent_id) : '';
     if (saveBtn) saveBtn.disabled = false;
     if (deleteBtn) deleteBtn.disabled = false;
     refreshClientStoreModalLogoPreview(store);
+    loadClientStoreDevices();
     updateClientStoreModalChrome('edit');
     setClientStoreFormVisible(true);
   }
@@ -3034,11 +5203,16 @@
     resetClientStoreEditor();
     setClientStoreFormVisible(false);
 
-    const listQuery = `client_id=${encodeURIComponent(clientId)}&t=${Date.now()}`;
-    const res = await fetch(`${apiBase}/stores?${listQuery}`, {
+    let res = await fetch(`${apiBase}/client/${encodeURIComponent(clientId)}/stores?t=${Date.now()}`, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
+    if (!res.ok) {
+      res = await fetch(`${apiBase}/stores?client_id=${encodeURIComponent(clientId)}&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+    }
     if (!res.ok) {
       if (listEl) listEl.innerHTML = '<div class="text-danger px-2 py-2 small">Failed to load stores.</div>';
       return;
@@ -3051,19 +5225,6 @@
     renderClientStoreList();
     if (saveBtn) saveBtn.disabled = true;
     if (deleteBtn) deleteBtn.disabled = true;
-  }
-
-  function resolveClientIdForStorePayload() {
-    const selectedClientId = getSelectedClientId();
-    if (selectedClientId) return selectedClientId;
-
-    if (selectedClientStoreId) {
-      const linkedStore = clientStoreItems.find((item) => String(item.store_id) === String(selectedClientStoreId));
-      const linkedClientId = Number.parseInt(linkedStore?.client_id, 10);
-      if (Number.isFinite(linkedClientId)) return linkedClientId;
-    }
-
-    return null;
   }
 
   function normalizeSalesTaxRate(rawValue) {
@@ -3117,16 +5278,29 @@
       receipt_email: document.getElementById('field_client_store_receipt_email')?.value || '',
       receipt_website_url: document.getElementById('field_client_store_receipt_website_url')?.value || '',
       receipt_message: document.getElementById('field_client_store_receipt_message')?.value || '',
-      client_id: resolveClientIdForStorePayload(),
+      memo: document.getElementById('field_client_store_memo')?.value || '',
+      installed_by_agent_id: document.getElementById('field_client_store_installed_by_agent_id')?.value || null,
+      client_id: getSelectedClientId(),
     };
   }
 
   async function fetchClientStoreDetail(storeId) {
-    const res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}?t=${Date.now()}`, {
+    const { clientId } = getSelectedClientContext();
+    if (!clientId) {
+      throw new Error('Client context is missing.');
+    }
+    let res = await fetch(`${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(storeId)}?t=${Date.now()}`, {
       credentials: 'same-origin',
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
+    if (!res.ok) {
+      res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}?t=${Date.now()}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+    }
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `Failed to load store detail (${res.status})`);
@@ -3153,8 +5327,15 @@
     }
 
     const storeId = selectedClientStoreId;
+    const { clientId } = getSelectedClientContext();
+    if (!clientId) {
+      alert('Please save the Client first to manage stores.');
+      return;
+    }
     const method = storeId ? 'PUT' : 'POST';
-    const url = storeId ? `${apiBase}/store/${storeId}` : `${apiBase}/store`;
+    let url = storeId
+      ? `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(storeId)}`
+      : `${apiBase}/client/${encodeURIComponent(clientId)}/stores`;
 
     let res;
     try {
@@ -3164,6 +5345,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (!res.ok && res.status === 404) {
+        url = storeId ? `${apiBase}/store/${encodeURIComponent(storeId)}` : `${apiBase}/store`;
+        res = await fetch(url, {
+          method,
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
     } catch (error) {
       alert('Unable to save the store right now. Please refresh and try again.');
       return;
@@ -3203,7 +5393,19 @@
     }
     if (!(await showCenteredConfirm('Remove this store from the client view?', 'Delete Store', { variant: 'danger', okText: 'Delete', cancelText: 'No' }))) return;
 
-    const res = await fetch(`${apiBase}/store/${selectedClientStoreId}`, { method: 'DELETE' });
+    const { clientId } = getSelectedClientContext();
+    if (!clientId) {
+      alert('Please save the Client first to manage stores.');
+      return;
+    }
+
+    let res = await fetch(
+      `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(selectedClientStoreId)}`,
+      { method: 'DELETE' }
+    );
+    if (!res.ok && res.status === 404) {
+      res = await fetch(`${apiBase}/store/${encodeURIComponent(selectedClientStoreId)}`, { method: 'DELETE' });
+    }
     if (!res.ok) {
       const text = await res.text();
       alert('Unable to delete the store: ' + text);
@@ -3217,11 +5419,17 @@
 
   function initClientStorePanelHandlers() {
     if (activeModule !== 'client') return;
+    initClientStoreDeviceSortHandlers();
+    initClientStoreDeviceInfoTabs();
     bindClientStoreModalLogoHandlers();
     refreshClientStoreModalLogoPreview();
+    resetClientStoreDeviceEditor();
     const addBtn = document.getElementById('btnClientStoreAdd');
     const saveBtn = document.getElementById('btnClientStoreSave');
     const deleteBtn = document.getElementById('btnClientStoreDelete');
+    const deviceAddBtn = document.getElementById('btnClientStoreDeviceAdd');
+    const deviceSaveBtn = document.getElementById('btnClientStoreDeviceSave');
+    const deviceDeleteBtn = document.getElementById('btnClientStoreDeviceDelete');
 
     if (addBtn) {
       addBtn.addEventListener('click', () => {
@@ -3258,6 +5466,45 @@
       deleteBtn.addEventListener('click', deleteClientLinkedStore);
       deleteBtn.disabled = true;
     }
+    if (deviceAddBtn) {
+      deviceAddBtn.addEventListener('click', () => {
+        if (!selectedClientStoreId) {
+          alert('Please save and select a Store first.');
+          return;
+        }
+        selectedClientStoreDeviceId = null;
+        const idInput = document.getElementById('field_client_store_device_id');
+        const nameInput = document.getElementById('field_client_store_device_name');
+        const typeInput = document.getElementById('field_client_store_device_type');
+        const statusInput = document.getElementById('field_client_store_device_status');
+        const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+        const noteInput = document.getElementById('field_client_store_device_note');
+        const saveDeviceBtn = document.getElementById('btnClientStoreDeviceSave');
+        const deleteDeviceBtn = document.getElementById('btnClientStoreDeviceDelete');
+        selectedClientStoreDeviceDetail = null;
+        clientStoreDeviceLogs = [];
+        if (idInput) idInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (typeInput) typeInput.value = 'POS';
+        if (statusInput) statusInput.value = 'active';
+        if (installedByAgentInput) installedByAgentInput.value = '';
+        if (noteInput) noteInput.value = '';
+        if (saveDeviceBtn) saveDeviceBtn.disabled = false;
+        if (deleteDeviceBtn) deleteDeviceBtn.disabled = true;
+        renderClientStoreDeviceList();
+        renderClientStoreDeviceDetail();
+        openClientStoreDeviceEditor('add');
+      });
+      deviceAddBtn.disabled = true;
+    }
+    if (deviceSaveBtn) {
+      deviceSaveBtn.addEventListener('click', saveClientStoreDevice);
+      deviceSaveBtn.disabled = true;
+    }
+    if (deviceDeleteBtn) {
+      deviceDeleteBtn.addEventListener('click', deleteClientStoreDevice);
+      deviceDeleteBtn.disabled = true;
+    }
     const cancelBtn = document.getElementById('btnClientStoreCancel');
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => {
@@ -3280,7 +5527,10 @@
     if (clientStoreModalElement && !clientStoreModalElement.dataset.boundReset) {
       clientStoreModalElement.dataset.boundReset = '1';
       clientStoreModalElement.addEventListener('hidden.bs.modal', () => {
+        const deviceModal = getClientStoreDeviceModalInstance();
+        if (deviceModal) deviceModal.hide();
         resetClientStoreEditor();
+        resetClientStoreDeviceEditor();
         setClientStoreModalTab('basic');
       });
     }
@@ -3364,10 +5614,13 @@
   }
 
   function renderForm() {
-    masterForm.innerHTML = '';
-    masterForm.appendChild(createIdField());
+    const targetForm = isListCentricModule ? masterFormModal : masterForm;
+    if (!targetForm) return;
+
+    targetForm.innerHTML = '';
+    targetForm.appendChild(createIdField());
     if (Array.isArray(config.tabs)) {
-      masterForm.appendChild(createClientTabs());
+      targetForm.appendChild(createClientTabs());
       bindBrandLogoUploadHandlers();
       refreshClientLogoPreview();
       refreshStoreLogoPreview();
@@ -3378,13 +5631,14 @@
       return;
     }
     config.fields.forEach(field => {
-      masterForm.appendChild(createField(field));
+      targetForm.appendChild(createField(field));
     });
   }
 
   function getFormData() {
     const data = {};
     config.fields.forEach(field => {
+      if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
       data[field.name] = input.value;
@@ -3413,6 +5667,15 @@
       delete data.client_code;
     }
 
+    if (activeModule === 'agent') {
+      delete data.agent_code;
+      delete data.created_at;
+    }
+
+    if (activeModule === 'agent-type') {
+      data.agent_type_code = normalizeAgentTypeCode(data.agent_type_code);
+    }
+
     return data;
   }
 
@@ -3423,6 +5686,7 @@
     const idInput = document.getElementById('field_record_id');
     if (idInput) idInput.value = resolvedId;
     config.fields.forEach(field => {
+      if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
       let value = item[field.name] ?? '';
@@ -3437,6 +5701,7 @@
     }
     refreshClientLogoPreview();
     refreshStoreLogoPreview(item);
+    updateListCentricActionButtons();
     setBaselineSnapshot();
   }
 
@@ -3446,9 +5711,10 @@
     const idInput = document.getElementById('field_record_id');
     if (idInput) idInput.value = '';
     config.fields.forEach(field => {
+      if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
-      if ((activeModule === 'store' || activeModule === 'user' || activeModule === 'client' || activeModule === 'role' || activeModule === 'business-type') && field.name === 'status') {
+      if ((activeModule === 'store' || activeModule === 'user' || activeModule === 'client' || activeModule === 'agent' || activeModule === 'agent-type' || activeModule === 'license' || activeModule === 'payment-method' || activeModule === 'role' || activeModule === 'business-type') && field.name === 'status') {
         input.value = 'active';
       } else if (activeModule === 'session' && field.name === 'status') {
         input.value = 'active';
@@ -3467,6 +5733,7 @@
     }
     refreshClientLogoPreview();
     refreshStoreLogoPreview();
+    updateListCentricActionButtons();
     setBaselineSnapshot();
   }
 
@@ -3477,6 +5744,7 @@
 
     populateForm({ id: item.id ?? item.store_id ?? item.i_store_id ?? '', ...item });
     updateSectionTitles('edit');
+    updateListCentricActionButtons();
     setBaselineSnapshot();
   }
 
@@ -3688,13 +5956,22 @@
     const id = selectedMasterId.value;
     const data = getFormData();
 
+    if (activeModule === 'agent-type') {
+      const codeInput = document.getElementById('field_agent_type_code');
+      const codeIsValid = applyAgentTypeCodeValidation();
+      if (!codeIsValid) {
+        if (codeInput) codeInput.reportValidity();
+        return false;
+      }
+    }
+
     if (activeModule === 'client') {
       const zipValue = String(data.zip || '').trim();
       if (zipValue) {
         const usZipRegex = /^\d{5}(-\d{4})?$/;
         if (!usZipRegex.test(zipValue)) {
           alert('ZIP code must use US format: 12345 or 12345-6789.');
-          return;
+          return false;
         }
       }
     }
@@ -3711,7 +5988,7 @@
     if (!res.ok) {
       const text = await res.text();
       alert('Unable to save: ' + text);
-      return;
+      return false;
     }
 
     // Keep selection on the saved record
@@ -3724,27 +6001,31 @@
 
     await loadList(lastSavedId);
     setBaselineSnapshot();
+    updateListCentricActionButtons();
+    return true;
   }
 
   async function deleteItem() {
     const id = selectedMasterId.value;
     if (!id) {
       alert('Please select an item first.');
-      return;
+      return false;
     }
     const deleteLabel = config.deleteLabel || 'Delete';
-    if (!(await showCenteredConfirm(`${deleteLabel} this item?`, deleteLabel, { variant: 'danger', okText: deleteLabel, cancelText: 'No' }))) return;
+    if (!(await showCenteredConfirm(`${deleteLabel} this item?`, deleteLabel, { variant: 'danger', okText: deleteLabel, cancelText: 'No' }))) return false;
 
     const res = await fetch(`${apiBase}/${config.endpoint}/${id}`, { method: 'DELETE' });
     if (!res.ok) {
       const text = await res.text();
       alert('Unable to delete: ' + text);
-      return;
+      return false;
     }
 
     clearForm();
     lastSavedId = null;
     await loadList();
+    updateListCentricActionButtons();
+    return true;
   }
 
   btnNewRecord.addEventListener('click', clearForm);
@@ -3753,29 +6034,73 @@
     btnCancelRecord.addEventListener('click', cancelEdit);
   }
   btnDeleteRecord.addEventListener('click', deleteItem);
+  if (btnListAdd) {
+    btnListAdd.addEventListener('click', () => {
+      clearForm();
+      updateSectionTitles('create');
+      updateListCentricActionButtons();
+      openMasterEditModal('create');
+    });
+  }
+  if (btnListEdit) {
+    btnListEdit.addEventListener('click', openSelectedMasterEditFromList);
+  }
+  if (btnListDelete) {
+    btnListDelete.addEventListener('click', async () => {
+      await deleteItem();
+    });
+  }
+  if (btnModalSave) {
+    btnModalSave.addEventListener('click', async () => {
+      const ok = await saveItem();
+      if (ok) closeMasterEditModal();
+    });
+  }
+  if (btnModalDelete) {
+    btnModalDelete.addEventListener('click', async () => {
+      const ok = await deleteItem();
+      if (ok) closeMasterEditModal();
+    });
+  }
   exportMenuItems.forEach(item => {
     item.addEventListener('click', () => {
       handleExport(item.dataset.exportFormat);
     });
   });
   masterSearch.addEventListener('keyup', (e) => { if (e.key === 'Enter') loadList(); });
+  if (masterStatusFilter) {
+    masterStatusFilter.addEventListener('change', () => loadList());
+  }
   btnMasterRefresh.addEventListener('click', loadList);
 
   // Initialize
   updateSectionTitles('create');
   masterListTable.classList.add(`module-${activeModule.replace(/[^a-z0-9_-]/gi, '-')}`);
+  applyMasterLayoutMode();
+  configureMasterStatusFilter();
+  applyListCentricLabels();
   renderListHeader();
   renderForm();
   attachFormChangeWatchers();
   if (config.allowCreate === false) {
     btnNewRecord.disabled = true;
     btnSaveRecord.disabled = true;
+    if (btnListAdd) btnListAdd.disabled = true;
+    if (btnModalSave) btnModalSave.disabled = true;
   }
   if (activeModule === 'session') {
     btnDeleteRecord.textContent = config.deleteLabel || 'Terminate';
+    if (btnListDelete) btnListDelete.textContent = config.deleteLabel || 'Terminate';
+    if (btnModalDelete) btnModalDelete.textContent = config.deleteLabel || 'Terminate';
   }
   setBaselineSnapshot();
-  loadList();
+  updateListCentricActionButtons();
+  const initialClientId = new URLSearchParams(window.location.search).get('client_id');
+  if (activeModule === 'client' && initialClientId) {
+    loadList(initialClientId);
+  } else {
+    loadList();
+  }
 </script>
 
 {% endblock %}

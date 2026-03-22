@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import synonym
 
 from backend.database.pg_platform import PlatformBase
@@ -13,11 +13,13 @@ class Client(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     i_client_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     c_client_code = Column(String(20), nullable=False, unique=True)
     i_business_type = Column(Integer, nullable=True)
+    i_agent_id = Column(Integer, ForeignKey("tb_agent.i_agent_id"), nullable=True, index=True)
     c_channel_type = Column(String, nullable=True)   # 예: Direct / Reseller / Partner / Online / Franchise / Internal
 
     # 표준 B2B 명칭
     c_client_name = Column(String, nullable=False, unique=True)
     c_status = Column(String, default="active")
+    c_memo = Column(String, nullable=True)
 
     # 구버전 account 코드 호환용 별칭
     i_account_id = synonym("i_client_id")

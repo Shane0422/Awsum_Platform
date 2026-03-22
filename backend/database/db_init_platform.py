@@ -199,6 +199,53 @@ def _ensure_client_code_schema_and_backfill(db: Session) -> None:
     print(f"[MIGRATE] tb_client.c_client_code populated rows: {migrated_rows}")
 
 
+def _ensure_client_primary_agent_schema(db: Session) -> None:
+    """Ensure tb_client.i_agent_id exists and links to tb_agent when available."""
+    has_column = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'tb_client'
+              AND column_name = 'i_agent_id'
+            LIMIT 1
+            """
+        )
+    ).scalar()
+
+    if not has_column:
+        db.execute(text("ALTER TABLE tb_client ADD COLUMN i_agent_id INTEGER"))
+        print("[MIGRATE] Added tb_client.i_agent_id")
+
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tb_client_i_agent_id ON tb_client (i_agent_id)"))
+
+    has_agent_table = db.execute(text("SELECT to_regclass('public.tb_agent')")).scalar() is not None
+    if not has_agent_table:
+        return
+
+    db.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'fk_tb_client_i_agent_id_tb_agent'
+                      AND conrelid = 'tb_client'::regclass
+                ) THEN
+                    ALTER TABLE tb_client
+                    ADD CONSTRAINT fk_tb_client_i_agent_id_tb_agent
+                    FOREIGN KEY (i_agent_id) REFERENCES tb_agent(i_agent_id)
+                    ON DELETE SET NULL;
+                END IF;
+            END $$;
+            """
+        )
+    )
+
+
 def _next_client_code_value(db: Session) -> str:
     max_seq = db.execute(
         text(
@@ -227,6 +274,11 @@ def init_platform_db() -> None:
         role,
         license,
         device,
+        device_log,
+        agent,
+        agent_type,
+        billing,
+        payment_method,
         subscription,
         provision_log,
         store_sync_status,
@@ -234,6 +286,7 @@ def init_platform_db() -> None:
     from backend.models_admin.account import Client
     from backend.models_admin.business_type import BusinessType
     from backend.models_admin.role import Role
+    from backend.models_admin.agent_type import AgentType
     from backend.models_admin.store import Store
     from backend.models_admin.platform_user import PlatformUser
 
@@ -249,6 +302,7 @@ def init_platform_db() -> None:
         _drop_legacy_session_user_column(db)
         _drop_legacy_store_type_dependencies(db)
         _ensure_client_code_schema_and_backfill(db)
+        _ensure_client_primary_agent_schema(db)
         db.commit()
 
         # Client seed
@@ -288,6 +342,15 @@ def init_platform_db() -> None:
         for role_item in default_roles:
             if not db.query(Role).filter_by(c_name=role_item["c_name"]).first():
                 db.add(Role(**role_item))
+
+        default_agent_types = [
+            {"c_agent_type_code": "DEALER", "c_agent_type_name": "Dealer", "c_status": "active"},
+            {"c_agent_type_code": "INSTALLER", "c_agent_type_name": "Installer", "c_status": "active"},
+        ]
+        for type_item in default_agent_types:
+            existing = db.query(AgentType).filter_by(c_agent_type_code=type_item["c_agent_type_code"]).first()
+            if not existing:
+                db.add(AgentType(**type_item))
 
         db.commit()
 

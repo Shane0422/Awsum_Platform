@@ -25,6 +25,8 @@ from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.store import Store
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
+from backend.models_admin.agent import Agent
+from backend.models_admin.agent_type import AgentType
 from backend.config.templates import templates, get_brand_context
 from backend.config.settings import APP_NAME
 from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
@@ -225,7 +227,10 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
         return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
 
-    allowed_modules = {"role", "business-type", "client", "store", "user", "session"}
+    if module == "store":
+        return _set_no_cache_headers(RedirectResponse(url="/platform/master/client", status_code=303))
+
+    allowed_modules = {"role", "business-type", "agent-type", "client", "agent", "license", "payment-method", "user", "session"}
     if module not in allowed_modules:
         module = "role"
 
@@ -236,6 +241,8 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     roles = db.query(Role).all()
     business_types = db.query(BusinessType).filter(BusinessType.c_status == "active").all()
     clients = db.query(Client).filter(Client.c_status == "active").order_by(Client.i_account_id).all()
+    agents = db.query(Agent).order_by(Agent.i_agent_id).all()
+    agent_types = db.query(AgentType).filter(AgentType.c_status == "active").order_by(AgentType.i_agent_type_id).all()
     stores = db.query(Store).order_by(Store.i_store_id).all()
     users = db.query(PlatformUser).all()
 
@@ -249,10 +256,18 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         "roles": roles,
         "business_types": business_types,
         "clients": clients,
+        "agents": agents,
+        "agent_types": agent_types,
         "stores": stores,
         "users": users,
         **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
     }))
+
+
+@router.get("/platform/master/client/{client_id}/stores", response_class=HTMLResponse)
+def master_client_stores(request: Request, client_id: int, db: Session = Depends(get_db)):
+    # Keep this URL for multi-tenant hierarchy semantics and deep-linking.
+    return _set_no_cache_headers(RedirectResponse(url=f"/platform/master/client?client_id={client_id}", status_code=303))
 
 
 # ==========================

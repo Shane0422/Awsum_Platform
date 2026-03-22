@@ -1,6 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import re
+import secrets
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -18,6 +20,12 @@ from backend.models_admin.role import Role
 from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.account import Client
 from backend.models_admin.session import SessionTbl
+from backend.models_admin.device import Device
+from backend.models_admin.device_log import DeviceLog
+from backend.models_admin.license import License
+from backend.models_admin.agent import Agent
+from backend.models_admin.agent_type import AgentType
+from backend.models_admin.payment_method import PaymentMethod
 from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
 from jose import jwt, JWTError
 from backend.config.templates import templates
@@ -34,9 +42,11 @@ CLIENT_STORE_SEQ_START = 20001
 CLIENT_CODE_PREFIX = "CLT_"
 CLIENT_CODE_SEQ_START = 11001
 CLIENT_CODE_ADVISORY_LOCK_KEY = 11001001
+AGENT_CODE_PREFIX = "AGT_"
 ALLOWED_DASHBOARD_TYPES = {"PLATFORM", "STANDARD", "RESTAURANT", "DELI", "TUXEDO_RENTAL"}
 BASE_DIR = Path(__file__).resolve().parents[2]
 BRANDS_STATIC_ROOT = BASE_DIR / "static" / "images" / "brands"
+DEVICE_ACTIVATION_TTL_MINUTES = 30
 
 get_next_client_store_id = get_next_account_store_id
 
@@ -93,6 +103,15 @@ def _parse_optional_int(value: Optional[object], field_name: str) -> Optional[in
         raise HTTPException(status_code=400, detail=f"Invalid {field_name}.")
 
 
+def _parse_optional_decimal(value: Optional[object], field_name: str) -> Optional[Decimal]:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}.")
+
+
 def _generate_client_store_code(db: Session) -> tuple[str, int]:
     max_seq = (
         db.query(Store.i_store_seq)
@@ -140,6 +159,10 @@ def _generate_next_client_code(db: Session) -> str:
     return f"{CLIENT_CODE_PREFIX}{next_seq:05d}"
 
 
+def _generate_agent_code(agent_id: int) -> str:
+    return f"{AGENT_CODE_PREFIX}{int(agent_id):05d}"
+
+
 def _sanitize_asset_code(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_-]", "", str(value or "").strip())
     if not normalized:
@@ -173,6 +196,167 @@ def _delete_logo_assets(target_dir: Path) -> int:
             path.unlink()
             deleted += 1
     return deleted
+
+
+def _ensure_client_store(db: Session, client_id: int, store_id: int) -> tuple[Client, Store]:
+    client = db.query(Client).filter(Client.i_account_id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    store = (
+        db.query(Store)
+        .filter(Store.i_store_id == store_id, Store.i_account_id == client_id)
+        .first()
+    )
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found for this client.")
+
+    return client, store
+
+
+def _generate_store_device_code(db: Session, store_id: int) -> str:
+    prefix = f"DEV_{store_id}_"
+    existing_codes = (
+        db.query(Device.c_device_uuid)
+        .filter(Device.i_store_id == store_id, Device.c_device_uuid.like(f"{prefix}%"))
+        .all()
+    )
+    max_seq = 0
+    for (raw_code,) in existing_codes:
+        code = str(raw_code or "")
+        if not code.startswith(prefix):
+            continue
+        suffix = code[len(prefix):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f"{prefix}{max_seq + 1:04d}"
+
+
+def _generate_device_activation_code(db: Session) -> str:
+    while True:
+        token = secrets.token_urlsafe(12).replace("-", "").replace("_", "")
+        code = f"ACT-{token[:10].upper()}"
+        exists = db.query(Device.i_device_id).filter(Device.c_activation_code == code).first()
+        if not exists:
+            return code
+
+
+def _resolve_license_status(device: Device, license_obj: License | None) -> str:
+    if not device.i_license_id:
+        return "Unassigned"
+    if not license_obj:
+        return "Unassigned"
+    raw_status = str(license_obj.c_status or "active").strip().lower()
+    if raw_status in {"inactive", "suspended"}:
+        return "Suspended"
+    if raw_status == "trial":
+        return "Trial"
+    if raw_status and raw_status != "active":
+        return raw_status.replace("_", " ").title()
+    if license_obj.dt_end and license_obj.dt_end < datetime.now():
+        return "Expired"
+    return "Active"
+
+
+def _serialize_device(device: Device, license_obj: License | None, agent_obj: Agent | None = None) -> dict:
+    return {
+        "device_id": device.i_device_id,
+        "store_id": device.i_store_id,
+        "license_id": device.i_license_id,
+        "installed_by_agent_id": device.i_installed_by_agent_id,
+        "installed_by_agent_name": agent_obj.c_agent_name if agent_obj else None,
+        "device_code": device.c_device_uuid,
+        "device_name": device.c_device_name,
+        "device_type": device.c_device_type,
+        "status": device.c_status,
+        "activation_code": device.c_activation_code,
+        "activation_expiry": device.dt_activation_expiry.isoformat() if device.dt_activation_expiry else None,
+        "first_activated_at": device.dt_first_activated_at.isoformat() if device.dt_first_activated_at else None,
+        "activated_by": device.c_activated_by,
+        "bound_hardware_id": device.c_bound_hardware_id,
+        "last_ip": device.c_last_ip,
+        "last_seen": device.dt_last_seen.isoformat() if device.dt_last_seen else None,
+        "os": device.c_os,
+        "app_version": device.c_app_version,
+        "note": device.c_note,
+        "license_status": _resolve_license_status(device, license_obj),
+    }
+
+
+def _serialize_device_log(log: DeviceLog) -> dict:
+    return {
+        "log_id": log.i_log_id,
+        "device_id": log.i_device_id,
+        "event_type": log.c_event_type,
+        "hardware_id": log.c_hardware_id,
+        "ip_address": log.c_ip_address,
+        "agent": log.c_agent,
+        "os": log.c_os,
+        "version": log.c_version,
+        "action_by": log.c_action_by,
+        "event_time": log.dt_event_time.isoformat() if log.dt_event_time else None,
+        "note": log.c_note,
+    }
+
+
+def _actor_label(user) -> Optional[str]:
+    if not user:
+        return None
+    email = getattr(user, "c_email", None)
+    if email:
+        return str(email)
+    actor_id = _actor_id(user)
+    return str(actor_id) if actor_id is not None else None
+
+
+def _resolve_request_ip(request: Optional[Request], payload: Optional[dict] = None) -> Optional[str]:
+    payload = payload or {}
+    explicit_ip = str(payload.get("ip_address") or payload.get("last_ip") or "").strip()
+    if explicit_ip:
+        return explicit_ip
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None)
+    host = str(host or "").strip()
+    return host or None
+
+
+def _log_device_event(
+    db: Session,
+    device: Device,
+    event_type: str,
+    *,
+    request: Optional[Request] = None,
+    payload: Optional[dict] = None,
+    action_by: Optional[str] = None,
+    note: Optional[str] = None,
+) -> DeviceLog:
+    payload = payload or {}
+    event_log = DeviceLog(
+        i_device_id=device.i_device_id,
+        c_event_type=str(event_type or "").strip().upper() or "UPDATED",
+        c_hardware_id=str(payload.get("hardware_id") or payload.get("bound_hardware_id") or device.c_bound_hardware_id or "").strip() or None,
+        c_ip_address=_resolve_request_ip(request, payload),
+        c_agent=str(payload.get("agent") or getattr(request, "headers", {}).get("user-agent") or "").strip() or None,
+        c_os=str(payload.get("os") or device.c_os or "").strip() or None,
+        c_version=str(payload.get("app_version") or payload.get("version") or device.c_app_version or "").strip() or None,
+        c_action_by=str(action_by or payload.get("action_by") or payload.get("activated_by") or "").strip() or None,
+        dt_event_time=datetime.now(),
+        c_note=str(note or payload.get("note") or "").strip() or None,
+    )
+    db.add(event_log)
+    return event_log
+
+
+def _resolve_agent(agent_id: Optional[object], db: Session, *, required: bool = False) -> Optional[Agent]:
+    normalized_id = _parse_optional_int(agent_id, "agent_id")
+    if normalized_id is None:
+        if required:
+            raise HTTPException(status_code=400, detail="agent_id is required.")
+        return None
+    agent = db.query(Agent).filter(Agent.i_agent_id == normalized_id).first()
+    if not agent:
+        raise HTTPException(status_code=400, detail="Invalid agent_id.")
+    return agent
 
 
 # ---------------------------
@@ -331,6 +515,7 @@ def list_stores(
     for s in stores:
         bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == s.i_business_type).first()
         client = db.query(Client).filter(Client.i_account_id == s.i_account_id).first() if s.i_account_id else None
+        store_agent = db.query(Agent).filter(Agent.i_agent_id == s.i_installed_by_agent_id).first() if s.i_installed_by_agent_id else None
         results.append({
             "store_id": s.i_store_id,
             "store_seq": s.i_store_seq,
@@ -374,6 +559,8 @@ def list_stores(
             "max_terminal_count": s.i_max_terminal_count,
             "license_expire_date": s.dt_license_expire.isoformat() if s.dt_license_expire else None,
             "memo": s.c_memo,
+            "installed_by_agent_id": s.i_installed_by_agent_id,
+            "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
             "created_at": s.dt_created.isoformat() if s.dt_created else None,
         })
 
@@ -391,6 +578,7 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
 
     bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
     client = db.query(Client).filter(Client.i_account_id == store.i_account_id).first() if store.i_account_id else None
+    store_agent = db.query(Agent).filter(Agent.i_agent_id == store.i_installed_by_agent_id).first() if store.i_installed_by_agent_id else None
 
     data = {
         "store_id": store.i_store_id,
@@ -438,6 +626,8 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
         "created_at": store.dt_created.isoformat() if store.dt_created else None,
         "memo": store.c_memo,
         "remark": store.c_remark,
+        "installed_by_agent_id": store.i_installed_by_agent_id,
+        "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
     }
 
     return _set_no_cache_headers(JSONResponse(data))
@@ -547,10 +737,12 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
 
     client_id_raw = payload.get("client_id")
     client_id = _parse_optional_int(client_id_raw, "client_id")
-    if client_id is not None:
-        client = db.query(Client).filter(Client.i_account_id == client_id).first()
-        if not client:
-            raise HTTPException(status_code=400, detail="Invalid client_id.")
+    if client_id is None:
+        raise HTTPException(status_code=400, detail="client_id is required.")
+
+    client = db.query(Client).filter(Client.i_account_id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=400, detail="Invalid client_id.")
 
     for _ in range(5):
         generated_store_code, generated_seq = _generate_client_store_code(db)
@@ -603,6 +795,10 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
             bt_obj = db.query(BusinessType).filter(BusinessType.c_name == payload.get("business_type")).first()
             if bt_obj:
                 store.i_business_type = bt_obj.i_business_type_id
+
+        if payload.get("installed_by_agent_id"):
+            agent_id = _parse_optional_int(payload.get("installed_by_agent_id"), "installed_by_agent_id")
+            store.i_installed_by_agent_id = agent_id
 
         _stamp_created(store, user)
         db.add(store)
@@ -687,16 +883,19 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
         if bt_obj:
             store.i_business_type = bt_obj.i_business_type_id
 
+    if "installed_by_agent_id" in payload:
+        agent_id = _parse_optional_int(payload.get("installed_by_agent_id"), "installed_by_agent_id")
+        store.i_installed_by_agent_id = agent_id
+
     if "client_id" in payload:
         client_id_raw = payload.get("client_id")
         client_id = _parse_optional_int(client_id_raw, "client_id")
         if client_id is None:
-            store.i_account_id = None
-        else:
-            client = db.query(Client).filter(Client.i_account_id == client_id).first()
-            if not client:
-                raise HTTPException(status_code=400, detail="Invalid client_id.")
-            store.i_account_id = client.i_account_id
+            raise HTTPException(status_code=400, detail="client_id cannot be empty.")
+        client = db.query(Client).filter(Client.i_account_id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client_id.")
+        store.i_account_id = client.i_account_id
 
     _stamp_updated(store, user)
     db.commit()
@@ -717,6 +916,1072 @@ def delete_store(store_id: int, request: Request, db: Session = Depends(get_db))
 
     store.c_status = "inactive"
     _stamp_updated(store, user)
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+@router.get("/platform/client/{client_id}/stores")
+def list_client_stores(client_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    client = db.query(Client).filter(Client.i_account_id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    stores = (
+        db.query(Store)
+        .filter(Store.i_account_id == client_id)
+        .order_by(Store.i_store_id)
+        .all()
+    )
+
+    results = []
+    for s in stores:
+        bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == s.i_business_type).first()
+        results.append({
+            "store_id": s.i_store_id,
+            "store_seq": s.i_store_seq,
+            "store_code": s.c_store_code,
+            "store_name": s.c_store_name,
+            "client_id": s.i_account_id,
+            "client_name": client.c_account_name,
+            "client_code": client.c_client_code,
+            "business_type": bt.c_name if bt else None,
+            "operation_type": s.c_operation_type,
+            "status": s.c_status,
+            "phone": s.c_phone,
+            "email": s.c_email,
+            "address_line1": s.c_address_line1,
+            "address_line2": s.c_address_line2,
+            "city": s.c_city,
+            "state": s.c_state,
+            "country": s.c_country,
+            "zip": s.c_zip,
+            "receipt_store_name": s.c_receipt_store_name,
+            "receipt_phone": s.c_receipt_phone,
+            "receipt_email": s.c_receipt_email,
+            "receipt_website_url": s.c_receipt_website_url,
+            "receipt_message": s.c_receipt_message,
+        })
+    return _set_no_cache_headers(JSONResponse(results))
+
+
+@router.get("/platform/client/{client_id}/stores/{store_id}")
+def get_client_store(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    client, store = _ensure_client_store(db, client_id, store_id)
+    bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
+
+    data = {
+        "store_id": store.i_store_id,
+        "store_seq": store.i_store_seq,
+        "store_code": store.c_store_code,
+        "store_name": store.c_store_name,
+        "client_id": store.i_account_id,
+        "client_name": client.c_account_name,
+        "client_code": client.c_client_code,
+        "business_type": bt.c_name if bt else None,
+        "operation_type": store.c_operation_type,
+        "store_purpose": store.c_operation_type,
+        "channel_type": store.c_channel_type,
+        "device_type": store.c_device_type,
+        "contact_name": store.c_contact_name,
+        "owner_name": store.c_owner_name,
+        "address": store.c_address_line1,
+        "zip": store.c_zip,
+        "address_line1": store.c_address_line1,
+        "address_line2": store.c_address_line2,
+        "city": store.c_city,
+        "state": store.c_state,
+        "country": store.c_country,
+        "default_tax_rate": store.c_default_tax_rate,
+        "timezone": store.c_timezone,
+        "tax_source": store.c_tax_source,
+        "phone": store.c_phone,
+        "email": store.c_email,
+        "receipt_store_name": store.c_receipt_store_name,
+        "receipt_phone": store.c_receipt_phone,
+        "receipt_email": store.c_receipt_email,
+        "receipt_website_url": store.c_receipt_website_url,
+        "receipt_message": store.c_receipt_message,
+        "store_status": store.c_status,
+    }
+    return _set_no_cache_headers(JSONResponse(data))
+
+
+@router.post("/platform/client/{client_id}/stores")
+def create_client_store(client_id: int, request: Request, payload: dict, db: Session = Depends(get_db)):
+    payload = dict(payload or {})
+    payload["client_id"] = client_id
+    return create_store(request, payload, db)
+
+
+@router.put("/platform/client/{client_id}/stores/{store_id}")
+def update_client_store(client_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    payload = dict(payload or {})
+    payload.pop("client_id", None)
+    return update_store(store_id, payload, request, db)
+
+
+@router.delete("/platform/client/{client_id}/stores/{store_id}")
+def delete_client_store(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+    return delete_store(store_id, request, db)
+
+
+@router.get("/platform/client/{client_id}/stores/{store_id}/devices")
+def list_store_devices(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    devices = (
+        db.query(Device)
+        .filter(Device.i_store_id == store_id)
+        .order_by(Device.i_device_id)
+        .all()
+    )
+    license_ids = [d.i_license_id for d in devices if d.i_license_id]
+    license_map = {}
+    if license_ids:
+        for lic in db.query(License).filter(License.i_license_id.in_(license_ids)).all():
+            license_map[lic.i_license_id] = lic
+
+    agent_ids = [d.i_installed_by_agent_id for d in devices if d.i_installed_by_agent_id]
+    agent_map = {}
+    if agent_ids:
+        for agent in db.query(Agent).filter(Agent.i_agent_id.in_(agent_ids)).all():
+            agent_map[agent.i_agent_id] = agent
+
+    return _set_no_cache_headers(JSONResponse([
+        _serialize_device(device, license_map.get(device.i_license_id), agent_map.get(device.i_installed_by_agent_id)) for device in devices
+    ]))
+
+
+@router.get("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
+def get_store_device_detail(client_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    device = (
+        db.query(Device)
+        .filter(Device.i_device_id == device_id, Device.i_store_id == store_id)
+        .first()
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found for this store.")
+
+    license_obj = db.query(License).filter(License.i_license_id == device.i_license_id).first() if device.i_license_id else None
+    agent_obj = db.query(Agent).filter(Agent.i_agent_id == device.i_installed_by_agent_id).first() if device.i_installed_by_agent_id else None
+    logs = (
+        db.query(DeviceLog)
+        .filter(DeviceLog.i_device_id == device.i_device_id)
+        .order_by(DeviceLog.dt_event_time.desc(), DeviceLog.i_log_id.desc())
+        .all()
+    )
+
+    return _set_no_cache_headers(JSONResponse({
+        "device": _serialize_device(device, license_obj, agent_obj),
+        "logs": [_serialize_device_log(log) for log in logs],
+    }))
+
+
+@router.post("/platform/client/{client_id}/stores/{store_id}/devices")
+def create_store_device(client_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    device_name = str(payload.get("device_name") or "").strip()
+    if not device_name:
+        raise HTTPException(status_code=400, detail="device_name is required.")
+
+    license_id = _parse_optional_int(payload.get("license_id"), "license_id")
+    license_obj = None
+    if license_id is not None:
+        license_obj = db.query(License).filter(License.i_license_id == license_id).first()
+        if not license_obj:
+            raise HTTPException(status_code=400, detail="Invalid license_id.")
+        if license_obj.i_store_id != store_id:
+            raise HTTPException(status_code=400, detail="License must belong to the same store.")
+
+    installed_agent = _resolve_agent(payload.get("installed_by_agent_id"), db)
+
+    device = Device(
+        i_store_id=store_id,
+        i_license_id=license_id,
+        i_installed_by_agent_id=installed_agent.i_agent_id if installed_agent else None,
+        c_device_uuid=_generate_store_device_code(db, store_id),
+        c_device_name=device_name,
+        c_device_type=str(payload.get("device_type") or "POS").strip() or "POS",
+        c_activation_code=_generate_device_activation_code(db),
+        dt_activation_expiry=datetime.now() + timedelta(minutes=DEVICE_ACTIVATION_TTL_MINUTES),
+        c_status="inactive",
+        c_note=str(payload.get("note") or "").strip() or None,
+        c_last_ip=_resolve_request_ip(request, payload),
+        dt_last_seen=None,
+    )
+    _stamp_created(device, user)
+    db.add(device)
+    db.flush()
+    _log_device_event(
+        db,
+        device,
+        "CREATED",
+        request=request,
+        payload=payload,
+        action_by=_actor_label(user),
+        note=f"Device created for store {store_id}.",
+    )
+    db.commit()
+    db.refresh(device)
+
+    return JSONResponse(_serialize_device(device, license_obj, installed_agent))
+
+
+@router.put("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
+def update_store_device(client_id: int, store_id: int, device_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    device = (
+        db.query(Device)
+        .filter(Device.i_device_id == device_id, Device.i_store_id == store_id)
+        .first()
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found for this store.")
+
+    if "device_name" in payload:
+        device_name = str(payload.get("device_name") or "").strip()
+        if not device_name:
+            raise HTTPException(status_code=400, detail="device_name is required.")
+        device.c_device_name = device_name
+
+    if "device_type" in payload:
+        device.c_device_type = str(payload.get("device_type") or "").strip() or "POS"
+
+    if "status" in payload:
+        normalized_status = str(payload.get("status") or "active").strip().lower() or "active"
+        if normalized_status not in {"active", "inactive", "offline", "activated"}:
+            raise HTTPException(status_code=400, detail="Invalid device status.")
+        device.c_status = normalized_status
+
+    if "last_seen" in payload:
+        device.dt_last_seen = _parse_optional_iso_datetime(payload.get("last_seen"))
+
+    if "note" in payload:
+        device.c_note = str(payload.get("note") or "").strip() or None
+
+    installed_agent = None
+    if "installed_by_agent_id" in payload:
+        installed_agent = _resolve_agent(payload.get("installed_by_agent_id"), db)
+        device.i_installed_by_agent_id = installed_agent.i_agent_id if installed_agent else None
+    elif device.i_installed_by_agent_id:
+        installed_agent = db.query(Agent).filter(Agent.i_agent_id == device.i_installed_by_agent_id).first()
+
+    license_obj = None
+    if "license_id" in payload:
+        license_id = _parse_optional_int(payload.get("license_id"), "license_id")
+        if license_id is None:
+            device.i_license_id = None
+        else:
+            license_obj = db.query(License).filter(License.i_license_id == license_id).first()
+            if not license_obj:
+                raise HTTPException(status_code=400, detail="Invalid license_id.")
+            if license_obj.i_store_id != store_id:
+                raise HTTPException(status_code=400, detail="License must belong to the same store.")
+            device.i_license_id = license_id
+    elif device.i_license_id:
+        license_obj = db.query(License).filter(License.i_license_id == device.i_license_id).first()
+
+    _stamp_updated(device, user)
+    event_type = "UPDATED"
+    if "status" in payload:
+        if device.c_status == "offline":
+            event_type = "OFFLINE"
+        elif device.c_status == "activated":
+            event_type = "ACTIVATED"
+    _log_device_event(
+        db,
+        device,
+        event_type,
+        request=request,
+        payload=payload,
+        action_by=_actor_label(user),
+        note=str(payload.get("note") or "").strip() or f"Device {event_type.lower()} via platform.",
+    )
+    db.commit()
+    db.refresh(device)
+
+    return JSONResponse(_serialize_device(device, license_obj, installed_agent))
+
+
+@router.delete("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
+def delete_store_device(client_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _ensure_client_store(db, client_id, store_id)
+
+    device = (
+        db.query(Device)
+        .filter(Device.i_device_id == device_id, Device.i_store_id == store_id)
+        .first()
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found for this store.")
+
+    db.query(DeviceLog).filter(DeviceLog.i_device_id == device.i_device_id).delete(synchronize_session=False)
+    db.delete(device)
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+@router.post("/platform/device/activate")
+def activate_device(payload: dict, request: Request, db: Session = Depends(get_db)):
+    activation_code = str(payload.get("activation_code") or "").strip().upper()
+    hardware_id = str(payload.get("hardware_id") or "").strip()
+
+    if not activation_code:
+        raise HTTPException(status_code=400, detail="activation_code is required.")
+    if not hardware_id:
+        raise HTTPException(status_code=400, detail="hardware_id is required.")
+
+    device = db.query(Device).filter(Device.c_activation_code == activation_code).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Invalid activation code.")
+
+    if not device.dt_activation_expiry or device.dt_activation_expiry < datetime.now():
+        raise HTTPException(status_code=410, detail="Activation code has expired.")
+
+    if device.c_bound_hardware_id and device.c_bound_hardware_id != hardware_id:
+        raise HTTPException(status_code=403, detail="Device is already bound to different hardware.")
+
+    activated_at = datetime.now()
+    device.c_bound_hardware_id = hardware_id
+    device.c_status = "activated"
+    device.dt_last_seen = activated_at
+    device.dt_first_activated_at = device.dt_first_activated_at or activated_at
+    device.c_activated_by = str(payload.get("activated_by") or payload.get("action_by") or hardware_id).strip() or device.c_activated_by
+    device.c_last_ip = _resolve_request_ip(request, payload)
+    device.c_os = str(payload.get("os") or device.c_os or "").strip() or device.c_os
+    device.c_app_version = str(payload.get("app_version") or device.c_app_version or "").strip() or device.c_app_version
+    if payload.get("note") is not None:
+        device.c_note = str(payload.get("note") or "").strip() or device.c_note
+
+    # One-time activation code: consume immediately.
+    device.c_activation_code = None
+    device.dt_activation_expiry = None
+
+    _log_device_event(
+        db,
+        device,
+        "ACTIVATED",
+        request=request,
+        payload=payload,
+        action_by=device.c_activated_by,
+        note=str(payload.get("note") or "").strip() or "Device activated.",
+    )
+    db.commit()
+    db.refresh(device)
+
+    return JSONResponse({
+        "success": True,
+        "device_id": device.i_device_id,
+        "device_code": device.c_device_uuid,
+        "store_id": device.i_store_id,
+        "status": device.c_status,
+        "bound_hardware_id": device.c_bound_hardware_id,
+        "first_activated_at": device.dt_first_activated_at.isoformat() if device.dt_first_activated_at else None,
+        "last_ip": device.c_last_ip,
+    })
+
+
+@router.post("/platform/device/validate")
+def validate_device_binding(payload: dict, request: Request, db: Session = Depends(get_db)):
+    device_code = str(payload.get("device_code") or "").strip()
+    hardware_id = str(payload.get("hardware_id") or "").strip()
+
+    if not device_code:
+        raise HTTPException(status_code=400, detail="device_code is required.")
+    if not hardware_id:
+        raise HTTPException(status_code=400, detail="hardware_id is required.")
+
+    device = db.query(Device).filter(Device.c_device_uuid == device_code).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    if str(device.c_status or "").lower() != "activated":
+        raise HTTPException(status_code=403, detail="Device is not activated.")
+
+    if not device.c_bound_hardware_id:
+        raise HTTPException(status_code=403, detail="Device is not bound to hardware.")
+
+    if device.c_bound_hardware_id != hardware_id:
+        raise HTTPException(status_code=403, detail="Hardware mismatch.")
+
+    device.dt_last_seen = datetime.now()
+    device.c_last_ip = _resolve_request_ip(request, payload)
+    if payload.get("os") is not None:
+        device.c_os = str(payload.get("os") or "").strip() or device.c_os
+    if payload.get("app_version") is not None:
+        device.c_app_version = str(payload.get("app_version") or "").strip() or device.c_app_version
+    if payload.get("note") is not None:
+        device.c_note = str(payload.get("note") or "").strip() or device.c_note
+
+    _log_device_event(
+        db,
+        device,
+        "LOGIN",
+        request=request,
+        payload=payload,
+        action_by=str(payload.get("action_by") or payload.get("hardware_id") or "").strip() or None,
+        note=str(payload.get("note") or "").strip() or "Device validation/login.",
+    )
+    db.commit()
+
+    return JSONResponse({
+        "success": True,
+        "device_id": device.i_device_id,
+        "store_id": device.i_store_id,
+        "status": device.c_status,
+        "last_ip": device.c_last_ip,
+        "last_seen": device.dt_last_seen.isoformat() if device.dt_last_seen else None,
+    })
+
+
+# Agents
+
+@router.get("/platform/agent-types")
+def list_agent_types(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(AgentType)
+
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(AgentType.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                AgentType.c_agent_type_code.ilike(term),
+                AgentType.c_agent_type_name.ilike(term),
+            )
+        )
+
+    items = query.order_by(AgentType.i_agent_type_id).all()
+    return JSONResponse([
+        {
+            "id": item.i_agent_type_id,
+            "agent_type_code": item.c_agent_type_code,
+            "agent_type_name": item.c_agent_type_name,
+            "status": item.c_status,
+        }
+        for item in items
+    ])
+
+
+@router.post("/platform/agent-type")
+def create_agent_type(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    type_code = str(payload.get("agent_type_code") or "").strip().upper()
+    type_name = str(payload.get("agent_type_name") or "").strip()
+    if not type_code or not type_name:
+        raise HTTPException(status_code=400, detail="agent_type_code and agent_type_name are required")
+
+    item = AgentType(
+        c_agent_type_code=type_code,
+        c_agent_type_name=type_name,
+        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
+    )
+    db.add(item)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="agent_type_code already exists")
+
+    db.refresh(item)
+    return JSONResponse({"id": item.i_agent_type_id})
+
+
+@router.put("/platform/agent-type/{agent_type_id}")
+def update_agent_type(agent_type_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Agent type not found")
+
+    if "agent_type_code" in payload:
+        type_code = str(payload.get("agent_type_code") or "").strip().upper()
+        if not type_code:
+            raise HTTPException(status_code=400, detail="agent_type_code is required")
+        item.c_agent_type_code = type_code
+    if "agent_type_name" in payload:
+        type_name = str(payload.get("agent_type_name") or "").strip()
+        if not type_name:
+            raise HTTPException(status_code=400, detail="agent_type_name is required")
+        item.c_agent_type_name = type_name
+    if "status" in payload:
+        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="agent_type_code already exists")
+
+    return JSONResponse({"success": True})
+
+
+@router.delete("/platform/agent-type/{agent_type_id}")
+def delete_agent_type(agent_type_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Agent type not found")
+
+    linked_agent_count = db.query(Agent.i_agent_id).filter(Agent.i_agent_type_id == agent_type_id).count()
+    if linked_agent_count > 0:
+        item.c_status = "inactive"
+        db.commit()
+        return JSONResponse({"success": True, "mode": "soft-delete", "status": "inactive"})
+
+    db.delete(item)
+    db.commit()
+    return JSONResponse({"success": True, "mode": "hard-delete"})
+
+@router.get("/platform/agents")
+def list_agents(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(Agent, AgentType).outerjoin(AgentType, Agent.i_agent_type_id == AgentType.i_agent_type_id)
+
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(Agent.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Agent.c_agent_code.ilike(term),
+                Agent.c_agent_name.ilike(term),
+                Agent.c_company_name.ilike(term),
+                Agent.c_contact_name.ilike(term),
+                Agent.c_email.ilike(term),
+                Agent.c_phone.ilike(term),
+                AgentType.c_agent_type_name.ilike(term),
+            )
+        )
+
+    items = query.order_by(Agent.i_agent_id).all()
+    return JSONResponse([
+        {
+            "id": agent.i_agent_id,
+            "agent_type_id": agent.i_agent_type_id,
+            "agent_type_code": agent_type.c_agent_type_code if agent_type else None,
+            "agent_type_name": agent_type.c_agent_type_name if agent_type else None,
+            "agent_code": agent.c_agent_code,
+            "agent_name": agent.c_contact_name or agent.c_agent_name,
+            "company_name": agent.c_company_name,
+            "contact_name": agent.c_contact_name or agent.c_agent_name,
+            "phone": agent.c_phone,
+            "email": agent.c_email,
+            "address_line1": agent.c_address_line1,
+            "address_line2": agent.c_address_line2,
+            "city": agent.c_city,
+            "state": agent.c_state,
+            "zip": agent.c_zip,
+            "country": agent.c_country,
+            "commission_rate": float(agent.n_commission_rate) if agent.n_commission_rate is not None else None,
+            "memo": agent.c_memo,
+            "status": agent.c_status,
+            "created_at": agent.dt_created_at.isoformat() if agent.dt_created_at else None,
+        }
+        for agent, agent_type in items
+    ])
+
+
+@router.post("/platform/agent")
+def create_agent(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contact_name = str(payload.get("contact_name") or payload.get("agent_name") or "").strip()
+    if not contact_name:
+        raise HTTPException(status_code=400, detail="contact_name is required")
+
+    agent_type_id = _parse_optional_int(payload.get("agent_type_id"), "agent_type_id")
+    if agent_type_id is not None:
+        agent_type = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+        if not agent_type:
+            raise HTTPException(status_code=400, detail="Invalid agent_type_id")
+
+    item = Agent(
+        i_agent_type_id=agent_type_id,
+        c_agent_code=f"TMP_{secrets.token_hex(6).upper()}",
+        c_agent_name=contact_name,
+        c_company_name=str(payload.get("company_name") or "").strip() or None,
+        c_contact_name=contact_name,
+        c_phone=str(payload.get("phone") or "").strip() or None,
+        c_email=str(payload.get("email") or "").strip() or None,
+        c_address_line1=str(payload.get("address_line1") or "").strip() or None,
+        c_address_line2=str(payload.get("address_line2") or "").strip() or None,
+        c_city=str(payload.get("city") or "").strip() or None,
+        c_state=str(payload.get("state") or "").strip() or None,
+        c_zip=str(payload.get("zip") or "").strip() or None,
+        c_country=str(payload.get("country") or "").strip() or None,
+        n_commission_rate=_parse_optional_decimal(payload.get("commission_rate"), "commission_rate"),
+        c_memo=str(payload.get("memo") or "").strip() or None,
+        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
+    )
+    db.add(item)
+    db.flush()
+    item.c_agent_code = _generate_agent_code(item.i_agent_id)
+    db.commit()
+    db.refresh(item)
+
+    return JSONResponse({"id": item.i_agent_id, "agent_code": item.c_agent_code})
+
+
+@router.put("/platform/agent/{agent_id}")
+def update_agent(agent_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if "agent_type_id" in payload:
+        agent_type_id = _parse_optional_int(payload.get("agent_type_id"), "agent_type_id")
+        if agent_type_id is not None:
+            agent_type = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+            if not agent_type:
+                raise HTTPException(status_code=400, detail="Invalid agent_type_id")
+        item.i_agent_type_id = agent_type_id
+    if "contact_name" in payload or "agent_name" in payload:
+        contact_name = str(payload.get("contact_name") or payload.get("agent_name") or "").strip()
+        if not contact_name:
+            raise HTTPException(status_code=400, detail="contact_name is required")
+        item.c_agent_name = contact_name
+        item.c_contact_name = contact_name
+    if "company_name" in payload:
+        item.c_company_name = str(payload.get("company_name") or "").strip() or None
+    if "phone" in payload:
+        item.c_phone = str(payload.get("phone") or "").strip() or None
+    if "email" in payload:
+        item.c_email = str(payload.get("email") or "").strip() or None
+    if "address_line1" in payload:
+        item.c_address_line1 = str(payload.get("address_line1") or "").strip() or None
+    if "address_line2" in payload:
+        item.c_address_line2 = str(payload.get("address_line2") or "").strip() or None
+    if "city" in payload:
+        item.c_city = str(payload.get("city") or "").strip() or None
+    if "state" in payload:
+        item.c_state = str(payload.get("state") or "").strip() or None
+    if "zip" in payload:
+        item.c_zip = str(payload.get("zip") or "").strip() or None
+    if "country" in payload:
+        item.c_country = str(payload.get("country") or "").strip() or None
+    if "commission_rate" in payload:
+        item.n_commission_rate = _parse_optional_decimal(payload.get("commission_rate"), "commission_rate")
+    if "memo" in payload:
+        item.c_memo = str(payload.get("memo") or "").strip() or None
+    if "status" in payload:
+        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+@router.delete("/platform/agent/{agent_id}")
+def delete_agent(agent_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    item.c_status = "inactive"
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+# Licenses
+
+@router.get("/platform/licenses")
+def list_licenses(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(License)
+
+    normalized_status = _normalize_status(status, {"active", "inactive", "suspended", "trial", "expired"})
+    if normalized_status:
+        query = query.filter(License.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                License.c_license_key.ilike(term),
+                License.c_plan_name.ilike(term),
+                License.c_license_type.ilike(term),
+            )
+        )
+
+    items = query.order_by(License.i_license_id.desc()).all()
+
+    store_ids = [item.i_store_id for item in items if item.i_store_id is not None]
+    client_ids = [item.i_client_id for item in items if item.i_client_id is not None]
+    agent_ids = [item.i_agent_id for item in items if item.i_agent_id is not None]
+
+    store_map = {
+        row.i_store_id: row.c_store_name
+        for row in db.query(Store).filter(Store.i_store_id.in_(store_ids)).all()
+    } if store_ids else {}
+    client_map = {
+        row.i_client_id: row.c_client_name
+        for row in db.query(Client).filter(Client.i_client_id.in_(client_ids)).all()
+    } if client_ids else {}
+    agent_map = {
+        row.i_agent_id: row.c_agent_name
+        for row in db.query(Agent).filter(Agent.i_agent_id.in_(agent_ids)).all()
+    } if agent_ids else {}
+
+    return JSONResponse([
+        {
+            "id": item.i_license_id,
+            "license_key": item.c_license_key,
+            "plan_name": item.c_plan_name,
+            "license_type": item.c_license_type,
+            "store_id": item.i_store_id,
+            "store_name": store_map.get(item.i_store_id),
+            "client_id": item.i_client_id,
+            "client_name": client_map.get(item.i_client_id),
+            "agent_id": item.i_agent_id,
+            "agent_name": agent_map.get(item.i_agent_id),
+            "max_devices": item.i_max_devices,
+            "max_users": item.i_max_users,
+            "start_date": item.dt_start.isoformat() if item.dt_start else None,
+            "end_date": item.dt_end.isoformat() if item.dt_end else None,
+            "monthly_fee": float(item.n_monthly_fee) if item.n_monthly_fee is not None else None,
+            "agent_commission": float(item.n_agent_commission) if item.n_agent_commission is not None else None,
+            "platform_fee": float(item.n_platform_fee) if item.n_platform_fee is not None else None,
+            "status": item.c_status or "active",
+        }
+        for item in items
+    ])
+
+
+@router.post("/platform/license")
+def create_license(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    license_key = str(payload.get("license_key") or "").strip()
+    if not license_key:
+        raise HTTPException(status_code=400, detail="license_key is required")
+
+    store_id = _parse_optional_int(payload.get("store_id"), "store_id")
+    if store_id is None:
+        raise HTTPException(status_code=400, detail="store_id is required")
+
+    store = db.query(Store).filter(Store.i_store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=400, detail="Invalid store_id")
+
+    client_id = _parse_optional_int(payload.get("client_id"), "client_id")
+    if client_id is not None:
+        client = db.query(Client).filter(Client.i_client_id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client_id")
+
+    agent_id = _parse_optional_int(payload.get("agent_id"), "agent_id")
+    if agent_id is not None:
+        agent = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+        if not agent:
+            raise HTTPException(status_code=400, detail="Invalid agent_id")
+
+    item = License(
+        c_license_key=license_key,
+        c_plan_name=str(payload.get("plan_name") or "").strip() or None,
+        c_license_type=str(payload.get("license_type") or "").strip() or None,
+        i_store_id=store_id,
+        i_client_id=client_id,
+        i_agent_id=agent_id,
+        i_max_devices=_parse_optional_int(payload.get("max_devices"), "max_devices"),
+        i_max_users=_parse_optional_int(payload.get("max_users"), "max_users"),
+        dt_start=_parse_optional_iso_datetime(payload.get("start_date")),
+        dt_end=_parse_optional_iso_datetime(payload.get("end_date")),
+        n_monthly_fee=_parse_optional_decimal(payload.get("monthly_fee"), "monthly_fee"),
+        n_agent_commission=_parse_optional_decimal(payload.get("agent_commission"), "agent_commission"),
+        n_platform_fee=_parse_optional_decimal(payload.get("platform_fee"), "platform_fee"),
+        c_status=_normalize_status(payload.get("status"), {"active", "inactive", "suspended", "trial", "expired"}) or "active",
+    )
+    _stamp_created(item, user)
+    db.add(item)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="license_key already exists")
+
+    db.refresh(item)
+    return JSONResponse({"id": item.i_license_id})
+
+
+@router.put("/platform/license/{license_id}")
+def update_license(license_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(License).filter(License.i_license_id == license_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    if "license_key" in payload:
+        license_key = str(payload.get("license_key") or "").strip()
+        if not license_key:
+            raise HTTPException(status_code=400, detail="license_key is required")
+        item.c_license_key = license_key
+    if "plan_name" in payload:
+        item.c_plan_name = str(payload.get("plan_name") or "").strip() or None
+    if "license_type" in payload:
+        item.c_license_type = str(payload.get("license_type") or "").strip() or None
+    if "store_id" in payload:
+        store_id = _parse_optional_int(payload.get("store_id"), "store_id")
+        if store_id is None:
+            raise HTTPException(status_code=400, detail="store_id is required")
+        store = db.query(Store).filter(Store.i_store_id == store_id).first()
+        if not store:
+            raise HTTPException(status_code=400, detail="Invalid store_id")
+        item.i_store_id = store_id
+    if "client_id" in payload:
+        client_id = _parse_optional_int(payload.get("client_id"), "client_id")
+        if client_id is not None:
+            client = db.query(Client).filter(Client.i_client_id == client_id).first()
+            if not client:
+                raise HTTPException(status_code=400, detail="Invalid client_id")
+        item.i_client_id = client_id
+    if "agent_id" in payload:
+        agent_id = _parse_optional_int(payload.get("agent_id"), "agent_id")
+        if agent_id is not None:
+            agent = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+            if not agent:
+                raise HTTPException(status_code=400, detail="Invalid agent_id")
+        item.i_agent_id = agent_id
+    if "max_devices" in payload:
+        item.i_max_devices = _parse_optional_int(payload.get("max_devices"), "max_devices")
+    if "max_users" in payload:
+        item.i_max_users = _parse_optional_int(payload.get("max_users"), "max_users")
+    if "start_date" in payload:
+        item.dt_start = _parse_optional_iso_datetime(payload.get("start_date"))
+    if "end_date" in payload:
+        item.dt_end = _parse_optional_iso_datetime(payload.get("end_date"))
+    if "monthly_fee" in payload:
+        item.n_monthly_fee = _parse_optional_decimal(payload.get("monthly_fee"), "monthly_fee")
+    if "agent_commission" in payload:
+        item.n_agent_commission = _parse_optional_decimal(payload.get("agent_commission"), "agent_commission")
+    if "platform_fee" in payload:
+        item.n_platform_fee = _parse_optional_decimal(payload.get("platform_fee"), "platform_fee")
+    if "status" in payload:
+        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive", "suspended", "trial", "expired"}) or "active"
+
+    _stamp_updated(item, user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="license_key already exists")
+
+    return JSONResponse({"success": True})
+
+
+@router.delete("/platform/license/{license_id}")
+def delete_license(license_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(License).filter(License.i_license_id == license_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    item.c_status = "inactive"
+    _stamp_updated(item, user)
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+# Payment Methods
+
+@router.get("/platform/payment-methods")
+def list_payment_methods(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(PaymentMethod)
+
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(PaymentMethod.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                PaymentMethod.c_payment_type.ilike(term),
+                PaymentMethod.c_billing_cycle.ilike(term),
+                PaymentMethod.c_card_token.ilike(term),
+                PaymentMethod.c_bank_account.ilike(term),
+            )
+        )
+
+    items = query.order_by(PaymentMethod.i_payment_id.desc()).all()
+    client_ids = [item.i_client_id for item in items if item.i_client_id is not None]
+    client_map = {
+        row.i_client_id: row.c_client_name
+        for row in db.query(Client).filter(Client.i_client_id.in_(client_ids)).all()
+    } if client_ids else {}
+
+    return JSONResponse([
+        {
+            "id": item.i_payment_id,
+            "client_id": item.i_client_id,
+            "client_name": client_map.get(item.i_client_id),
+            "payment_type": item.c_payment_type,
+            "card_token": item.c_card_token,
+            "bank_account": item.c_bank_account,
+            "billing_cycle": item.c_billing_cycle,
+            "next_billing": item.dt_next_billing.isoformat() if item.dt_next_billing else None,
+            "status": item.c_status or "active",
+        }
+        for item in items
+    ])
+
+
+@router.post("/platform/payment-method")
+def create_payment_method(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    payment_type = str(payload.get("payment_type") or "").strip()
+    if not payment_type:
+        raise HTTPException(status_code=400, detail="payment_type is required")
+
+    client_id = _parse_optional_int(payload.get("client_id"), "client_id")
+    if client_id is not None:
+        client = db.query(Client).filter(Client.i_client_id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=400, detail="Invalid client_id")
+
+    item = PaymentMethod(
+        i_client_id=client_id,
+        c_payment_type=payment_type,
+        c_card_token=str(payload.get("card_token") or "").strip() or None,
+        c_bank_account=str(payload.get("bank_account") or "").strip() or None,
+        c_billing_cycle=str(payload.get("billing_cycle") or "").strip() or None,
+        dt_next_billing=_parse_optional_iso_datetime(payload.get("next_billing")),
+        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return JSONResponse({"id": item.i_payment_id})
+
+
+@router.put("/platform/payment-method/{payment_id}")
+def update_payment_method(payment_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(PaymentMethod).filter(PaymentMethod.i_payment_id == payment_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Payment method not found")
+
+    if "client_id" in payload:
+        client_id = _parse_optional_int(payload.get("client_id"), "client_id")
+        if client_id is not None:
+            client = db.query(Client).filter(Client.i_client_id == client_id).first()
+            if not client:
+                raise HTTPException(status_code=400, detail="Invalid client_id")
+        item.i_client_id = client_id
+    if "payment_type" in payload:
+        payment_type = str(payload.get("payment_type") or "").strip()
+        if not payment_type:
+            raise HTTPException(status_code=400, detail="payment_type is required")
+        item.c_payment_type = payment_type
+    if "card_token" in payload:
+        item.c_card_token = str(payload.get("card_token") or "").strip() or None
+    if "bank_account" in payload:
+        item.c_bank_account = str(payload.get("bank_account") or "").strip() or None
+    if "billing_cycle" in payload:
+        item.c_billing_cycle = str(payload.get("billing_cycle") or "").strip() or None
+    if "next_billing" in payload:
+        item.dt_next_billing = _parse_optional_iso_datetime(payload.get("next_billing"))
+    if "status" in payload:
+        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+@router.delete("/platform/payment-method/{payment_id}")
+def delete_payment_method(payment_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(PaymentMethod).filter(PaymentMethod.i_payment_id == payment_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Payment method not found")
+
+    item.c_status = "inactive"
     db.commit()
     return JSONResponse({"success": True})
 
@@ -790,11 +2055,16 @@ def list_roles(
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
 ):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
     query = db.query(Role)
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(Role.c_status == normalized_status)
+
     if search:
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -871,11 +2141,16 @@ def list_business_types(
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
 ):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
     query = db.query(BusinessType)
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(BusinessType.c_status == normalized_status)
+
     if search:
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -966,11 +2241,16 @@ def list_users(
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
 ):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
     query = db.query(PlatformUser)
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(PlatformUser.c_status == normalized_status)
+
     if search:
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -1120,6 +2400,11 @@ def list_clients(
             continue
         client_business_map[account_id] = bt_name_map.get(business_type_id)
 
+    agent_name_map = {
+        row.i_agent_id: (row.c_contact_name or row.c_agent_name)
+        for row in db.query(Agent).all()
+    }
+
     return JSONResponse([
         {
             "id": i.i_account_id,
@@ -1132,6 +2417,9 @@ def list_clients(
                 else client_business_map.get(i.i_account_id)
             ),
             "channel_type": i.c_channel_type,
+            "i_agent_id": i.i_agent_id,
+            "primary_agent_id": i.i_agent_id,
+            "primary_agent_name": agent_name_map.get(i.i_agent_id),
             "first_name": i.c_first_name,
             "last_name": i.c_last_name,
             "email": i.c_email,
@@ -1143,6 +2431,7 @@ def list_clients(
             "state": i.c_state,
             "zip": i.c_zip,
             "country": i.c_country,
+            "memo": i.c_memo,
             "status": i.c_status,
         }
         for i in items
@@ -1166,6 +2455,13 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             raise HTTPException(status_code=400, detail="invalid business_type")
         target_bt_id = bt_obj.i_business_type_id
 
+    primary_agent_raw = payload.get("primary_agent_id") if "primary_agent_id" in payload else payload.get("i_agent_id")
+    primary_agent_id = _parse_optional_int(primary_agent_raw, "primary_agent_id")
+    if primary_agent_id is not None:
+        primary_agent = db.query(Agent).filter(Agent.i_agent_id == primary_agent_id).first()
+        if not primary_agent:
+            raise HTTPException(status_code=400, detail="invalid primary_agent_id")
+
     address_line1 = (
         payload.get("address_line1")
         or payload.get("address")
@@ -1179,6 +2475,7 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             c_client_code=generated_client_code,
             c_account_name=client_name,
             i_business_type=target_bt_id,
+            i_agent_id=primary_agent_id,
             c_channel_type=payload.get("channel_type"),
             c_first_name=payload.get("first_name"),
             c_last_name=payload.get("last_name"),
@@ -1190,6 +2487,7 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             c_state=payload.get("state"),
             c_zip=payload.get("zip"),
             c_country=payload.get("country") or "USA",
+            c_memo=payload.get("memo"),
             c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
         )
         _stamp_created(item, user)
@@ -1253,10 +2551,20 @@ def update_client(client_id: int, payload: dict, request: Request, db: Session =
         item.c_zip = payload.get("zip")
     if "country" in payload:
         item.c_country = payload.get("country") or "USA"
+    if "memo" in payload:
+        item.c_memo = payload.get("memo")
     if "status" in payload:
         item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"})
     if "channel_type" in payload:
         item.c_channel_type = payload.get("channel_type") or None
+    if "primary_agent_id" in payload or "i_agent_id" in payload:
+        primary_agent_raw = payload.get("primary_agent_id") if "primary_agent_id" in payload else payload.get("i_agent_id")
+        primary_agent_id = _parse_optional_int(primary_agent_raw, "primary_agent_id")
+        if primary_agent_id is not None:
+            primary_agent = db.query(Agent).filter(Agent.i_agent_id == primary_agent_id).first()
+            if not primary_agent:
+                raise HTTPException(status_code=400, detail="invalid primary_agent_id")
+        item.i_agent_id = primary_agent_id
 
     if "business_type" in payload:
         requested_bt_name = (payload.get("business_type") or "").strip()

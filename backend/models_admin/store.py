@@ -79,6 +79,9 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     c_memo = Column(String, nullable=True)
     c_remark = Column(String, nullable=True)
 
+    # ✅ 담당 에이전트 (설치/관리 담당자)
+    i_installed_by_agent_id = Column(Integer, ForeignKey("tb_agent.i_agent_id"), nullable=True)
+
     # ✅ 상태
     c_status = Column(String, default="active")       # active / inactive
 
