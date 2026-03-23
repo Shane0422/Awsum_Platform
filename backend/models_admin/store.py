@@ -20,11 +20,11 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     c_store_pw   = Column(String, nullable=True)     # 업체 고유 비밀번호 (legacy; not required for profile data)
     dt_pw_expire = Column(DateTime, nullable=True)    # 업체 비밀번호 만료일자 (optional)
 
-    # ✅ 관계 (클라이언트/구분/업종)
-    i_client_id        = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=True)            # client (1:N, Client -> Store)
-    i_account_id       = synonym("i_client_id")
+    # ✅ 관계 (계정/구분/업종)
+    i_account_id       = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=True)            # account (1:N, Account -> Store)
+    i_client_id        = synonym("i_account_id")  # Legacy compatibility
 
-    # 관계 (계정/업종)
+    # 관계 (업종)
     i_business_type_id = Column(Integer, ForeignKey("tb_business_type.i_business_type_id"), nullable=True) # 업종 (세탁소/웨딩/꽃집 등)
 
     # 기능/채널/디바이스 분류는 StoreType 마스터 대신 store 속성으로 관리

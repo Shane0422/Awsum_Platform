@@ -7,9 +7,10 @@ from backend.models_common.address_mixin import AddressMixin
 from backend.models_common.contact_mixin import ContactMixin
 
 
-class Client(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
-    __tablename__ = "tb_client"
+class Account(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
+    __tablename__ = "tb_client"  # 기존 테이블명 유지 - 실제 테이블이 tb_client임
 
+    # 기본 필드: 기존 컬럼명 유지 (데이터 호환성)
     i_client_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     c_client_code = Column(String(20), nullable=False, unique=True)
     i_business_type = Column(Integer, nullable=True)
@@ -21,8 +22,9 @@ class Client(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     c_status = Column(String, default="active")
     c_memo = Column(String, nullable=True)
 
-    # 구버전 account 코드 호환용 별칭
+    # 새 명칭: synonym으로 제공 (ORM 호환)
     i_account_id = synonym("i_client_id")
+    c_account_code = synonym("c_client_code")
     c_account_name = synonym("c_client_name")
 
     # ContactMixin 상속 컬럼
@@ -46,5 +48,5 @@ class Client(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     # i_updated_by : 마지막 수정자
 
 
-# 구버전 모듈 호환용 클래스 별칭 (마이그레이션 전까지 사용)
-Account = Client
+# 레거시 호환: 마이그레이션 후 제거 예정
+Client = Account

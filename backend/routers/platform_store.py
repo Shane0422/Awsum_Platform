@@ -18,7 +18,7 @@ from backend.models_admin.store import Store
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
 from backend.models_admin.platform_user import PlatformUser
-from backend.models_admin.account import Client
+from backend.models_admin.account import Account, Client  # Client for legacy compatibility
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.device import Device
 from backend.models_admin.device_log import DeviceLog
@@ -39,9 +39,9 @@ LEGACY_TEST_STORE_CODE = "CUST_00001"
 TEST_STORE_CODE = "CLT_00001"  # Legacy code kept for backwards-compat filtering
 CLIENT_STORE_PREFIX = "STR_"
 CLIENT_STORE_SEQ_START = 20001
-CLIENT_CODE_PREFIX = "CLT_"
-CLIENT_CODE_SEQ_START = 11001
-CLIENT_CODE_ADVISORY_LOCK_KEY = 11001001
+ACCOUNT_CODE_PREFIX = "CLT_"
+ACCOUNT_CODE_SEQ_START = 11001
+ACCOUNT_CODE_ADVISORY_LOCK_KEY = 11001001
 AGENT_CODE_PREFIX = "AGT_"
 ALLOWED_DASHBOARD_TYPES = {"PLATFORM", "STANDARD", "RESTAURANT", "DELI", "TUXEDO_RENTAL"}
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -963,6 +963,12 @@ def list_client_stores(client_id: int, request: Request, db: Session = Depends(g
             "receipt_email": s.c_receipt_email,
             "receipt_website_url": s.c_receipt_website_url,
             "receipt_message": s.c_receipt_message,
+            "contact_name": s.c_contact_name,
+            "default_tax_rate": s.c_default_tax_rate,
+            "timezone": s.c_timezone,
+            "tax_source": s.c_tax_source,
+            "memo": s.c_memo,
+            "installed_by_agent_id": s.i_installed_by_agent_id,
         })
     return _set_no_cache_headers(JSONResponse(results))
 
@@ -1007,7 +1013,10 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
         "receipt_email": store.c_receipt_email,
         "receipt_website_url": store.c_receipt_website_url,
         "receipt_message": store.c_receipt_message,
+        "status": store.c_status,
         "store_status": store.c_status,
+        "memo": store.c_memo,
+        "installed_by_agent_id": store.i_installed_by_agent_id,
     }
     return _set_no_cache_headers(JSONResponse(data))
 
@@ -2408,9 +2417,11 @@ def list_clients(
     return JSONResponse([
         {
             "id": i.i_account_id,
-            "c_client_code": i.c_client_code,
-            "client_code": i.c_client_code,
-            "client_name": i.c_account_name,
+            "account_id": i.i_account_id,
+            "account_code": i.c_client_code,
+            "c_account_code": i.c_client_code,  # legacy
+            "account_name": i.c_account_name,
+            "client_name": i.c_account_name,  # legacy
             "business_type": (
                 bt_name_map.get(i.i_business_type)
                 if getattr(i, "i_business_type", None)
