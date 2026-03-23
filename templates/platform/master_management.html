@@ -2890,6 +2890,24 @@
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive', 'suspended', 'trial', 'expired'] },
       ],
     },
+    subscription: {
+      endpoint: 'subscriptions',
+      headers: ['ID', 'Account', 'Store', 'Plan', 'Monthly Fee', 'Start Date', 'End Date', 'Device Limit', 'Status'],
+      statusIndex: 8,
+      fields: [
+        { name: 'i_account_id', label: 'Account', type: 'select', options: [{ value: '', label: '' }, ...masterAccountOptions], colClass: 'col-12 col-md-6' },
+        { name: 'i_store_id', label: 'Store', type: 'select', options: [{ value: '', label: '' }, ...masterStoreOptions], colClass: 'col-12 col-md-6' },
+        { name: 'c_plan_code', label: 'Plan Code', type: 'text', placeholder: 'e.g., BASIC, PREMIUM, ENTERPRISE', colClass: 'col-12 col-md-6' },
+        { name: 'n_monthly_fee', label: 'Monthly Fee ($)', type: 'number', step: '0.01', colClass: 'col-12 col-md-6' },
+        { name: 'dt_start_date', label: 'Start Date', type: 'date', colClass: 'col-12 col-md-6' },
+        { name: 'dt_end_date', label: 'End Date (Optional)', type: 'date', colClass: 'col-12 col-md-6' },
+        { name: 'i_device_limit', label: 'Device Limit', type: 'number', min: '1', placeholder: '5', colClass: 'col-12 col-md-6' },
+        { name: 'c_billing_cycle', label: 'Billing Cycle', type: 'select', options: ['monthly', 'annual', 'one-time'], colClass: 'col-12 col-md-6' },
+        { name: 'c_status', label: 'Status', type: 'select', options: ['active', 'paused', 'cancelled', 'expired'], colClass: 'col-12 col-md-6' },
+        { name: 'c_renewal_status', label: 'Renewal Status', type: 'select', options: ['', 'active', 'pending', 'failed', 'manual'], colClass: 'col-12 col-md-6' },
+        { name: 'c_memo', label: 'Memo', type: 'textarea', rows: 3, colClass: 'col-12' },
+      ],
+    },
     'payment-method': {
       endpoint: 'payment-method',
       headers: ['ID', 'Account', 'Payment Type', 'Billing Cycle', 'Next Billing', 'Status'],
@@ -2987,6 +3005,7 @@
     client: { list: 'Clients', singular: 'Client' },
     agent: { list: 'Agents', singular: 'Agent' },
     license: { list: 'Licenses', singular: 'License' },
+    subscription: { list: 'Subscriptions', singular: 'Subscription' },
     'payment-method': { list: 'Payment Methods', singular: 'Payment Method' },
     store: { list: 'Stores', singular: 'Store' },
     user: { list: 'Users', singular: 'User' },
@@ -4706,7 +4725,7 @@
       <div class="store-device-detail-summary">
         <div>
           <div class="store-device-detail-name">${escapeClientStoreDeviceHtml(device.device_name || 'Unnamed Device')}</div>
-          <div class="store-device-detail-code">${escapeClientStoreDeviceHtml(device.device_code || '-')} 쨌 ${escapeClientStoreDeviceHtml(device.device_type || 'Unknown')}</div>
+          <div class="store-device-detail-code">${escapeClientStoreDeviceHtml(device.device_code || '-')} · ${escapeClientStoreDeviceHtml(device.device_type || 'Unknown')}</div>
         </div>
         <div class="store-device-badge-group">
           <span class="device-license-badge ${badgeClass(device.license_status, 'unassigned')}">${escapeClientStoreDeviceHtml(device.license_status || 'Unassigned')}</span>
@@ -4836,7 +4855,7 @@
       const isActive = String(device.device_id) === String(selectedClientStoreDeviceId);
       const deviceCode = device.device_code || `DEV-${String(device.device_id || '').trim() || 'NEW'}`;
       const lastSeenLabel = formatClientStoreDeviceDateTime(device.last_seen);
-      const detailLabel = [device.device_type || '-', lastSeenLabel === '-' ? 'Never seen' : `Seen ${lastSeenLabel}`].join(' 쨌 ');
+      const detailLabel = [device.device_type || '-', lastSeenLabel === '-' ? 'Never seen' : `Seen ${lastSeenLabel}`].join(' · ');
       return `
         <div class="store-device-row ${isActive ? 'active' : ''}" data-device-id="${device.device_id}">
           <div class="store-device-main">

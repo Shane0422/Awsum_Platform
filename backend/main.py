@@ -19,7 +19,7 @@ from backend.config.messages import popup_multi_choice
 from backend.config.settings import APP_NAME
 from backend.config.templates import templates, get_brand_context
 from backend.models_admin.account import Client
-from backend.routers import auth, store, dashboard, common
+from backend.routers import auth, store, dashboard, common, subscription
 from backend.routers import platform_store
 
 app = FastAPI(title=f"{APP_NAME} API")
@@ -156,5 +156,6 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(store.router, prefix="/store", tags=["Store"])
 app.include_router(platform_store.router, prefix="", tags=["PlatformStore"])
+app.include_router(subscription.router, prefix="", tags=["Subscription"])
 app.include_router(dashboard.router, prefix="", tags=["Dashboard"])
 app.include_router(common.router, prefix="", tags=["Common"])

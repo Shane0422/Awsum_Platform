@@ -231,7 +231,7 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     if module == "client":
         module = "account"
 
-    allowed_modules = {"role", "business-type", "agent-type", "account", "agent", "license", "payment-method", "user", "session", "store"}
+    allowed_modules = {"role", "business-type", "agent-type", "account", "agent", "license", "subscription", "payment-method", "user", "session", "store"}
     if module not in allowed_modules:
         module = "role"
 
