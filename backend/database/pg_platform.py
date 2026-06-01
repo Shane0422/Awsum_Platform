@@ -58,7 +58,11 @@ def ensure_platform_database_exists() -> None:
 
     admin_db_name = os.getenv("PLATFORM_PG_ADMIN_DB", "postgres")
     admin_url = parsed.set(database=admin_db_name)
-    admin_engine = create_engine(admin_url.render_as_string(hide_password=False), future=True)
+    admin_engine = create_engine(
+        admin_url.render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+        future=True,
+    )
 
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db_name):
         raise RuntimeError(f"Unsafe database name: {db_name}")
@@ -69,9 +73,7 @@ def ensure_platform_database_exists() -> None:
             {"db_name": db_name},
         ).scalar()
         if not exists:
-            conn.execution_options(isolation_level="AUTOCOMMIT").execute(
-                text(f'CREATE DATABASE "{db_name}"')
-            )
+            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
 
     admin_engine.dispose()
 

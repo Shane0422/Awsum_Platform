@@ -100,8 +100,26 @@
       background: var(--sidebar-bg);
       border-right: 1px solid var(--sidebar-border);
       padding: 0.72rem;
-      overflow-y: auto;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
       z-index: 950;
+    }
+
+    .platform-sidebar .sidebar-main {
+      min-height: 0;
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .platform-sidebar .sidebar-bottom {
+      margin-top: auto;
+      padding-top: 0.72rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      flex: 0 0 auto;
     }
 
     .platform-sidebar .sidebar-title {
@@ -112,6 +130,15 @@
       margin: 0.15rem 0 0.55rem;
       padding: 0 0.45rem;
     }
+    .platform-sidebar .sidebar-group {
+      margin-bottom: 0.38rem;
+    }
+
+    .platform-sidebar .sidebar-group + .sidebar-group {
+      margin-top: 0.22rem;
+      padding-top: 0.34rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
 
     .platform-sidebar .sidebar-menu {
       list-style: none;
@@ -119,19 +146,19 @@
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.2rem;
+      gap: 0.12rem;
     }
 
     .platform-sidebar .sidebar-link {
       position: relative;
       display: flex;
       align-items: center;
-      height: 38px;
+      height: 34px;
       border-radius: 9px;
       padding: 0 0.62rem;
       color: var(--sidebar-text);
       text-decoration: none;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 500;
       letter-spacing: 0.01em;
       transition: background-color 0.16s ease, color 0.16s ease;
@@ -156,6 +183,20 @@
       width: 2px;
       border-radius: 99px;
       background: var(--sidebar-accent);
+    }
+
+    .platform-sidebar .sidebar-link.sidebar-link-logout {
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--sidebar-text-strong);
+      font-weight: 600;
+    }
+
+    .platform-sidebar .sidebar-link.sidebar-link-logout:hover {
+      background: #5a2630;
+      border-color: #7a3340;
+      color: #ffffff;
     }
 
     .platform-main {
@@ -200,12 +241,23 @@
         border-right: 0;
         border-bottom: 1px solid var(--sidebar-border);
         padding: 0.55rem;
+        overflow: visible;
+      }
+
+      .platform-sidebar .sidebar-main {
+        overflow: visible;
       }
 
       .platform-sidebar .sidebar-menu {
         flex-direction: row;
         flex-wrap: nowrap;
         overflow-x: auto;
+      }
+
+      .platform-sidebar .sidebar-bottom {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
       }
 
       .platform-main {
@@ -245,39 +297,100 @@
     </header>
 
     <aside class="platform-sidebar no-scrollbar">
-      <div class="sidebar-title">Platform</div>
-      <ul class="sidebar-menu">
-        <li>
-          <a class="sidebar-link{% if active_page == 'dashboard' %} active{% endif %}" href="/platform/dashboard">Dashboard</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'account' %} active{% endif %}" href="/platform/master/account">Accounts</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent' %} active{% endif %}" href="/platform/master/agent">Agents</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent-type' %} active{% endif %}" href="/platform/master/agent-type?v=20260322">Agent Types</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'subscription' %} active{% endif %}" href="/platform/master/subscription">Subscriptions</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'payment-method' %} active{% endif %}" href="/platform/master/payment-method">Payment Methods</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'business-type' %} active{% endif %}" href="/platform/master/business-type">Business Types</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'role' %} active{% endif %}" href="/platform/master/role">Roles</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'user' %} active{% endif %}" href="/platform/master/user">Users</a>
-        </li>
-        <li>
-          <a class="sidebar-link{% if active_page == 'master' and active_module == 'session' %} active{% endif %}" href="/platform/master/session">Sessions</a>
-        </li>
-      </ul>
+      <div class="sidebar-main no-scrollbar">
+        <div class="sidebar-title">Platform</div>
+        <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'dashboard' %} active{% endif %}" href="/platform/dashboard">Dashboard</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'account' %} active{% endif %}" href="/platform/master/account">Accounts</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'accounts-tree' %} active{% endif %}" href="/platform/accounts-tree">Accounts Tree</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'store' %} active{% endif %}" href="/platform/master/store">Stores</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and (active_module == 'store' or active_module == 'account') %} active{% endif %}" href="/platform/master/store">Devices</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent' %} active{% endif %}" href="/platform/master/agent">Agents</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent-type' %} active{% endif %}" href="/platform/master/agent-type?v=20260322">Agent Types</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'pricing-plan' %} active{% endif %}" href="/platform/master/pricing-plan">Pricing Plans</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'subscription' %} active{% endif %}" href="/platform/master/subscription">Subscriptions</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'invoice' %} active{% endif %}" href="/platform/master/invoice">Invoices</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'payment-method' %} active{% endif %}" href="/platform/master/payment-method">Payments</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'license' %} active{% endif %}" href="/platform/master/license">Commissions</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'business-type' %} active{% endif %}" href="/platform/master/business-type">Business Types</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-category' %} active{% endif %}" href="/platform/master/device-category">Device Categories</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-type' %} active{% endif %}" href="/platform/master/device-type">Device Types</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'role' %} active{% endif %}" href="/platform/master/role">Roles</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'user' %} active{% endif %}" href="/platform/master/user">Users</a>
+              </li>
+            </ul>
+          </div>
+
+          <div class="sidebar-group">
+            <ul class="sidebar-menu">
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'session' %} active{% endif %}" href="/platform/master/session">Sessions</a>
+              </li>
+            </ul>
+        </div>
+      </div>
+      <div class="sidebar-bottom">
+        <a class="sidebar-link sidebar-link-logout" href="/auth/logout">Logout</a>
+      </div>
     </aside>
 
     <main class="platform-main">

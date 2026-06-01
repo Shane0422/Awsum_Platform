@@ -19,10 +19,26 @@ class Subscription(PlatformBase, AuditMixin):
     # Account & Store (Store 기준 계약)
     i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=False, index=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=False, index=True)
+    i_plan_id = Column(Integer, ForeignKey("tb_pricing_plan.i_plan_id"), nullable=True, index=True)
 
-    # Plan & Pricing
-    c_plan_code = Column(String(50), nullable=False)  # e.g., "BASIC", "PREMIUM", "ENTERPRISE"
-    n_monthly_fee = Column(Numeric(10, 2), nullable=False)  # Monthly subscription fee
+    # Plan reference + contract-time pricing snapshot
+    c_plan_code = Column(String(50), nullable=False)  # Snapshot of code at contract time
+    c_plan_name = Column(String(100), nullable=True)  # Snapshot of name at contract time
+    n_store_base_fee = Column(Numeric(10, 2), nullable=True)
+    i_included_pos_count = Column(Integer, nullable=True)
+    n_pos_fee = Column(Numeric(10, 2), nullable=True)
+    i_included_kiosk_count = Column(Integer, nullable=True)
+    n_kiosk_fee = Column(Numeric(10, 2), nullable=True)
+    i_included_mobile_order_count = Column(Integer, nullable=True)
+    n_mobile_order_fee = Column(Numeric(10, 2), nullable=True)
+    i_included_user_count = Column(Integer, nullable=True)
+    n_extra_user_fee = Column(Numeric(10, 2), nullable=True)
+    n_setup_fee = Column(Numeric(10, 2), nullable=True)
+    i_contract_term_month = Column(Integer, nullable=True)
+    n_transaction_fee_rate = Column(Numeric(6, 4), nullable=True)
+    n_extra_device_fee = Column(Numeric(10, 2), nullable=True)
+    n_monthly_fee = Column(Numeric(10, 2), nullable=False)  # Contract monthly fee snapshot (can be overridden)
+    c_currency = Column(String(10), nullable=True)
 
     # Duration (Date not DateTime for contract periods)
     dt_start_date = Column(Date, nullable=False, index=True)

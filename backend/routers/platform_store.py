@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 from pathlib import Path
+from collections import defaultdict
 import re
 import secrets
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import or_, text
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from sqlalchemy import String, cast, or_, text, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -26,10 +28,20 @@ from backend.models_admin.license import License
 from backend.models_admin.agent import Agent
 from backend.models_admin.agent_type import AgentType
 from backend.models_admin.payment_method import PaymentMethod
+from backend.models_admin.pricing_plan import PricingPlan
+from backend.models_admin.invoice import Invoice, InvoiceLine
+from backend.models_admin.contract import Contract
 from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
 from jose import jwt, JWTError
 from backend.config.templates import templates
 from backend.config.settings import APP_NAME
+
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+except Exception:  # pragma: no cover
+    letter = None
+    canvas = None
 
 router = APIRouter()
 
@@ -47,6 +59,7 @@ ALLOWED_DASHBOARD_TYPES = {"PLATFORM", "STANDARD", "RESTAURANT", "DELI", "TUXEDO
 BASE_DIR = Path(__file__).resolve().parents[2]
 BRANDS_STATIC_ROOT = BASE_DIR / "static" / "images" / "brands"
 DEVICE_ACTIVATION_TTL_MINUTES = 30
+CONTRACT_PDF_ROOT = BASE_DIR / "data" / "contracts"
 
 get_next_client_store_id = get_next_account_store_id
 
@@ -110,6 +123,200 @@ def _parse_optional_decimal(value: Optional[object], field_name: str) -> Optiona
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         raise HTTPException(status_code=400, detail=f"Invalid {field_name}.")
+
+
+def _parse_non_negative_decimal(value: Optional[object], field_name: str, default: Decimal = Decimal("0")) -> Decimal:
+    parsed = _parse_optional_decimal(value, field_name)
+    if parsed is None:
+        return default
+    if parsed < 0:
+        raise HTTPException(status_code=400, detail=f"{field_name} cannot be negative")
+    return parsed
+
+
+def _parse_non_negative_int(value: Optional[object], field_name: str, default: int = 0) -> int:
+    parsed = _parse_optional_int(value, field_name)
+    if parsed is None:
+        return default
+    if parsed < 0:
+        raise HTTPException(status_code=400, detail=f"{field_name} cannot be negative")
+    return parsed
+
+
+def _parse_bool(value: Optional[object], field_name: str, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise HTTPException(status_code=400, detail=f"Invalid {field_name}.")
+
+
+def _parse_optional_iso_date(value: Optional[str], field_name: str = "date"):
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}.")
+
+
+def _validate_invoice_status_transition(current_status: str, new_status: str) -> None:
+    current = str(current_status or "issued").strip().lower()
+    target = str(new_status or current).strip().lower()
+    allowed = {
+        "issued": {"issued", "paid", "void"},
+        "paid": {"paid"},
+        "void": {"void"},
+    }
+    if current not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid current invoice status")
+    if target not in allowed[current]:
+        raise HTTPException(status_code=409, detail=f"Invalid invoice status transition: {current} -> {target}")
+
+
+def _serialize_invoice_line(line: InvoiceLine) -> dict:
+    return {
+        "line_id": line.i_invoice_line_id,
+        "line_type": line.c_line_type,
+        "description": line.c_description,
+        "quantity": float(line.n_quantity or 0),
+        "unit_price": float(line.n_unit_price or 0),
+        "amount": float(line.n_amount or 0),
+        "currency": line.c_currency,
+    }
+
+
+def _serialize_invoice(invoice: Invoice, line_count: Optional[int] = None, lines: Optional[list[InvoiceLine]] = None) -> dict:
+    payload = {
+        "id": invoice.i_invoice_id,
+        "invoice_id": invoice.i_invoice_id,
+        "invoice_no": invoice.c_invoice_no,
+        "subscription_id": invoice.i_subscription_id,
+        "account_id": invoice.i_account_id,
+        "store_id": invoice.i_store_id,
+        "invoice_date": str(invoice.dt_invoice_date) if invoice.dt_invoice_date else None,
+        "due_date": str(invoice.dt_due_date) if invoice.dt_due_date else None,
+        "currency": invoice.c_currency,
+        "subtotal": float(invoice.n_subtotal or 0),
+        "tax": float(invoice.n_tax or 0),
+        "total": float(invoice.n_total or 0),
+        "status": invoice.c_status,
+        "memo": invoice.c_memo,
+    }
+    if line_count is not None:
+        payload["line_count"] = int(line_count)
+    if lines is not None:
+        payload["lines"] = [_serialize_invoice_line(line) for line in lines]
+    return payload
+
+
+def _serialize_contract(contract: Contract) -> dict:
+        return {
+                "id": contract.i_contract_id,
+                "contract_id": contract.i_contract_id,
+                "subscription_id": contract.i_subscription_id,
+                "account_id": contract.i_account_id,
+                "store_id": contract.i_store_id,
+                "pricing_plan_id": contract.i_pricing_plan_id,
+                "contract_start_date": str(contract.dt_contract_start_date) if contract.dt_contract_start_date else None,
+                "contract_end_date": str(contract.dt_contract_end_date) if contract.dt_contract_end_date else None,
+                "contract_term_month": int(contract.i_contract_term_month or 1),
+                "setup_fee": float(contract.n_setup_fee or 0),
+                "monthly_base_fee": float(contract.n_monthly_base_fee or 0),
+                "monthly_device_fee": float(contract.n_monthly_device_fee or 0),
+                "monthly_user_fee": float(contract.n_monthly_user_fee or 0),
+                "monthly_total_fee": float(contract.n_monthly_total_fee or 0),
+                "tax_rate": float(contract.n_tax_rate or 0),
+                "tax_amount": float(contract.n_tax_amount or 0),
+                "total_monthly_fee": float(contract.n_total_monthly_fee or 0),
+                "status": contract.c_status,
+                "contract_pdf_path": contract.c_contract_pdf_path,
+                "created_at": contract.dt_created_at.isoformat() if contract.dt_created_at else None,
+        }
+
+
+def _contract_html(contract: Contract) -> str:
+        return f"""
+        <html>
+            <head>
+                <meta charset='UTF-8' />
+                <title>Contract {contract.i_contract_id}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }}
+                    h2 {{ margin: 0 0 8px 0; }}
+                    .meta {{ margin-bottom: 14px; font-size: 13px; }}
+                    table {{ width: 100%; border-collapse: collapse; }}
+                    th, td {{ border: 1px solid #cbd5e1; padding: 8px; font-size: 12px; }}
+                    th {{ background: #f8fafc; text-align: left; width: 32%; }}
+                    .fee {{ text-align: right; font-variant-numeric: tabular-nums; }}
+                </style>
+            </head>
+            <body>
+                <h2>Service Contract #{contract.i_contract_id}</h2>
+                <div class='meta'>
+                    Subscription: {contract.i_subscription_id} | Account: {contract.i_account_id} | Store: {contract.i_store_id} | Status: {contract.c_status}
+                    <br />
+                    Period: {contract.dt_contract_start_date or '-'} ~ {contract.dt_contract_end_date or '-'}
+                </div>
+
+                <table>
+                    <tbody>
+                        <tr><th>Pricing Plan ID</th><td>{contract.i_pricing_plan_id or '-'}</td></tr>
+                        <tr><th>Contract Term (Month)</th><td>{int(contract.i_contract_term_month or 1)}</td></tr>
+                        <tr><th>Setup Fee</th><td class='fee'>{float(contract.n_setup_fee or 0):,.2f}</td></tr>
+                        <tr><th>Monthly Base Fee</th><td class='fee'>{float(contract.n_monthly_base_fee or 0):,.2f}</td></tr>
+                        <tr><th>Monthly Device Fee</th><td class='fee'>{float(contract.n_monthly_device_fee or 0):,.2f}</td></tr>
+                        <tr><th>Monthly User Fee</th><td class='fee'>{float(contract.n_monthly_user_fee or 0):,.2f}</td></tr>
+                        <tr><th>Monthly Total Fee</th><td class='fee'>{float(contract.n_monthly_total_fee or 0):,.2f}</td></tr>
+                        <tr><th>Tax Rate (%)</th><td class='fee'>{float(contract.n_tax_rate or 0):,.4f}</td></tr>
+                        <tr><th>Tax Amount</th><td class='fee'>{float(contract.n_tax_amount or 0):,.2f}</td></tr>
+                        <tr><th>Total Monthly Fee</th><td class='fee'><strong>{float(contract.n_total_monthly_fee or 0):,.2f}</strong></td></tr>
+                    </tbody>
+                </table>
+            </body>
+        </html>
+        """
+
+
+def _build_contract_pdf_bytes(contract: Contract) -> bytes:
+        if canvas is None or letter is None:
+                raise HTTPException(status_code=500, detail="PDF engine is unavailable. Install 'reportlab'.")
+
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        y = height - 48
+
+        def write_line(text: str, *, bold: bool = False, step: int = 18) -> None:
+                nonlocal y
+                pdf.setFont("Helvetica-Bold" if bold else "Helvetica", 11)
+                pdf.drawString(48, y, text)
+                y -= step
+
+        write_line(f"Service Contract #{contract.i_contract_id}", bold=True, step=22)
+        write_line(f"Subscription: {contract.i_subscription_id}   Account: {contract.i_account_id}   Store: {contract.i_store_id}")
+        write_line(f"Status: {contract.c_status}")
+        write_line(f"Period: {contract.dt_contract_start_date or '-'} ~ {contract.dt_contract_end_date or '-'}")
+        y -= 8
+        write_line("Monthly Fee Details", bold=True, step=20)
+        write_line(f"Setup Fee: {float(contract.n_setup_fee or 0):,.2f}")
+        write_line(f"Monthly Base Fee: {float(contract.n_monthly_base_fee or 0):,.2f}")
+        write_line(f"Monthly Device Fee: {float(contract.n_monthly_device_fee or 0):,.2f}")
+        write_line(f"Monthly User Fee: {float(contract.n_monthly_user_fee or 0):,.2f}")
+        write_line(f"Monthly Total Fee: {float(contract.n_monthly_total_fee or 0):,.2f}")
+        write_line(f"Tax Rate (%): {float(contract.n_tax_rate or 0):,.4f}")
+        write_line(f"Tax Amount: {float(contract.n_tax_amount or 0):,.2f}")
+        write_line(f"Total Monthly Fee: {float(contract.n_total_monthly_fee or 0):,.2f}", bold=True)
+
+        pdf.showPage()
+        pdf.save()
+        buffer.seek(0)
+        return buffer.read()
 
 
 def _generate_client_store_code(db: Session) -> tuple[str, int]:
@@ -268,6 +475,10 @@ def _serialize_device(device: Device, license_obj: License | None, agent_obj: Ag
         "device_code": device.c_device_uuid,
         "device_name": device.c_device_name,
         "device_type": device.c_device_type,
+        "device_type_id": device.i_device_type_id,
+        "serial_no": device.c_serial_no,
+        "installed_at": device.dt_installed_at.isoformat() if device.dt_installed_at else None,
+        "memo": device.c_memo,
         "status": device.c_status,
         "activation_code": device.c_activation_code,
         "activation_expiry": device.dt_activation_expiry.isoformat() if device.dt_activation_expiry else None,
@@ -1126,13 +1337,29 @@ def create_store_device(client_id: int, store_id: int, payload: dict, request: R
 
     installed_agent = _resolve_agent(payload.get("installed_by_agent_id"), db)
 
+    device_type_id = _parse_optional_int(payload.get("device_type_id"), "device_type_id")
+    serial_no = str(payload.get("serial_no") or "").strip() or None
+    installed_at_raw = payload.get("installed_at")
+    installed_at = None
+    if installed_at_raw:
+        try:
+            from datetime import date
+            installed_at = date.fromisoformat(str(installed_at_raw)[:10])
+        except (ValueError, TypeError):
+            installed_at = None
+    memo = str(payload.get("memo") or "").strip() or None
+
     device = Device(
         i_store_id=store_id,
         i_license_id=license_id,
         i_installed_by_agent_id=installed_agent.i_agent_id if installed_agent else None,
         c_device_uuid=_generate_store_device_code(db, store_id),
         c_device_name=device_name,
-        c_device_type=str(payload.get("device_type") or "POS").strip() or "POS",
+        c_device_type=str(payload.get("device_type") or "").strip() or None,
+        i_device_type_id=device_type_id,
+        c_serial_no=serial_no,
+        dt_installed_at=installed_at,
+        c_memo=memo,
         c_activation_code=_generate_device_activation_code(db),
         dt_activation_expiry=datetime.now() + timedelta(minutes=DEVICE_ACTIVATION_TTL_MINUTES),
         c_status="inactive",
@@ -1179,7 +1406,27 @@ def update_store_device(client_id: int, store_id: int, device_id: int, payload: 
         device.c_device_name = device_name
 
     if "device_type" in payload:
-        device.c_device_type = str(payload.get("device_type") or "").strip() or "POS"
+        device.c_device_type = str(payload.get("device_type") or "").strip() or None
+
+    if "device_type_id" in payload:
+        device.i_device_type_id = _parse_optional_int(payload.get("device_type_id"), "device_type_id")
+
+    if "serial_no" in payload:
+        device.c_serial_no = str(payload.get("serial_no") or "").strip() or None
+
+    if "installed_at" in payload:
+        raw_ia = payload.get("installed_at")
+        if raw_ia:
+            try:
+                from datetime import date
+                device.dt_installed_at = date.fromisoformat(str(raw_ia)[:10])
+            except (ValueError, TypeError):
+                device.dt_installed_at = None
+        else:
+            device.dt_installed_at = None
+
+    if "memo" in payload:
+        device.c_memo = str(payload.get("memo") or "").strip() or None
 
     if "status" in payload:
         normalized_status = str(payload.get("status") or "active").strip().lower() or "active"
@@ -2243,6 +2490,504 @@ def delete_business_type(type_id: int, request: Request, db: Session = Depends(g
     return JSONResponse({"success": True, "mode": "hard-delete"})
 
 
+# Pricing Plans
+
+
+def _serialize_pricing_plan(plan: PricingPlan) -> dict:
+    return {
+        "id": plan.i_plan_id,
+        "plan_code": plan.c_plan_code,
+        "plan_name": plan.c_plan_name,
+        "store_base_fee": float(plan.n_store_base_fee or 0),
+        "included_pos_count": int(plan.i_included_pos_count or 0),
+        "pos_fee": float(plan.n_pos_fee or 0),
+        "included_kiosk_count": int(plan.i_included_kiosk_count or 0),
+        "kiosk_fee": float(plan.n_kiosk_fee or 0),
+        "included_mobile_order_count": int(plan.i_included_mobile_order_count or 0),
+        "mobile_order_fee": float(plan.n_mobile_order_fee or 0),
+        "included_user_count": int(plan.i_included_user_count or 0),
+        "extra_user_fee": float(plan.n_extra_user_fee or 0),
+        "setup_fee": float(plan.n_setup_fee or 0),
+        "contract_term_month": int(plan.i_contract_term_month or 1),
+        "transaction_fee_rate": float(plan.n_transaction_fee_rate or 0),
+        "sort_order": int(plan.i_sort_order or 100),
+        "is_default": bool(plan.b_is_default),
+        "extra_device_fee": float(plan.n_extra_device_fee or 0),
+        "currency": plan.c_currency,
+        "status": plan.c_status,
+        "memo": plan.c_memo,
+    }
+
+@router.get("/platform/pricing-plans")
+def list_pricing_plans(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(PricingPlan)
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(PricingPlan.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                PricingPlan.c_plan_code.ilike(term),
+                PricingPlan.c_plan_name.ilike(term),
+                PricingPlan.c_currency.ilike(term),
+            )
+        )
+
+    plans = query.order_by(PricingPlan.i_sort_order.asc(), PricingPlan.i_plan_id.asc()).all()
+    return JSONResponse([_serialize_pricing_plan(p) for p in plans])
+
+
+@router.get("/platform/pricing-plan/{plan_id}")
+def get_pricing_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    plan = db.query(PricingPlan).filter(PricingPlan.i_plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Pricing plan not found")
+
+    return JSONResponse(_serialize_pricing_plan(plan))
+
+
+@router.post("/platform/pricing-plan")
+def create_pricing_plan(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    plan_code = str(payload.get("plan_code") or "").strip().upper()
+    plan_name = str(payload.get("plan_name") or "").strip()
+    if not plan_code or not plan_name:
+        raise HTTPException(status_code=400, detail="plan_code and plan_name are required")
+
+    exists = db.query(PricingPlan).filter(PricingPlan.c_plan_code == plan_code).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="plan_code already exists")
+
+    contract_term_month = _parse_non_negative_int(payload.get("contract_term_month"), "contract_term_month", default=1)
+    if contract_term_month <= 0:
+        raise HTTPException(status_code=400, detail="contract_term_month must be greater than 0")
+
+    plan = PricingPlan(
+        c_plan_code=plan_code,
+        c_plan_name=plan_name,
+        n_store_base_fee=_parse_non_negative_decimal(payload.get("store_base_fee"), "store_base_fee"),
+        i_included_pos_count=_parse_non_negative_int(payload.get("included_pos_count"), "included_pos_count"),
+        n_pos_fee=_parse_non_negative_decimal(payload.get("pos_fee"), "pos_fee"),
+        i_included_kiosk_count=_parse_non_negative_int(payload.get("included_kiosk_count"), "included_kiosk_count"),
+        n_kiosk_fee=_parse_non_negative_decimal(payload.get("kiosk_fee"), "kiosk_fee"),
+        i_included_mobile_order_count=_parse_non_negative_int(payload.get("included_mobile_order_count"), "included_mobile_order_count"),
+        n_mobile_order_fee=_parse_non_negative_decimal(payload.get("mobile_order_fee"), "mobile_order_fee"),
+        i_included_user_count=_parse_non_negative_int(payload.get("included_user_count"), "included_user_count"),
+        n_extra_user_fee=_parse_non_negative_decimal(payload.get("extra_user_fee"), "extra_user_fee"),
+        n_setup_fee=_parse_non_negative_decimal(payload.get("setup_fee"), "setup_fee"),
+        i_contract_term_month=contract_term_month,
+        n_transaction_fee_rate=_parse_non_negative_decimal(payload.get("transaction_fee_rate"), "transaction_fee_rate"),
+        i_sort_order=_parse_non_negative_int(payload.get("sort_order"), "sort_order", default=100),
+        b_is_default=_parse_bool(payload.get("is_default"), "is_default", default=False),
+        n_extra_device_fee=_parse_non_negative_decimal(payload.get("extra_device_fee"), "extra_device_fee"),
+        c_currency=(str(payload.get("currency") or "USD").strip().upper() or "USD"),
+        c_status=(str(payload.get("status") or "active").strip().lower() or "active"),
+        c_memo=payload.get("memo"),
+    )
+
+    if plan.b_is_default:
+        db.query(PricingPlan).update({PricingPlan.b_is_default: False})
+
+    _stamp_created(plan, user)
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return JSONResponse({"id": plan.i_plan_id})
+
+
+@router.put("/platform/pricing-plan/{plan_id}")
+def update_pricing_plan(plan_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    plan = db.query(PricingPlan).filter(PricingPlan.i_plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Pricing plan not found")
+
+    if "plan_code" in payload:
+        new_code = str(payload.get("plan_code") or "").strip().upper()
+        if not new_code:
+            raise HTTPException(status_code=400, detail="plan_code cannot be empty")
+        duplicate = (
+            db.query(PricingPlan)
+            .filter(PricingPlan.c_plan_code == new_code, PricingPlan.i_plan_id != plan_id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="plan_code already exists")
+        plan.c_plan_code = new_code
+
+    if "plan_name" in payload:
+        new_name = str(payload.get("plan_name") or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="plan_name cannot be empty")
+        plan.c_plan_name = new_name
+    if "store_base_fee" in payload:
+        plan.n_store_base_fee = _parse_non_negative_decimal(payload.get("store_base_fee"), "store_base_fee")
+    if "included_pos_count" in payload:
+        plan.i_included_pos_count = _parse_non_negative_int(payload.get("included_pos_count"), "included_pos_count")
+    if "pos_fee" in payload:
+        plan.n_pos_fee = _parse_non_negative_decimal(payload.get("pos_fee"), "pos_fee")
+    if "included_kiosk_count" in payload:
+        plan.i_included_kiosk_count = _parse_non_negative_int(payload.get("included_kiosk_count"), "included_kiosk_count")
+    if "kiosk_fee" in payload:
+        plan.n_kiosk_fee = _parse_non_negative_decimal(payload.get("kiosk_fee"), "kiosk_fee")
+    if "included_mobile_order_count" in payload:
+        plan.i_included_mobile_order_count = _parse_non_negative_int(payload.get("included_mobile_order_count"), "included_mobile_order_count")
+    if "mobile_order_fee" in payload:
+        plan.n_mobile_order_fee = _parse_non_negative_decimal(payload.get("mobile_order_fee"), "mobile_order_fee")
+    if "included_user_count" in payload:
+        plan.i_included_user_count = _parse_non_negative_int(payload.get("included_user_count"), "included_user_count")
+    if "extra_user_fee" in payload:
+        plan.n_extra_user_fee = _parse_non_negative_decimal(payload.get("extra_user_fee"), "extra_user_fee")
+    if "setup_fee" in payload:
+        plan.n_setup_fee = _parse_non_negative_decimal(payload.get("setup_fee"), "setup_fee")
+    if "contract_term_month" in payload:
+        contract_term_month = _parse_non_negative_int(payload.get("contract_term_month"), "contract_term_month", default=1)
+        if contract_term_month <= 0:
+            raise HTTPException(status_code=400, detail="contract_term_month must be greater than 0")
+        plan.i_contract_term_month = contract_term_month
+    if "transaction_fee_rate" in payload:
+        plan.n_transaction_fee_rate = _parse_non_negative_decimal(payload.get("transaction_fee_rate"), "transaction_fee_rate")
+    if "sort_order" in payload:
+        plan.i_sort_order = _parse_non_negative_int(payload.get("sort_order"), "sort_order", default=100)
+    if "is_default" in payload:
+        new_is_default = _parse_bool(payload.get("is_default"), "is_default", default=False)
+        if new_is_default:
+            db.query(PricingPlan).filter(PricingPlan.i_plan_id != plan_id).update({PricingPlan.b_is_default: False})
+        plan.b_is_default = new_is_default
+    if "extra_device_fee" in payload:
+        plan.n_extra_device_fee = _parse_non_negative_decimal(payload.get("extra_device_fee"), "extra_device_fee")
+    if "currency" in payload:
+        plan.c_currency = str(payload.get("currency") or "").strip().upper() or "USD"
+    if "status" in payload:
+        plan.c_status = str(payload.get("status") or "").strip().lower() or "active"
+    if "memo" in payload:
+        plan.c_memo = payload.get("memo")
+
+    _stamp_updated(plan, user)
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+@router.delete("/platform/pricing-plan/{plan_id}")
+def delete_pricing_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    plan = db.query(PricingPlan).filter(PricingPlan.i_plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Pricing plan not found")
+
+    plan.c_status = "inactive"
+    _stamp_updated(plan, user)
+    db.commit()
+    return JSONResponse({"success": True})
+
+
+# Users
+
+
+# Invoices
+
+
+@router.get("/platform/contracts")
+def list_contracts(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(Contract)
+    normalized_status = _normalize_status(status, {"active", "terminated", "expired"})
+    if normalized_status:
+        query = query.filter(Contract.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                cast(Contract.i_contract_id, String).ilike(term),
+                cast(Contract.i_subscription_id, String).ilike(term),
+                cast(Contract.i_account_id, String).ilike(term),
+                cast(Contract.i_store_id, String).ilike(term),
+                Contract.c_status.ilike(term),
+            )
+        )
+
+    contracts = query.order_by(Contract.i_contract_id.desc()).all()
+    return JSONResponse([_serialize_contract(c) for c in contracts])
+
+
+@router.get("/platform/contract/{contract_id}")
+def get_contract(contract_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contract = db.query(Contract).filter(Contract.i_contract_id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    return JSONResponse(_serialize_contract(contract))
+
+
+@router.put("/platform/contract/{contract_id}")
+def update_contract(contract_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contract = db.query(Contract).filter(Contract.i_contract_id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    if "status" in payload:
+        new_status = _normalize_status(payload.get("status"), {"active", "terminated", "expired"}, field_name="status")
+        contract.c_status = new_status or contract.c_status
+
+    if "contract_end_date" in payload:
+        contract.dt_contract_end_date = _parse_optional_iso_date(payload.get("contract_end_date"), "contract_end_date")
+
+    db.commit()
+    return JSONResponse({"success": True, "status": contract.c_status})
+
+
+@router.delete("/platform/contract/{contract_id}")
+def terminate_contract(contract_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contract = db.query(Contract).filter(Contract.i_contract_id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    contract.c_status = "terminated"
+    db.commit()
+    return JSONResponse({"success": True, "status": contract.c_status})
+
+
+@router.get("/platform/contract/{contract_id}/download-html", response_class=HTMLResponse)
+def download_contract_html(contract_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contract = db.query(Contract).filter(Contract.i_contract_id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    return HTMLResponse(content=_contract_html(contract))
+
+
+@router.get("/platform/contract/{contract_id}/download-pdf")
+def download_contract_pdf(contract_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    contract = db.query(Contract).filter(Contract.i_contract_id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    pdf_bytes = _build_contract_pdf_bytes(contract)
+    file_name = f"contract_{contract.i_contract_id}.pdf"
+    CONTRACT_PDF_ROOT.mkdir(parents=True, exist_ok=True)
+    target_path = CONTRACT_PDF_ROOT / file_name
+    target_path.write_bytes(pdf_bytes)
+
+    contract.c_contract_pdf_path = str(target_path.relative_to(BASE_DIR)).replace("\\", "/")
+    db.commit()
+
+    headers = {"Content-Disposition": f'attachment; filename="{file_name}"'}
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
+
+@router.get("/platform/invoices")
+def list_invoices(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(Invoice)
+    normalized_status = _normalize_status(status, {"issued", "paid", "void"})
+    if normalized_status:
+        query = query.filter(Invoice.c_status == normalized_status)
+
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Invoice.c_invoice_no.ilike(term),
+                Invoice.c_currency.ilike(term),
+                Invoice.c_status.ilike(term),
+            )
+        )
+
+    invoices = query.order_by(Invoice.dt_invoice_date.desc(), Invoice.i_invoice_id.desc()).all()
+
+    invoice_ids = [inv.i_invoice_id for inv in invoices]
+    line_counts = {}
+    if invoice_ids:
+        rows = (
+            db.query(InvoiceLine.i_invoice_id, func.count(InvoiceLine.i_invoice_line_id))
+            .filter(InvoiceLine.i_invoice_id.in_(invoice_ids))
+            .group_by(InvoiceLine.i_invoice_id)
+            .all()
+        )
+        line_counts = {int(row[0]): int(row[1]) for row in rows}
+
+    return JSONResponse([
+        _serialize_invoice(inv, line_count=line_counts.get(inv.i_invoice_id, 0))
+        for inv in invoices
+    ])
+
+
+@router.get("/platform/invoice/{invoice_id}")
+def get_invoice(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    invoice = db.query(Invoice).filter(Invoice.i_invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    lines = (
+        db.query(InvoiceLine)
+        .filter(InvoiceLine.i_invoice_id == invoice.i_invoice_id)
+        .order_by(InvoiceLine.i_invoice_line_id.asc())
+        .all()
+    )
+    return JSONResponse(_serialize_invoice(invoice, line_count=len(lines), lines=lines))
+
+
+@router.get("/platform/invoice/{invoice_id}/download-html", response_class=HTMLResponse)
+def download_invoice_html(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    invoice = db.query(Invoice).filter(Invoice.i_invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    lines = (
+        db.query(InvoiceLine)
+        .filter(InvoiceLine.i_invoice_id == invoice.i_invoice_id)
+        .order_by(InvoiceLine.i_invoice_line_id.asc())
+        .all()
+    )
+
+    line_rows = "".join(
+        f"<tr><td>{line.c_line_type}</td><td>{line.c_description}</td><td style='text-align:right'>{float(line.n_quantity or 0):,.4f}</td><td style='text-align:right'>{float(line.n_unit_price or 0):,.2f}</td><td style='text-align:right'>{float(line.n_amount or 0):,.2f}</td></tr>"
+        for line in lines
+    )
+
+    html = f"""
+    <html>
+      <head>
+        <meta charset='UTF-8' />
+        <title>Invoice {invoice.c_invoice_no}</title>
+        <style>
+          body {{ font-family: Arial, sans-serif; margin: 20px; color: #0f172a; }}
+          h2 {{ margin: 0 0 8px 0; }}
+          .meta {{ margin-bottom: 12px; font-size: 13px; }}
+          table {{ width: 100%; border-collapse: collapse; }}
+          th, td {{ border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 12px; }}
+          th {{ background: #f8fafc; text-align: left; }}
+          .totals {{ margin-top: 12px; width: 320px; margin-left: auto; }}
+          .totals td {{ border: none; padding: 3px 0; font-size: 13px; }}
+          .totals .label {{ text-align: right; padding-right: 8px; color: #475569; }}
+          .totals .value {{ text-align: right; font-weight: 600; }}
+        </style>
+      </head>
+      <body>
+        <h2>Invoice {invoice.c_invoice_no}</h2>
+        <div class='meta'>
+          Invoice Date: {invoice.dt_invoice_date} &nbsp;|&nbsp; Due Date: {invoice.dt_due_date or '-'} &nbsp;|&nbsp; Status: {invoice.c_status}
+          <br/>
+          Subscription: {invoice.i_subscription_id} &nbsp;|&nbsp; Account: {invoice.i_account_id} &nbsp;|&nbsp; Store: {invoice.i_store_id}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Description</th>
+              <th style='text-align:right'>Qty</th>
+              <th style='text-align:right'>Unit Price</th>
+              <th style='text-align:right'>Amount</th>
+            </tr>
+          </thead>
+          <tbody>{line_rows}</tbody>
+        </table>
+        <table class='totals'>
+          <tr><td class='label'>Subtotal</td><td class='value'>{float(invoice.n_subtotal or 0):,.2f}</td></tr>
+          <tr><td class='label'>Tax</td><td class='value'>{float(invoice.n_tax or 0):,.2f}</td></tr>
+          <tr><td class='label'>Total ({invoice.c_currency})</td><td class='value'>{float(invoice.n_total or 0):,.2f}</td></tr>
+        </table>
+      </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+
+@router.put("/platform/invoice/{invoice_id}")
+def update_invoice(invoice_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    invoice = db.query(Invoice).filter(Invoice.i_invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if "status" in payload:
+        new_status = str(payload.get("status") or "").strip().lower()
+        if new_status not in {"issued", "paid", "void"}:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        _validate_invoice_status_transition(invoice.c_status, new_status)
+        invoice.c_status = new_status
+
+    if "due_date" in payload:
+        invoice.dt_due_date = _parse_optional_iso_date(payload.get("due_date"), "due_date")
+
+    if "memo" in payload:
+        invoice.c_memo = payload.get("memo")
+
+    _stamp_updated(invoice, user)
+    db.commit()
+    return JSONResponse({"success": True, "status": invoice.c_status})
+
+
+@router.delete("/platform/invoice/{invoice_id}")
+def void_invoice(invoice_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    invoice = db.query(Invoice).filter(Invoice.i_invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    _validate_invoice_status_transition(invoice.c_status, "void")
+    invoice.c_status = "void"
+    _stamp_updated(invoice, user)
+    db.commit()
+    return JSONResponse({"success": True, "status": "void"})
+
+
 # Users
 
 @router.get("/platform/users")
@@ -2447,6 +3192,126 @@ def list_clients(
         }
         for i in items
     ])
+
+
+@router.get("/platform/accounts-tree/data")
+def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    accounts = db.query(Client).order_by(Client.i_account_id.asc()).all()
+    if not accounts:
+        return _set_no_cache_headers(JSONResponse([]))
+
+    business_type_map = {
+        row.i_business_type_id: row.c_name
+        for row in db.query(BusinessType).all()
+    }
+
+    agent_map = {
+        row.i_agent_id: row
+        for row in db.query(Agent).all()
+    }
+
+    account_ids = [account.i_account_id for account in accounts]
+    stores = (
+        db.query(Store)
+        .filter(Store.i_account_id.in_(account_ids))
+        .order_by(Store.i_account_id.asc(), Store.i_store_id.asc())
+        .all()
+    )
+
+    stores_by_account_id: dict[int, list[dict]] = defaultdict(list)
+    store_ids = [store.i_store_id for store in stores]
+
+    devices_by_store_id: dict[int, list[dict]] = defaultdict(list)
+    if store_ids:
+        devices = (
+            db.query(Device)
+            .filter(Device.i_store_id.in_(store_ids))
+            .order_by(Device.i_store_id.asc(), Device.i_device_id.asc())
+            .all()
+        )
+
+        license_ids = [device.i_license_id for device in devices if device.i_license_id]
+        license_map = {}
+        if license_ids:
+            for license_obj in db.query(License).filter(License.i_license_id.in_(license_ids)).all():
+                license_map[license_obj.i_license_id] = license_obj
+
+        for device in devices:
+            devices_by_store_id[device.i_store_id].append(
+                _serialize_device(
+                    device,
+                    license_map.get(device.i_license_id),
+                    agent_map.get(device.i_installed_by_agent_id),
+                )
+            )
+
+    for store in stores:
+        store_agent = agent_map.get(store.i_installed_by_agent_id)
+        stores_by_account_id[store.i_account_id].append({
+            "store_id": store.i_store_id,
+            "store_seq": store.i_store_seq,
+            "store_code": store.c_store_code,
+            "store_name": store.c_store_name,
+            "client_id": store.i_account_id,
+            "dashboard_type": store.c_dashboard_type,
+            "business_type": business_type_map.get(store.i_business_type),
+            "operation_type": store.c_operation_type,
+            "channel_type": store.c_channel_type,
+            "device_type": store.c_device_type,
+            "contact_name": store.c_contact_name,
+            "owner_name": store.c_owner_name,
+            "status": store.c_status,
+            "phone": store.c_phone,
+            "email": store.c_email,
+            "zip": store.c_zip,
+            "address_line1": store.c_address_line1,
+            "address_line2": store.c_address_line2,
+            "city": store.c_city,
+            "state": store.c_state,
+            "country": store.c_country,
+            "default_tax_rate": store.c_default_tax_rate,
+            "timezone": store.c_timezone,
+            "tax_source": store.c_tax_source,
+            "memo": store.c_memo,
+            "installed_by_agent_id": store.i_installed_by_agent_id,
+            "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
+            "devices": devices_by_store_id.get(store.i_store_id, []),
+        })
+
+    result = []
+    for account in accounts:
+        result.append({
+            "id": account.i_account_id,
+            "account_id": account.i_account_id,
+            "account_code": account.c_client_code,
+            "c_account_code": account.c_client_code,
+            "account_name": account.c_account_name,
+            "client_name": account.c_account_name,
+            "business_type": business_type_map.get(account.i_business_type),
+            "channel_type": account.c_channel_type,
+            "i_agent_id": account.i_agent_id,
+            "primary_agent_id": account.i_agent_id,
+            "primary_agent_name": (agent_map.get(account.i_agent_id).c_contact_name or agent_map.get(account.i_agent_id).c_agent_name) if agent_map.get(account.i_agent_id) else None,
+            "first_name": account.c_first_name,
+            "last_name": account.c_last_name,
+            "email": account.c_email,
+            "phone": account.c_phone,
+            "address": account.c_address_line1,
+            "address_line1": account.c_address_line1,
+            "address_line2": account.c_address_line2,
+            "city": account.c_city,
+            "state": account.c_state,
+            "zip": account.c_zip,
+            "country": account.c_country,
+            "memo": account.c_memo,
+            "status": account.c_status,
+            "stores": stores_by_account_id.get(account.i_account_id, []),
+        })
+
+    return _set_no_cache_headers(JSONResponse(result))
 
 
 @router.post("/platform/client")

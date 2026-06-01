@@ -91,6 +91,12 @@
     </div>
   </nav>
 
+  {% if login_notice %}
+  <div class="container" style="margin-top: 84px; margin-bottom: 0; position: relative; z-index: 1045;">
+    <div class="alert alert-warning py-2 px-3 mb-0" role="alert">{{ login_notice }}</div>
+  </div>
+  {% endif %}
+
   <!-- Hero Section -->
   <header class="hero d-flex flex-column justify-content-center align-items-center text-center text-white">
     <div class="overlay"></div>
@@ -273,6 +279,15 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      const shouldOpenLoginModal = {{ 'true' if force_open_login_modal else 'false' }};
+      if (shouldOpenLoginModal) {
+        const modalEl = document.getElementById("loginModal");
+        if (modalEl && window.bootstrap?.Modal) {
+          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modal.show();
+        }
+      }
+
       const form = document.getElementById("loginForm");
       if (!form) return;
 

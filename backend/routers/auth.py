@@ -164,7 +164,18 @@ def _get_authenticated_user(request: Request, db: Session):
 # ==========================
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("platform/login.html", {"request": request})
+    reason = (request.query_params.get("reason") or "").strip().lower()
+    notice_map = {
+        "session_expired": "Your session has expired. Please log in again.",
+        "platform_admin_required": "Platform admin access is required to open that page.",
+    }
+    login_notice = notice_map.get(reason)
+
+    return templates.TemplateResponse("platform/login.html", {
+        "request": request,
+        "login_notice": login_notice,
+        "force_open_login_modal": bool(login_notice),
+    })
 
 # ==========================
 # 🔑 Login (POST)

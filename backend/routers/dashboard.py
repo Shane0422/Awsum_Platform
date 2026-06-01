@@ -14,6 +14,7 @@
 
 # backend/routers/dashboard.py
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -90,6 +91,12 @@ def _set_no_cache_headers(response):
     return response
 
 
+def _build_login_redirect(request: Request, reason: str = "session_expired") -> RedirectResponse:
+    next_path = quote(request.url.path or "/", safe="")
+    url = f"/auth/login?reason={quote(reason, safe='')}&next={next_path}"
+    return RedirectResponse(url=url, status_code=303)
+
+
 def _auth_user_or_home_redirect(request: Request, db: Session):
     try:
         user = get_current_user(request, db)
@@ -97,7 +104,7 @@ def _auth_user_or_home_redirect(request: Request, db: Session):
             return None, _set_no_cache_headers(RedirectResponse(url="/change-password", status_code=303))
         return user, None
     except HTTPException:
-        resp = RedirectResponse(url="/", status_code=303)
+        resp = _build_login_redirect(request, reason="session_expired")
         resp.delete_cookie("access_token")
         return None, _set_no_cache_headers(resp)
 
@@ -225,19 +232,27 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         return redirect_resp
 
     if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
-        return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
+        return _set_no_cache_headers(_build_login_redirect(request, reason="platform_admin_required"))
 
-    # Normalize: client → account
+    # Normalize aliases used by legacy/deep links.
+    # Keep this centralized so template/JS can continue to use singular keys.
     if module == "client":
         module = "account"
+    elif module == "invoices":
+        module = "invoice"
+    elif module == "contracts":
+        module = "contract"
 
-    allowed_modules = {"role", "business-type", "agent-type", "account", "agent", "license", "subscription", "payment-method", "user", "session", "store"}
+    allowed_modules = {"role", "business-type", "agent-type", "account", "agent", "license", "subscription", "pricing-plan", "contract", "invoice", "payment-method", "user", "session", "store", "device-category", "device-type"}
     if module not in allowed_modules:
         module = "role"
 
     # Provide master data for dropdowns
     from backend.models_admin.store import Store
     from backend.models_admin.account import Account
+    from backend.models_admin.pricing_plan import PricingPlan
+    from backend.models_admin.device_category import DeviceCategory
+    from backend.models_admin.device_type import DeviceType
 
     roles = db.query(Role).all()
     business_types = db.query(BusinessType).filter(BusinessType.c_status == "active").all()
@@ -245,6 +260,24 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     agents = db.query(Agent).order_by(Agent.i_agent_id).all()
     agent_types = db.query(AgentType).filter(AgentType.c_status == "active").order_by(AgentType.i_agent_type_id).all()
     stores = db.query(Store).order_by(Store.i_store_id).all()
+    pricing_plans = (
+        db.query(PricingPlan)
+        .filter(PricingPlan.c_status == "active")
+        .order_by(PricingPlan.i_sort_order.asc(), PricingPlan.i_plan_id.asc())
+        .all()
+    )
+    device_categories = (
+        db.query(DeviceCategory)
+        .filter(DeviceCategory.c_status == "active")
+        .order_by(DeviceCategory.i_sort_order, DeviceCategory.i_device_category_id)
+        .all()
+    )
+    device_types = (
+        db.query(DeviceType)
+        .filter(DeviceType.c_status == "active")
+        .order_by(DeviceType.i_sort_order, DeviceType.i_device_type_id)
+        .all()
+    )
     users = db.query(PlatformUser).all()
 
     return _set_no_cache_headers(templates.TemplateResponse("platform/master_management.html", {
@@ -261,9 +294,18 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         "agents": agents,
         "agent_types": agent_types,
         "stores": stores,
+        "pricing_plans": pricing_plans,
+        "device_categories": device_categories,
+        "device_types": device_types,
         "users": users,
         **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
     }))
+
+
+@router.get("/platform/master/invoices", response_class=HTMLResponse)
+def master_invoices_alias(request: Request):
+    # Backward-compatible alias: always use singular module key in app internals.
+    return _set_no_cache_headers(RedirectResponse(url="/platform/master/invoice", status_code=303))
 
 
 @router.get("/platform/master/account/{account_id}/stores", response_class=HTMLResponse)
@@ -276,6 +318,25 @@ def master_account_stores(request: Request, account_id: int, db: Session = Depen
 @router.get("/platform/master/client/{client_id}/stores", response_class=HTMLResponse)
 def master_client_stores_legacy(request: Request, client_id: int, db: Session = Depends(get_db)):
     return _set_no_cache_headers(RedirectResponse(url=f"/platform/master/account?account_id={client_id}", status_code=303))
+
+
+@router.get("/platform/accounts-tree", response_class=HTMLResponse)
+def platform_accounts_tree(request: Request, db: Session = Depends(get_db)):
+    user, redirect_resp = _auth_user_or_home_redirect(request, db)
+    if redirect_resp:
+        return redirect_resp
+
+    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
+        return _set_no_cache_headers(_build_login_redirect(request, reason="platform_admin_required"))
+
+    return _set_no_cache_headers(templates.TemplateResponse("platform/accounts_tree.html", {
+        "request": request,
+        "APP_NAME": APP_NAME,
+        "user": user,
+        "role": "Platform Admin",
+        "active_page": "accounts-tree",
+        **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
+    }))
 
 
 # ==========================

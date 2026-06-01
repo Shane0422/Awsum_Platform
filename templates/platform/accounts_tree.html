@@ -1,0 +1,416 @@
+{% extends "platform/platform_base.html" %}
+
+{% block page_title %}Accounts Tree{% endblock %}
+
+{% block content %}
+<style>
+  .tree-page {
+    display: grid;
+    grid-template-columns: minmax(320px, 40%) minmax(420px, 1fr);
+    gap: 0.85rem;
+    min-height: calc(100vh - 110px);
+  }
+
+  .tree-card,
+  .detail-card {
+    border: 1px solid #d7dde6;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 12px 22px -20px rgba(15, 23, 42, 0.4);
+    overflow: hidden;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.72rem 0.78rem;
+    border-bottom: 1px solid #e3e8f0;
+    background: #f9fbff;
+  }
+
+  .panel-title {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1f2937;
+  }
+
+  .panel-sub {
+    margin: 0.1rem 0 0;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  #btnTreeRefresh {
+    font-size: 0.78rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 7px;
+  }
+
+  .tree-scroll,
+  .detail-scroll {
+    padding: 0.72rem 0.78rem;
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+  }
+
+  .tree-root,
+  .tree-root ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .tree-root ul {
+    margin-left: 1.1rem;
+    padding-left: 0.72rem;
+    border-left: 1px dashed #d2d8e2;
+  }
+
+  .tree-node {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+    min-height: 30px;
+    padding: 0.16rem 0.32rem;
+    border-radius: 8px;
+    color: #1f2937;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .tree-node:hover {
+    background: #eef4ff;
+  }
+
+  .tree-node.selected {
+    background: #e3ecff;
+    color: #1d4ed8;
+    font-weight: 600;
+  }
+
+  .tree-toggle {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .tree-toggle.is-leaf {
+    visibility: hidden;
+  }
+
+  .tree-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: #64748b;
+    font-size: 0.82rem;
+  }
+
+  .tree-label {
+    font-size: 0.83rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .tree-empty,
+  .detail-empty {
+    padding: 1rem 0.5rem;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.82rem;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .meta-item {
+    border: 1px solid #e5eaf2;
+    border-radius: 9px;
+    background: #f9fbff;
+    padding: 0.56rem 0.62rem;
+  }
+
+  .meta-label {
+    margin: 0;
+    font-size: 0.72rem;
+    color: #64748b;
+  }
+
+  .meta-value {
+    margin: 0.2rem 0 0;
+    font-size: 0.83rem;
+    color: #1f2937;
+    font-weight: 600;
+    word-break: break-word;
+  }
+
+  .detail-type {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 84px;
+    height: 24px;
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #0f172a;
+    background: #e2e8f0;
+  }
+
+  .detail-type.account { background: #dbeafe; color: #1e3a8a; }
+  .detail-type.store { background: #dcfce7; color: #166534; }
+  .detail-type.device { background: #ede9fe; color: #5b21b6; }
+
+  .detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .detail-name {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  @media (max-width: 1100px) {
+    .tree-page {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+
+    .tree-scroll,
+    .detail-scroll {
+      max-height: none;
+    }
+  }
+</style>
+
+<div class="tree-page">
+  <section class="tree-card">
+    <div class="panel-head">
+      <div>
+        <h3 class="panel-title">Accounts Tree</h3>
+        <p class="panel-sub">Account -> Store -> Device hierarchy</p>
+      </div>
+      <button id="btnTreeRefresh" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
+    </div>
+    <div id="treeContainer" class="tree-scroll">
+      <div class="tree-empty">Loading tree...</div>
+    </div>
+  </section>
+
+  <section class="detail-card">
+    <div class="panel-head">
+      <div>
+        <h3 class="panel-title">Detail</h3>
+        <p class="panel-sub">Select an account, store, or device from the tree.</p>
+      </div>
+    </div>
+    <div id="detailContainer" class="detail-scroll">
+      <div class="detail-empty">No item selected.</div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const treeContainer = document.getElementById('treeContainer');
+  const detailContainer = document.getElementById('detailContainer');
+  const btnTreeRefresh = document.getElementById('btnTreeRefresh');
+
+  let selectedNodeEl = null;
+
+  function escHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function safeValue(value, fallback = '-') {
+    if (value === null || value === undefined || value === '') return fallback;
+    return value;
+  }
+
+  function openByDefault(type) {
+    return type === 'account';
+  }
+
+  function createNode(type, label, payload, children = []) {
+    const li = document.createElement('li');
+
+    const row = document.createElement('div');
+    row.className = 'tree-node';
+    row.dataset.type = type;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = `tree-toggle ${children.length ? '' : 'is-leaf'}`.trim();
+    toggle.textContent = children.length ? (openByDefault(type) ? '▼' : '▶') : '•';
+
+    const icon = document.createElement('span');
+    icon.className = 'tree-icon';
+    icon.textContent = type === 'account' ? 'A' : (type === 'store' ? 'S' : 'D');
+
+    const text = document.createElement('span');
+    text.className = 'tree-label';
+    text.textContent = label;
+
+    row.appendChild(toggle);
+    row.appendChild(icon);
+    row.appendChild(text);
+
+    const childWrap = document.createElement('ul');
+    childWrap.style.display = children.length && openByDefault(type) ? 'block' : 'none';
+
+    children.forEach((child) => childWrap.appendChild(child));
+
+    if (children.length) {
+      toggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const collapsed = childWrap.style.display === 'none';
+        childWrap.style.display = collapsed ? 'block' : 'none';
+        toggle.textContent = collapsed ? '▼' : '▶';
+      });
+    }
+
+    row.addEventListener('click', () => {
+      if (selectedNodeEl) selectedNodeEl.classList.remove('selected');
+      selectedNodeEl = row;
+      row.classList.add('selected');
+      renderDetail(type, payload);
+    });
+
+    li.appendChild(row);
+    if (children.length) li.appendChild(childWrap);
+    return li;
+  }
+
+  function renderDetail(type, payload) {
+    const badgeClass = type === 'account' ? 'account' : (type === 'store' ? 'store' : 'device');
+    const title = type === 'account'
+      ? safeValue(payload.account_name || payload.client_name || payload.name)
+      : (type === 'store'
+        ? safeValue(payload.store_name || payload.name)
+        : safeValue(payload.device_name || payload.name));
+
+    const details = [];
+    if (type === 'account') {
+      details.push(['Account ID', safeValue(payload.account_id || payload.id)]);
+      details.push(['Account Code', safeValue(payload.account_code || payload.c_account_code)]);
+      details.push(['Email', safeValue(payload.email)]);
+      details.push(['Phone', safeValue(payload.phone)]);
+      details.push(['Status', safeValue(payload.status)]);
+      details.push(['Memo', safeValue(payload.memo)]);
+    } else if (type === 'store') {
+      details.push(['Store ID', safeValue(payload.store_id || payload.id)]);
+      details.push(['Store Code', safeValue(payload.store_code)]);
+      details.push(['Business Type', safeValue(payload.business_type)]);
+      details.push(['Email', safeValue(payload.email)]);
+      details.push(['Phone', safeValue(payload.phone)]);
+      details.push(['Status', safeValue(payload.status)]);
+    } else {
+      details.push(['Device ID', safeValue(payload.device_id || payload.id)]);
+      details.push(['Device UUID', safeValue(payload.device_uuid)]);
+      details.push(['Device Type', safeValue(payload.device_type || payload.device_type_name)]);
+      details.push(['Serial No', safeValue(payload.serial_no)]);
+      details.push(['Status', safeValue(payload.status)]);
+      details.push(['Last Seen', safeValue(payload.last_seen)]);
+    }
+
+    const grid = details.map(([label, value]) => `
+      <div class="meta-item">
+        <p class="meta-label">${escHtml(label)}</p>
+        <p class="meta-value">${escHtml(value)}</p>
+      </div>
+    `).join('');
+
+    detailContainer.innerHTML = `
+      <div class="detail-head">
+        <h4 class="detail-name">${escHtml(title)}</h4>
+        <span class="detail-type ${badgeClass}">${escHtml(type.toUpperCase())}</span>
+      </div>
+      <div class="meta-grid">${grid}</div>
+    `;
+  }
+
+  async function fetchJson(url) {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      throw new Error(`${url} -> ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async function loadTree() {
+    treeContainer.innerHTML = '<div class="tree-empty">Loading tree...</div>';
+    detailContainer.innerHTML = '<div class="detail-empty">No item selected.</div>';
+    selectedNodeEl = null;
+
+    try {
+      const accounts = await fetchJson('/platform/accounts-tree/data');
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        treeContainer.innerHTML = '<div class="tree-empty">No accounts found.</div>';
+        return;
+      }
+
+      const root = document.createElement('ul');
+      root.className = 'tree-root';
+
+      for (const account of accounts) {
+        const accountId = account.account_id || account.id;
+        const stores = Array.isArray(account.stores) ? account.stores : [];
+
+        const storeNodes = [];
+        for (const store of stores) {
+          const storeId = store.store_id || store.id;
+          const devices = Array.isArray(store.devices) ? store.devices : [];
+
+          const deviceNodes = devices.map((device) => {
+            const label = device.device_name || `Device #${device.device_id || ''}`;
+            return createNode('device', label, device, []);
+          });
+
+          const storeLabel = store.store_name || `Store #${storeId}`;
+          storeNodes.push(createNode('store', storeLabel, store, deviceNodes));
+        }
+
+        const accountLabel = account.account_name || account.client_name || `Account #${accountId}`;
+        root.appendChild(createNode('account', accountLabel, account, storeNodes));
+      }
+
+      treeContainer.innerHTML = '';
+      treeContainer.appendChild(root);
+    } catch (error) {
+      treeContainer.innerHTML = `<div class="tree-empty">Failed to load tree: ${escHtml(error.message || 'Unknown error')}</div>`;
+    }
+  }
+
+  btnTreeRefresh.addEventListener('click', loadTree);
+  loadTree();
+</script>
+{% endblock %}

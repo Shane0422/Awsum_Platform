@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from backend.database.pg_platform import (
@@ -21,6 +22,7 @@ from backend.config.templates import templates, get_brand_context
 from backend.models_admin.account import Client
 from backend.routers import auth, store, dashboard, common, subscription
 from backend.routers import platform_store
+from backend.routers import device_master
 
 app = FastAPI(title=f"{APP_NAME} API")
 
@@ -71,8 +73,8 @@ def on_startup():
 # ✅ 플랫폼 홈
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    resp = templates.TemplateResponse("platform/platform_home.html", {"request": request})
-
+    resp = templates.TemplateResponse(request, "platform/platform_home.html", {"request": request})
+    
     # If user moves from protected dashboard/platform pages to home, force logout.
     if request.cookies.get("access_token") and _came_from_protected_page(request):
         resp.delete_cookie("access_token")
@@ -141,6 +143,12 @@ async def change_password_alias():
 # ✅ 404 처리 → 팝업 출력
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    accepts_html = "text/html" in (request.headers.get("accept") or "")
+    is_api_request = request.method != "GET" or request.url.path.startswith("/subscriptions")
+
+    if is_api_request and not accepts_html:
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+
     if exc.status_code == 404:
         html = popup_multi_choice(
             title="Invalid Page",
@@ -156,6 +164,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(store.router, prefix="/store", tags=["Store"])
 app.include_router(platform_store.router, prefix="", tags=["PlatformStore"])
+app.include_router(device_master.router, prefix="", tags=["DeviceMaster"])
 app.include_router(subscription.router, prefix="", tags=["Subscription"])
 app.include_router(dashboard.router, prefix="", tags=["Dashboard"])
 app.include_router(common.router, prefix="", tags=["Common"])

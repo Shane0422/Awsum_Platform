@@ -1,0 +1,171 @@
+Awsum Platform 새 컴퓨터 설치 매뉴얼
+1. 기본 폴더 구조
+
+앞으로 기준은 이렇게 통일합니다.
+
+D:\01_Development
+ ├── Awsum_Projects
+ │    └── Awsum_Platform
+ │
+ └── Awsum_Data
+      └── PostgreSQL
+           └── Data
+
+코드 위치:
+
+D:\01_Development\Awsum_Projects\Awsum_Platform
+
+PostgreSQL Data 위치:
+
+D:\01_Development\Awsum_Data\PostgreSQL\Data
+2. 설치 순서
+1) Python 설치
+
+설치 파일:
+
+python-3.14.3-amd64.exe
+
+반드시 체크:
+
+Add python.exe to PATH
+
+설치 완료 후:
+
+Disable path length limit
+
+클릭.
+
+확인:
+
+python --version
+2) VS Code 설치
+
+설치 파일:
+
+VSCodeUserSetup-x64-1.111.0.exe
+
+체크 권장:
+
+Add to PATH
+Open with Code
+Register Code as editor
+3) Git 설치
+
+설치 파일:
+
+Git-2.53.0-64-bit.exe
+
+중요 선택:
+
+Use Visual Studio Code as Git's default editor
+Override default branch name: main
+Git from the command line and also from 3rd-party software
+Use bundled OpenSSH
+Checkout Windows-style, commit Unix-style line endings
+Use MinTTY
+Git Credential Manager
+Enable file system caching
+
+확인:
+
+git --version
+4) PostgreSQL 설치
+
+설치 파일:
+
+postgresql-16.13-2-windows-x64.exe
+
+Program 설치 위치는 기본값 유지:
+
+C:\Program Files\PostgreSQL\16
+
+Data Directory는 변경:
+
+D:\01_Development\Awsum_Data\PostgreSQL\Data
+
+비밀번호:
+
+Awsum123!
+
+Port:
+
+5432
+
+Locale:
+
+DEFAULT
+
+Stack Builder는 실행하지 않음:
+
+Cancel
+3. VS Code Extension 설치
+
+필수:
+
+Python - Microsoft
+Pylance
+Python Debugger
+
+추천:
+
+Thunder Client
+GitLens
+Prettier
+Black Formatter
+PostgreSQL
+4. PowerShell 설정
+
+VS Code Terminal에서 .venv 실행이 막히면 PowerShell에서 한 번 실행:
+
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+5. 프로젝트 준비
+
+프로젝트 폴더로 이동:
+
+cd D:\01_Development\Awsum_Projects\Awsum_Platform
+
+기존 .venv가 있으면 삭제:
+
+rmdir /s /q .venv
+
+새 가상환경 생성:
+
+python -m venv .venv
+
+가상환경 실행:
+
+.venv\Scripts\activate
+
+성공하면 앞에 이렇게 표시됨:
+
+(.venv)
+6. 패키지 설치
+
+항상 pip 대신 아래 방식 사용:
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+7. 서버 실행
+python -m uvicorn backend.main:app --reload --port 8001
+
+브라우저 접속:
+
+http://127.0.0.1:8001
+8. 중요 기본 규칙
+
+PostgreSQL Data 폴더는 하나만 사용합니다.
+
+D:\01_Development\Awsum_Data\PostgreSQL\Data
+
+거래처별로 Data 폴더를 나누지 않습니다.
+
+잘못된 방식:
+
+Data10001
+Data10002
+Data31234
+
+올바른 방식:
+
+PostgreSQL Data 폴더는 하나
+DB 이름으로 거래처 분리
