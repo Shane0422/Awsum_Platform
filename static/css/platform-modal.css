@@ -1,0 +1,128 @@
+/*
+ * Shared Platform modal design (same visual system as the Add User modal).
+ * Usage: <div class="modal fade pm-modal [pm-modal-sm|pm-modal-lg]"> with
+ * .modal-dialog > .modal-content > form > .modal-header (.pm-head-icon + .pm-head-text > .modal-title + .pm-head-sub)
+ * / .modal-body / .modal-footer. Labels: .form-label (+ .pm-lbl-icon svg). Required marker: .pm-req.
+ * Header and footer stay fixed; only .modal-body scrolls.
+ */
+.pm-modal .modal-dialog {
+  max-width: min(560px, calc(100vw - 1rem));
+  max-height: 90dvh;
+  margin: 5dvh auto;
+}
+.pm-modal.pm-modal-lg .modal-dialog { max-width: min(1000px, calc(100vw - 1rem)); }
+.pm-modal .modal-content {
+  max-height: 90dvh;
+  border: 1px solid rgba(23, 52, 81, 0.08);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(23, 52, 81, 0.16);
+  overflow: hidden;
+}
+.pm-modal .modal-content > form { display: flex; flex-direction: column; min-height: 0; max-height: 90dvh; }
+.pm-modal .modal-header {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.5rem 1.75rem 1rem;
+  border-bottom: 0;
+  background: #fff;
+}
+.pm-modal .pm-head-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #e8f0fe;
+  color: #2563eb;
+}
+.pm-modal .pm-head-text { flex: 1 1 auto; min-width: 0; }
+.pm-modal .modal-title { color: #173451; font-size: 1.3rem; font-weight: 700; margin: 0; }
+.pm-modal .pm-head-sub { display: block; margin: 0.15rem 0 0; color: #6b7f99; font-size: 0.84rem; }
+.pm-modal .btn-close { margin: 0; padding: 0.6rem; border-radius: 8px; opacity: 0.55; }
+.pm-modal .btn-close:hover { background-color: #f1f5f9; opacity: 0.9; }
+.pm-modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem 1.75rem 1.5rem;
+  font-size: 0.93rem;
+}
+.pm-modal .modal-footer {
+  flex: 0 0 auto;
+  gap: 0.6rem;
+  padding: 1rem 1.75rem 1.25rem;
+  border-top: 1px solid #eef2f7;
+  background: #fff;
+}
+.pm-modal .form-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  color: #3b4a5e;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pm-modal .pm-lbl-icon { flex: 0 0 auto; color: #8a97a8; }
+.pm-modal .pm-req { color: #dc3545; }
+.pm-modal .form-control,
+.pm-modal .form-select,
+.pm-modal .input-group-text {
+  min-height: 44px;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid #d3dcea;
+  border-radius: 10px;
+  font-size: 0.93rem;
+  color: #1f2d3d;
+}
+.pm-modal .form-select { padding-right: 2.25rem; }
+.pm-modal textarea.form-control { min-height: 44px; }
+.pm-modal .input-group > .form-control { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.pm-modal .input-group > .input-group-text { border-top-right-radius: 0; border-bottom-right-radius: 0; background: #f4f7fb; color: #486581; }
+.pm-modal .form-control:focus,
+.pm-modal .form-select:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
+.pm-modal .form-control:disabled,
+.pm-modal .form-select:disabled { background: #f1f5f9; }
+.pm-modal .form-control[readonly] { background: #eef4ff; color: #173451; }
+.pm-modal .invalid-feedback:not(:empty) { display: block; }
+.pm-modal .form-text { color: #6b7f99; font-size: 0.8rem; }
+.pm-modal .pm-num { text-align: right; }
+.pm-modal .btn-primary {
+  min-height: 44px;
+  padding-inline: 1.4rem;
+  border-radius: 10px;
+  background: #2563eb;
+  border-color: #2563eb;
+  font-weight: 600;
+}
+.pm-modal .btn-primary:hover { background: #1d4fd8; border-color: #1d4fd8; }
+.pm-modal .btn-outline-secondary {
+  min-height: 44px;
+  padding-inline: 1.2rem;
+  border-radius: 10px;
+  border-color: #d3dcea;
+  color: #3b4a5e;
+  background: #fff;
+}
+.pm-modal .btn-outline-secondary:hover { background: #f4f7fb; color: #173451; border-color: #d3dcea; }
+.pm-modal .pm-divider { margin: 0.25rem 0; border-top: 1px solid #eef2f7; }
+.pm-modal .pm-section + .pm-section { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid #eef2f7; }
+.pm-modal .pm-section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; margin-bottom: 0.85rem; }
+.pm-modal .pm-section-head h3 { margin: 0; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #2563eb; }
+.pm-modal .pm-section-head span { font-size: 0.8rem; color: #6b7f99; }
+
+@media (max-width: 767.98px) {
+  .pm-modal .modal-header { padding: 1.1rem 1rem 0.75rem; }
+  .pm-modal .modal-body { padding-inline: 1rem; }
+  .pm-modal .modal-footer { padding-inline: 1rem; }
+  .pm-modal .modal-body .row > [class*="col-md-"] { flex: 0 0 100%; max-width: 100%; }
+}
+@media (max-height: 520px) {
+  .pm-modal .modal-header { padding-block: 0.75rem 0.5rem; }
+  .pm-modal .modal-footer { padding-block: 0.6rem; }
+}

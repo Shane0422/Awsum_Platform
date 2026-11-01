@@ -23,6 +23,6 @@ with engine.connect() as conn:
     mx = conn.execute(text("""
         SELECT MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER))
         FROM tb_client
-        WHERE c_client_code ~ '^CLT_[0-9]+$'
+        WHERE c_client_code ~ '^CLT_?[0-9]+$'
     """)).scalar()
     print('max_seq=', mx)

@@ -1,38 +1,48 @@
-from pathlib import Path
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-# ==========================================
-# 매장/회사 DB 경로
-# - 회사 DB: data/company/{company_id}/main.db
-# - 백업:   db_backups/company/{company_id}/
-# ==========================================
+from backend.services.paths import AwsumPathResolver, resource_storage_path, validate_owner
+from backend.services.resource_storage import ensure_resource_directory
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 StoreBase = declarative_base()
 
 
-def get_store_engine(store_code: str):
-    """특정 매장의 DB 엔진을 반환. store_code 예: "1001""" 
-    store_dir = PROJECT_ROOT / "data" / "company" / store_code
-    store_dir.mkdir(parents=True, exist_ok=True)
+def _owner(db: Session, merchant_code: str, store_code: str) -> AwsumPathResolver:
+    owner = AwsumPathResolver("STORE", merchant_code=merchant_code, store_code=store_code)
+    validate_owner(db, owner)
+    return owner
 
-    db_path = store_dir / "main.db"
+
+def get_store_engine(merchant_code: str, store_code: str, *, db: Session):
+    """Provision only a DB-verified Merchant/Store namespace; never a standalone Store root."""
+    from backend.core.data_paths import get_data_root
+    owner = _owner(db, merchant_code, store_code)
+    logical = owner.get_data_path("master", "main.db")
+    store = validate_owner(db, owner)
+    if store.c_db_path:
+        try:
+            stored_owner, parts = AwsumPathResolver.parse_resource(store.c_db_path)
+        except ValueError as exc:
+            raise RuntimeError("Stored database reference is legacy or non-SQLite; migrate or use its DB provider.") from exc
+        if stored_owner != owner or parts[0] != "data" or not parts[-1].endswith((".db", ".sqlite", ".sqlite3")):
+            raise RuntimeError("Stored database reference does not match the Merchant/Store SQLite owner.")
+        logical = store.c_db_path
+    db_path = resource_storage_path(logical)
+    legacy = get_data_root() / "company" / store_code / "main.db"
+    if legacy.exists() and not db_path.exists():
+        raise RuntimeError("Legacy Store database requires tools.migrate_global_paths before opening.")
+    ensure_resource_directory(logical)
     return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
 
-def get_store_session(store_code: str):
-    """
-    특정 매장의 세션팩토리 반환.
-    """
-    engine = get_store_engine(store_code)
+def get_store_session(merchant_code: str, store_code: str, *, db: Session):
+    engine = get_store_engine(merchant_code, store_code, db=db)
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def get_store_backup_dir(store_code: str):
-    """특정 매장의 백업 디렉토리 반환 (자동 생성)."""
-    backup_dir = PROJECT_ROOT / "db_backups" / "company" / store_code
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    return str(backup_dir)
+def get_store_backup_dir(merchant_code: str, store_code: str, *, db: Session) -> str:
+    owner = _owner(db, merchant_code, store_code)
+    # Backups share Store ownership; schema-migration files live in data/common.
+    directory = ensure_resource_directory(owner.get_data_path("common", "storage.json"))
+    return str(directory)

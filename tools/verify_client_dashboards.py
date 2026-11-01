@@ -7,7 +7,7 @@ import requests
 
 
 BASE_URL = os.getenv("AWSUM_BASE_URL", "http://127.0.0.1:8001")
-CLIENT_STORE_CODE = os.getenv("AWSUM_CLIENT_STORE_CODE", "CUST_00001")
+CLIENT_STORE_CODE = os.getenv("AWSUM_CLIENT_STORE_CODE", "CUST00001")
 CLIENT_EMAIL = os.getenv("AWSUM_CLIENT_EMAIL", "owner@cust00001.local")
 CLIENT_PASSWORD = os.getenv("AWSUM_CLIENT_PASSWORD", "Cust00001")
 

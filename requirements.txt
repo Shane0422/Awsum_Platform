@@ -4,5 +4,10 @@ sqlalchemy
 psycopg[binary]
 passlib[bcrypt]
 python-jose[cryptography]
+cryptography
+Pillow
 jinja2
 python-multipart
+reportlab
+user-agents
+maxminddb

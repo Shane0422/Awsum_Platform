@@ -33,7 +33,7 @@ header.hero {
   /* background fallback */
   background-color: #0d1b2a;
   background-image: linear-gradient(rgba(5,11,23,0.2), rgba(5,11,23,0.2)),
-    url('/static/images/platform/hero_platform.jpg');
+    var(--platform-hero-image);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -94,7 +94,7 @@ html {
 
 .feature-image {
   height: 270px;
-  background-image: url('/static/images/platform/hero_platform.jpg');
+  background-image: var(--platform-hero-image);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

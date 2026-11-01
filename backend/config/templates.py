@@ -1,174 +1,82 @@
+import logging
 import os
-import re
 from typing import Optional
 
 from fastapi import Request
-
 from fastapi.templating import Jinja2Templates
-from backend.config.settings import APP_NAME
+from sqlalchemy import inspect
+from sqlalchemy.exc import SQLAlchemyError
 
-# Jinja2 템플릿 엔진 초기화
+from backend.config.settings import APP_NAME
+from backend.database.pg_platform import PlatformSessionLocal
+from backend.services.branding import BrandingContext, resolve_branding, resolve_access_code
+from backend.services.images import image_url, platform_logo_url
+from backend.services.builtin_assets import builtin_asset_url, favicon_url
+
+
+logger = logging.getLogger(__name__)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-BRANDS_STATIC_PREFIX = "/static/images/brands"
-DEFAULT_BRAND_ICON_PATH = "/static/images/platform/icon.png"
-DEFAULT_BRAND_LOGO_PATH = DEFAULT_BRAND_ICON_PATH
 
 
-def _sanitize_brand_code(value: Optional[str]) -> Optional[str]:
-	if not value:
-		return None
-	normalized = re.sub(r"[^A-Za-z0-9_-]", "", str(value).strip())
-	if not normalized:
-		return None
-	return normalized.upper()
+def _public_brand(context_type="platform", client_code=None, store_code=None) -> BrandingContext:
+    engine = PlatformSessionLocal.kw.get("bind")
+    if engine is not None and inspect(engine).has_table("tb_system_settings"):
+        with PlatformSessionLocal() as db:
+            if context_type == "store" and store_code:
+                return resolve_access_code(db, store_code, "STORE")
+            if context_type in {"client", "account", "merchant"} and client_code:
+                return resolve_access_code(db, client_code, "MERCHANT")
+            if context_type == "agency" and client_code:
+                return resolve_access_code(db, client_code, "AGENCY")
+            return resolve_branding(db)
+    return BrandingContext("PLATFORM", APP_NAME, platform_logo_url(),
+                           APP_NAME, "/platform-admin", "ADMIN", "Platform Administration")
 
 
-def _to_fs_path(static_url_path: str) -> str:
-	relative = static_url_path.replace("/static/", "", 1).replace("/", os.sep)
-	return os.path.join(STATIC_DIR, relative)
-
-
-def _first_existing_static_path(*paths: str) -> Optional[str]:
-	for candidate in paths:
-		if candidate and os.path.exists(_to_fs_path(candidate)):
-			return candidate
-	return None
+def get_company_branding() -> dict:
+    try:
+        brand = _public_brand()
+    except SQLAlchemyError:
+        logger.exception("Unable to load public platform branding.")
+        return {"company_logo_path": platform_logo_url(), "company_name": APP_NAME}
+    return {"company_logo_path": brand.logo_url, "company_name": brand.organization_name}
 
 
 def resolve_brand_asset_paths(
-	*,
-	context_type: str,
-	client_code: Optional[str] = None,
-	account_code: Optional[str] = None,
-	store_code: Optional[str] = None,
+    *, context_type: str, client_code: Optional[str] = None,
+    account_code: Optional[str] = None, store_code: Optional[str] = None,
 ) -> dict:
-	"""Store -> Client -> Platform 순서로 아이콘/로고 URL을 결정합니다."""
-	normalized_context = (context_type or "platform").strip().lower()
-	normalized_client_code = _sanitize_brand_code(client_code) or _sanitize_brand_code(account_code)
-	normalized_store_code = _sanitize_brand_code(store_code)
-
-	platform_icon = f"{BRANDS_STATIC_PREFIX}/platform/icon.png"
-	platform_logo = f"{BRANDS_STATIC_PREFIX}/platform/logo.png"
-
-	client_icon = (
-		f"{BRANDS_STATIC_PREFIX}/clients/{normalized_client_code}/icon.png"
-		if normalized_client_code
-		else None
-	)
-	client_logo = (
-		f"{BRANDS_STATIC_PREFIX}/clients/{normalized_client_code}/logo.png"
-		if normalized_client_code
-		else None
-	)
-
-	legacy_customer_icon = (
-		f"{BRANDS_STATIC_PREFIX}/customers/{normalized_client_code}/icon.png"
-		if normalized_client_code
-		else None
-	)
-	legacy_customer_logo = (
-		f"{BRANDS_STATIC_PREFIX}/customers/{normalized_client_code}/logo.png"
-		if normalized_client_code
-		else None
-	)
-
-	client_store_icon = (
-		f"{BRANDS_STATIC_PREFIX}/clients/{normalized_client_code}/stores/{normalized_store_code}/icon.png"
-		if normalized_client_code and normalized_store_code
-		else None
-	)
-	client_store_logo = (
-		f"{BRANDS_STATIC_PREFIX}/clients/{normalized_client_code}/stores/{normalized_store_code}/logo.png"
-		if normalized_client_code and normalized_store_code
-		else None
-	)
-
-	store_icon = client_store_icon
-	store_logo = client_store_logo
-	legacy_customer_store_icon = (
-		f"{BRANDS_STATIC_PREFIX}/customers/{normalized_client_code}/stores/{normalized_store_code}/icon.png"
-		if normalized_client_code and normalized_store_code
-		else None
-	)
-	legacy_customer_store_logo = (
-		f"{BRANDS_STATIC_PREFIX}/customers/{normalized_client_code}/stores/{normalized_store_code}/logo.png"
-		if normalized_client_code and normalized_store_code
-		else None
-	)
-
-	if normalized_context == "store":
-		icon_candidates = (
-			client_store_icon,
-			store_icon,
-			legacy_customer_store_icon,
-			client_icon,
-			legacy_customer_icon,
-			platform_icon,
-			DEFAULT_BRAND_ICON_PATH,
-		)
-		logo_candidates = (
-			client_store_logo,
-			store_logo,
-			legacy_customer_store_logo,
-			client_logo,
-			legacy_customer_logo,
-			platform_logo,
-			DEFAULT_BRAND_LOGO_PATH,
-		)
-	elif normalized_context in {"client", "account"}:
-		icon_candidates = (client_icon, legacy_customer_icon, platform_icon, DEFAULT_BRAND_ICON_PATH)
-		logo_candidates = (client_logo, legacy_customer_logo, platform_logo, DEFAULT_BRAND_LOGO_PATH)
-	else:
-		icon_candidates = (platform_icon, DEFAULT_BRAND_ICON_PATH)
-		logo_candidates = (platform_logo, DEFAULT_BRAND_LOGO_PATH)
-
-	resolved_icon = _first_existing_static_path(*icon_candidates) or DEFAULT_BRAND_ICON_PATH
-	resolved_logo = _first_existing_static_path(*logo_candidates) or resolved_icon
-	return {
-		"brand_icon_path": resolved_icon,
-		"brand_logo_path": resolved_logo,
-	}
+    brand = _public_brand(context_type, client_code or account_code, store_code)
+    return {"brand_icon_path": favicon_url(brand.logo_url), "brand_logo_path": brand.logo_url}
 
 
 def get_brand_context(
-	*,
-	context_type: str = "platform",
-	brand_display_name: Optional[str] = None,
-	brand_icon_path: Optional[str] = None,
-	client_code: Optional[str] = None,
-	account_code: Optional[str] = None,
-	store_code: Optional[str] = None,
+    *, context_type: str = "platform", brand_display_name: Optional[str] = None,
+    brand_icon_path: Optional[str] = None, client_code: Optional[str] = None,
+    account_code: Optional[str] = None, store_code: Optional[str] = None,
 ):
-	"""그 UI 컨텍스트에 맞은 표준화된 템플릿 브랜드 변수를 반환합니다."""
-	normalized_context = (context_type or "platform").strip().lower()
-	display_name = (brand_display_name or "").strip() or APP_NAME
-	resolved_assets = resolve_brand_asset_paths(
-		context_type=normalized_context,
-		client_code=client_code,
-		account_code=account_code,
-		store_code=store_code,
-	)
-	normalized_client_code = _sanitize_brand_code(client_code) or _sanitize_brand_code(account_code)
-	icon_path = (brand_icon_path or "").strip() or resolved_assets["brand_icon_path"]
-	return {
-		"brand_context": normalized_context,
-		"brand_display_name": display_name,
-		"brand_icon_path": icon_path,
-		"brand_logo_path": resolved_assets["brand_logo_path"],
-		"brand_client_code": normalized_client_code,
-		"brand_store_code": _sanitize_brand_code(store_code),
-	}
+    assets = resolve_brand_asset_paths(context_type=context_type, client_code=client_code,
+                                       account_code=account_code, store_code=store_code)
+    return {
+        "brand_context": context_type, "brand_display_name": brand_display_name or APP_NAME,
+        **assets, "brand_icon_path": brand_icon_path or assets["brand_icon_path"],
+        **get_company_branding(), "brand_client_code": client_code or account_code,
+        "brand_store_code": store_code,
+    }
 
 
-def _default_brand_context(_: Request):
-	return get_brand_context(context_type="platform")
+def _default_brand_context(request: Request):
+    # Entry routes set public context explicitly; cookies/local storage never select branding.
+    brand = getattr(request.state, "login_branding", None)
+    if brand is not None:
+        return brand.template()
+    if request.url.path == "/":
+        return _public_brand().template()
+    return get_brand_context(context_type="platform")
 
-templates = Jinja2Templates(
-	directory=TEMPLATES_DIR,
-	context_processors=[_default_brand_context],
-)
 
-# 전역 변수 등록
+templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[_default_brand_context])
 templates.env.globals["APP_NAME"] = APP_NAME
+templates.env.globals["image_url"] = image_url
+templates.env.globals["builtin_asset_url"] = builtin_asset_url

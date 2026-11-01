@@ -1,10 +1,14 @@
 import os
 from urllib.parse import urlparse
 
+from backend.core.local_env import load_local_env
+
+load_local_env()
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -22,9 +26,76 @@ from backend.config.templates import templates, get_brand_context
 from backend.models_admin.account import Client
 from backend.routers import auth, store, dashboard, common, subscription
 from backend.routers import platform_store
+from backend.routers import platform_store_license
 from backend.routers import device_master
+from backend.routers import system_settings
+from backend.routers import master_group
+from backend.services.reporting import GlobalReportMiddleware
+from backend.services.web_session_http import enforce_web_session, session_error_response
+from backend.routers import images as image_routes
+from backend.services.images import ImagePath
+from backend.services.builtin_assets import BUILTIN_ROOT, BUILTIN_URL_PREFIX, FAVICON_ICO, builtin_asset_file
 
 app = FastAPI(title=f"{APP_NAME} API")
+app.add_middleware(GlobalReportMiddleware)
+app.include_router(image_routes.router)
+
+PLATFORM_PUBLIC_PATHS = {
+    "/platform/device/activate",
+    "/platform/device/validate",
+    "/platform/license/activate",
+}
+
+
+@app.middleware("http")
+async def protect_platform_admin_routes(request: Request, call_next):
+    path = request.url.path
+    method = request.method.upper()
+    if method == "GET":
+        try:
+            ImagePath.parse(path)
+        except ValueError:
+            pass
+        else:
+            # The image endpoint itself protects private categories.
+            return await call_next(request)
+    if path == "/platform-admin" and method == "GET":
+        return await call_next(request)
+    if path == "/platform-admin/login" and method == "POST":
+        return await call_next(request)
+
+    is_platform_route = path == "/platform" or path.startswith("/platform/") or path == "/dashboard/admin"
+    is_platform_admin_route = path.startswith("/platform-admin/")
+    if not (is_platform_route or is_platform_admin_route) or path in PLATFORM_PUBLIC_PATHS:
+        return await call_next(request)
+
+    db = PlatformSessionLocal()
+    try:
+        session_status, user = auth.get_platform_admin_session(request, db)
+    finally:
+        db.close()
+
+    accepts_html = "text/html" in (request.headers.get("accept") or "")
+    if session_status == "anonymous":
+        return session_error_response(request, "Your session has ended or expired. Please sign in again.")
+
+    if session_status != "authorized" or not user:
+        if accepts_html:
+            return HTMLResponse("Forbidden", status_code=403)
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+
+    if user.i_must_change_password == 1:
+        if request.method == "GET" and accepts_html:
+            return RedirectResponse(url="/change-password", status_code=303)
+        return JSONResponse({"detail": "Password change required"}, status_code=403)
+
+    request.state.platform_admin_user = user
+    response = await call_next(request)
+    # Prevent back/forward cache from re-showing admin pages after logout.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 def _set_no_cache_headers(response):
@@ -32,6 +103,11 @@ def _set_no_cache_headers(response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+# Runs outside module-specific authorization so future web modules inherit
+# server-side revocation checks too. Device activation is explicitly excluded.
+app.middleware("http")(enforce_web_session)
 
 
 def _came_from_protected_page(request: Request) -> bool:
@@ -53,11 +129,22 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 # ✅ 정적 파일 & 템플릿 경로
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount(BUILTIN_URL_PREFIX, StaticFiles(directory=str(BUILTIN_ROOT)), name="builtin_platform_images")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(builtin_asset_file(FAVICON_ICO), media_type="image/x-icon")
 
 
 # ✅ Startup 이벤트 (PostgreSQL awsum_platform 초기화 + Seed 데이터 등록)
 @app.on_event("startup")
 def on_startup():
+    from backend.services.web_sessions import idle_timeout, max_minutes
+    idle_timeout()
+    max_minutes()
+    from backend.services.session_metadata import trusted_proxy_networks
+    trusted_proxy_networks()
     source = get_platform_db_url_source()
     masked_url = mask_db_url(get_platform_db_url())
     if source == "default":
@@ -73,23 +160,26 @@ def on_startup():
 # ✅ 플랫폼 홈
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    resp = templates.TemplateResponse(request, "platform/platform_home.html", {"request": request})
-    
-    # If user moves from protected dashboard/platform pages to home, force logout.
+    # Preserve the originating login entry for the existing home-triggered logout.
     if request.cookies.get("access_token") and _came_from_protected_page(request):
-        resp.delete_cookie("access_token")
-
+        from backend.services.web_sessions import logout_session
+        from backend.services.web_session_http import session_login_path
+        with PlatformSessionLocal() as db:
+            target = session_login_path(request, db)
+            logout_session(request, db)
+        response = RedirectResponse(target, status_code=303)
+        response.delete_cookie("access_token")
+        return _set_no_cache_headers(response)
+    resp = templates.TemplateResponse(
+        request,
+        "platform/platform_home.html",
+        {"request": request, "login_mode": "general"},
+    )
     return _set_no_cache_headers(resp)
 
 
 def _normalize_client_code(value: str) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum())
-
-
-def _client_brand_code(client_id: int | None) -> str | None:
-    if not client_id:
-        return None
-    return f"CLT_{int(client_id):05d}"
 
 
 @app.get("/client/{client_code}", response_class=HTMLResponse)
@@ -128,7 +218,7 @@ async def client_home(request: Request, client_code: str):
                 **get_brand_context(
                     context_type="client",
                     brand_display_name=client_name,
-                    client_code=_client_brand_code(matched_client.i_client_id),
+                    client_code=matched_client.c_client_code,
                 ),
             },
         )
@@ -143,6 +233,8 @@ async def change_password_alias():
 # ✅ 404 처리 → 팝업 출력
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 401:
+        return session_error_response(request, str(exc.detail))
     accepts_html = "text/html" in (request.headers.get("accept") or "")
     is_api_request = request.method != "GET" or request.url.path.startswith("/subscriptions")
 
@@ -162,8 +254,12 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 # ✅ 라우터 등록
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(auth.platform_admin_router, tags=["Platform Admin"])
 app.include_router(store.router, prefix="/store", tags=["Store"])
 app.include_router(platform_store.router, prefix="", tags=["PlatformStore"])
+app.include_router(platform_store_license.router, prefix="", tags=["PlatformStoreLicense"])
+app.include_router(system_settings.router, prefix="", tags=["SystemSettings"])
+app.include_router(master_group.router, prefix="", tags=["MasterGroup"])
 app.include_router(device_master.router, prefix="", tags=["DeviceMaster"])
 app.include_router(subscription.router, prefix="", tags=["Subscription"])
 app.include_router(dashboard.router, prefix="", tags=["Dashboard"])

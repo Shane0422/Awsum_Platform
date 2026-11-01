@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <script src="/static/js/web-session.js?v=1"></script>
+  <script src="/static/js/money.js?v=1"></script>
   <title>{{ APP_NAME }} - {% block page_title %}Platform{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/brand.css">
+  <link rel="stylesheet" href="/static/css/platform-modal.css?v=1">
   <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
   <style>
     :root {
@@ -62,8 +65,15 @@
       text-decoration: none;
     }
 
+    .platform-topbar .company-logo {
+      height: 26px;
+      max-width: 160px;
+    }
+
     .platform-topbar .brand-icon {
-      --aw-brand-icon-size: 22px;
+      height: 22px;
+      width: auto;
+      max-width: 140px;
     }
 
     .platform-topbar .brand-text {
@@ -132,6 +142,88 @@
     }
     .platform-sidebar .sidebar-group {
       margin-bottom: 0.38rem;
+    }
+
+    .platform-sidebar .sidebar-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 32px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      font-size: 0.68rem;
+      color: #9aa8bd;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 600;
+      padding: 0 0.62rem;
+      margin: 0.1rem 0;
+      cursor: pointer;
+      text-align: left;
+      transition: background-color 0.16s ease, color 0.16s ease;
+    }
+    .platform-sidebar .sidebar-heading:hover { background: var(--sidebar-hover); color: var(--sidebar-text-strong); }
+    .platform-sidebar .sidebar-heading:focus-visible,
+    .platform-sidebar .sidebar-tool:focus-visible { outline: 2px solid var(--sidebar-accent); outline-offset: -2px; }
+    .platform-sidebar .sidebar-heading.has-active { color: var(--sidebar-text-strong); }
+    .platform-sidebar .sidebar-heading.has-active span::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 7px;
+      border-radius: 50%;
+      background: var(--sidebar-accent);
+    }
+    .platform-sidebar .sidebar-chevron { flex: 0 0 auto; transition: transform 0.2s ease; }
+    .platform-sidebar .sidebar-heading[aria-expanded="true"] .sidebar-chevron { transform: rotate(180deg); }
+    .platform-sidebar .sidebar-collapse {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.2s ease, visibility 0.2s;
+      visibility: hidden;
+    }
+    .platform-sidebar .sidebar-collapse > .sidebar-menu { overflow: hidden; min-height: 0; padding-left: 0.5rem; }
+    .platform-sidebar .sidebar-heading[aria-expanded="true"] + .sidebar-collapse { grid-template-rows: 1fr; visibility: visible; }
+    .platform-sidebar .sidebar-toolbar {
+      display: flex;
+      gap: 0.35rem;
+      padding: 0 0.1rem 0.5rem;
+    }
+    .platform-sidebar .sidebar-tool {
+      flex: 1 1 0;
+      height: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--sidebar-text);
+      font-size: 0.68rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.16s ease;
+    }
+    .platform-sidebar .sidebar-tool:hover { background: var(--sidebar-hover); color: var(--sidebar-text-strong); }
+    @media (prefers-reduced-motion: reduce) {
+      .platform-sidebar .sidebar-collapse, .platform-sidebar .sidebar-chevron { transition: none; }
+    }
+
+    .platform-sidebar .sidebar-link.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .platform-sidebar .sidebar-soon {
+      margin-left: auto;
+      font-size: 0.58rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 99px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #a8b3c5;
     }
 
     .platform-sidebar .sidebar-group + .sidebar-group {
@@ -270,19 +362,21 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="/static/components/image-uploader/image-uploader.css?v=4">
+  <script src="/static/components/image-uploader/image-uploader.js?v=5"></script>
 </head>
 <body class="{% if active_page %}page-{{ active_page }}{% endif %}{% if active_module %} module-{{ active_module }}{% endif %}">
   <div class="platform-shell">
     <header class="platform-topbar">
       <a href="/platform/dashboard" class="brand-mark" aria-label="{{ APP_NAME }}">
-        <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
-        <span class="brand-text">{{ brand_display_name }}</span>
+        {% if company_logo_path %}<img src="{{ company_logo_path }}" alt="{{ company_name }}" class="company-logo">{% else %}<span class="brand-text">{{ company_name }}</span>{% endif %}
       </a>
 
       <div class="topbar-meta">
         <span id="platformDateTime"></span>
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            <span data-current-user-avatar data-user-id="{{ user.i_platform_user_id }}" data-name="{{ user.c_first_name or '' }} {{ user.c_last_name or '' }}" data-image-url="{{ image_url(user.c_image_path) or '' }}" class="me-1"></span>
             {{ user.c_first_name }} {{ user.c_last_name }}
           </button>
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
@@ -299,44 +393,73 @@
     <aside class="platform-sidebar no-scrollbar">
       <div class="sidebar-main no-scrollbar">
         <div class="sidebar-title">Platform</div>
+        <div class="sidebar-toolbar">
+          <button type="button" class="sidebar-tool" id="sidebarExpandAll" title="Expand all groups" aria-label="Expand all groups">Expand All</button>
+          <button type="button" class="sidebar-tool" id="sidebarCollapseAll" title="Collapse all groups" aria-label="Collapse all groups">Collapse All</button>
+        </div>
         <div class="sidebar-group">
-            <ul class="sidebar-menu">
-              <li>
-                <a class="sidebar-link{% if active_page == 'dashboard' %} active{% endif %}" href="/platform/dashboard">Dashboard</a>
-              </li>
-            </ul>
-          </div>
-
+          <ul class="sidebar-menu">
+            <li><a class="sidebar-link{% if active_page == 'dashboard' %} active{% endif %}" href="/platform/dashboard">Dashboard</a></li>
+          </ul>
+        </div>
+        <div class="sidebar-group">
+          <button type="button" class="sidebar-heading" data-group="master-group" aria-expanded="false" aria-controls="sbg-master-group"><span>MASTER GROUP</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="sidebar-collapse" id="sbg-master-group"><ul class="sidebar-menu">
+            <li><a class="sidebar-link{% if active_page == 'master-group' and active_module == 'tax' %} active{% endif %}" href="/platform/master-group/tax">Tax</a></li>
+            <li><a class="sidebar-link{% if active_page == 'master-group' and active_module == 'category-1' %} active{% endif %}" href="/platform/master-group/category-1">Category I</a></li>
+            <li><a class="sidebar-link{% if active_page == 'master-group' and active_module == 'category-2' %} active{% endif %}" href="/platform/master-group/category-2">Category II</a></li>
+            <li><a class="sidebar-link{% if active_page == 'master-group' and active_module == 'category-3' %} active{% endif %}" href="/platform/master-group/category-3">Category III</a></li>
+            <li><a class="sidebar-link{% if active_page == 'master-group' and active_module == 'md-master' %} active{% endif %}" href="/platform/master-group/md-master">MD Master</a></li>
+          </ul></div>
+        </div>
           <div class="sidebar-group">
-            <ul class="sidebar-menu">
+            <button type="button" class="sidebar-heading" data-group="business" aria-expanded="false" aria-controls="sbg-business"><span>Business</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="sidebar-collapse" id="sbg-business"><ul class="sidebar-menu">
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'account' %} active{% endif %}" href="/platform/master/account">Accounts</a>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agency-type' %} active{% endif %}" href="/platform/master/agency-type?v=20260322">Agency Types</a>
               </li>
               <li>
-                <a class="sidebar-link{% if active_page == 'accounts-tree' %} active{% endif %}" href="/platform/accounts-tree">Accounts Tree</a>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'business-type' %} active{% endif %}" href="/platform/master/business-type">Business Types</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agency' %} active{% endif %}" href="/platform/master/agency">Agencies</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'merchant' %} active{% endif %}" href="/platform/master/merchant">Merchants</a>
               </li>
               <li>
                 <a class="sidebar-link{% if active_page == 'master' and active_module == 'store' %} active{% endif %}" href="/platform/master/store">Stores</a>
               </li>
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and (active_module == 'store' or active_module == 'account') %} active{% endif %}" href="/platform/master/store">Devices</a>
+                <span class="sidebar-link disabled" aria-disabled="true" title="Coming soon">Business Tree<span class="sidebar-soon">Soon</span></span>
               </li>
-            </ul>
+            </ul></div>
           </div>
 
           <div class="sidebar-group">
-            <ul class="sidebar-menu">
+            <button type="button" class="sidebar-heading" data-group="device-and-license" aria-expanded="false" aria-controls="sbg-device-and-license"><span>Device &amp; License</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="sidebar-collapse" id="sbg-device-and-license"><ul class="sidebar-menu">
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent' %} active{% endif %}" href="/platform/master/agent">Agents</a>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-category' %} active{% endif %}" href="/platform/master/device-category">Device Categories</a>
               </li>
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'agent-type' %} active{% endif %}" href="/platform/master/agent-type?v=20260322">Agent Types</a>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-type' %} active{% endif %}" href="/platform/master/device-type">Device Types</a>
               </li>
-            </ul>
+              <li>
+                <a class="sidebar-link" href="/platform/master/store">Devices</a>
+              </li>
+              <li>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'license' %} active{% endif %}" href="/platform/master/license">Licenses</a>
+              </li>
+              <li>
+                <span class="sidebar-link disabled" aria-disabled="true" title="Coming soon">Services<span class="sidebar-soon">Soon</span></span>
+              </li>
+            </ul></div>
           </div>
 
           <div class="sidebar-group">
-            <ul class="sidebar-menu">
+            <button type="button" class="sidebar-heading" data-group="billing" aria-expanded="false" aria-controls="sbg-billing"><span>Billing</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="sidebar-collapse" id="sbg-billing"><ul class="sidebar-menu">
               <li>
                 <a class="sidebar-link{% if active_page == 'master' and active_module == 'pricing-plan' %} active{% endif %}" href="/platform/master/pricing-plan">Pricing Plans</a>
               </li>
@@ -350,43 +473,39 @@
                 <a class="sidebar-link{% if active_page == 'master' and active_module == 'payment-method' %} active{% endif %}" href="/platform/master/payment-method">Payments</a>
               </li>
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'license' %} active{% endif %}" href="/platform/master/license">Commissions</a>
+                <span class="sidebar-link disabled" aria-disabled="true" title="Coming soon">Commissions<span class="sidebar-soon">Soon</span></span>
               </li>
-            </ul>
+            </ul></div>
           </div>
 
           <div class="sidebar-group">
-            <ul class="sidebar-menu">
+            <button type="button" class="sidebar-heading" data-group="security" aria-expanded="false" aria-controls="sbg-security"><span>Security</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="sidebar-collapse" id="sbg-security"><ul class="sidebar-menu">
               <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'business-type' %} active{% endif %}" href="/platform/master/business-type">Business Types</a>
-              </li>
-              <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-category' %} active{% endif %}" href="/platform/master/device-category">Device Categories</a>
-              </li>
-              <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'device-type' %} active{% endif %}" href="/platform/master/device-type">Device Types</a>
-              </li>
-            </ul>
-          </div>
-
-          <div class="sidebar-group">
-            <ul class="sidebar-menu">
-              <li>
-                <a class="sidebar-link{% if active_page == 'master' and active_module == 'role' %} active{% endif %}" href="/platform/master/role">Roles</a>
+                <a class="sidebar-link{% if active_page == 'master' and active_module == 'role' %} active{% endif %}" href="/platform/master/role">Roles &amp; Permissions</a>
               </li>
               <li>
                 <a class="sidebar-link{% if active_page == 'master' and active_module == 'user' %} active{% endif %}" href="/platform/master/user">Users</a>
               </li>
-            </ul>
-          </div>
-
-          <div class="sidebar-group">
-            <ul class="sidebar-menu">
               <li>
                 <a class="sidebar-link{% if active_page == 'master' and active_module == 'session' %} active{% endif %}" href="/platform/master/session">Sessions</a>
               </li>
-            </ul>
+              <li>
+                <span class="sidebar-link disabled" aria-disabled="true" title="Coming soon">Audit Log<span class="sidebar-soon">Soon</span></span>
+              </li>
+            </ul></div>
+          </div>
+
+        {% if is_super_admin %}
+        <div class="sidebar-group">
+          <button type="button" class="sidebar-heading" data-group="system" aria-expanded="false" aria-controls="sbg-system"><span>SYSTEM</span><svg class="sidebar-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="sidebar-collapse" id="sbg-system"><ul class="sidebar-menu">
+            <li>
+              <a class="sidebar-link{% if active_page == 'system-settings' %} active{% endif %}" href="/platform/system-settings">System Settings</a>
+            </li>
+          </ul></div>
         </div>
+        {% endif %}
       </div>
       <div class="sidebar-bottom">
         <a class="sidebar-link sidebar-link-logout" href="/auth/logout">Logout</a>
@@ -402,6 +521,42 @@
   </div>
 
   <script>
+    (function () {
+      const sidebar = document.querySelector('.platform-sidebar');
+      if (!sidebar) return;
+      const heads = Array.from(sidebar.querySelectorAll('.sidebar-heading[data-group]'));
+      const storeKey = 'awsum.sidebar.groups.{{ user.i_platform_user_id if user else "anon" }}';
+      const isActive = (h) => !!h.nextElementSibling.querySelector('.sidebar-link.active');
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(storeKey)); } catch (e) { saved = null; }
+      if (saved && typeof saved !== 'object') saved = null;
+
+      function setOpen(h, open) {
+        h.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const panel = h.nextElementSibling;
+        if (open) panel.removeAttribute('inert'); else panel.setAttribute('inert', '');
+      }
+      function persist() {
+        const s = {};
+        heads.forEach((h) => { s[h.dataset.group] = h.getAttribute('aria-expanded') === 'true'; });
+        try { localStorage.setItem(storeKey, JSON.stringify(s)); } catch (e) { /* storage unavailable */ }
+      }
+
+      heads.forEach((h) => {
+        h.classList.toggle('has-active', isActive(h));
+        let open = saved && h.dataset.group in saved ? !!saved[h.dataset.group] : isActive(h);
+        if (isActive(h)) open = true;
+        setOpen(h, open);
+        h.addEventListener('click', () => {
+          setOpen(h, h.getAttribute('aria-expanded') !== 'true');
+          persist();
+        });
+      });
+      document.getElementById('sidebarExpandAll').addEventListener('click', () => { heads.forEach((h) => setOpen(h, true)); persist(); });
+      document.getElementById('sidebarCollapseAll').addEventListener('click', () => { heads.forEach((h) => setOpen(h, false)); persist(); });
+      persist();
+    })();
+
     function formatPlatformDateTime(date) {
       const monthNames = [
         'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',

@@ -83,7 +83,7 @@ if not "%TARGET_PORT%"=="%PORT%" (
 :ports_ready
 
 echo Starting Uvicorn on http://127.0.0.1:%PORT% ...
-"%PYTHON_EXE%" -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT%
+"%PYTHON_EXE%" -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT% --no-proxy-headers
 
 set EXIT_CODE=%errorlevel%
 endlocal & exit /b %EXIT_CODE%

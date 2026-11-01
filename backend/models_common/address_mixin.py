@@ -7,4 +7,4 @@ class AddressMixin:
     c_city          = Column(String, nullable=True)  # 도시
     c_state         = Column(String, nullable=True)  # 주/도
     c_zip           = Column(String, nullable=True)  # 우편번호
-    c_country       = Column(String, default="USA")  # 국가
+    c_country       = Column(String, default="United States")  # 국가 (ORM default only)

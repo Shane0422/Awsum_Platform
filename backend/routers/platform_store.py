@@ -5,61 +5,74 @@ from pathlib import Path
 from collections import defaultdict
 import re
 import secrets
+import bcrypt
+import logging
 
-from fastapi import APIRouter, Request, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Request, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 from sqlalchemy import String, cast, or_, text, func
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session, aliased
 from typing import Optional
 import csv
 import io
 
 from backend.database.pg_platform import PlatformSessionLocal, get_next_account_store_id
+from backend.core.data_paths import PROJECT_ROOT
 from backend.models_admin.store import Store
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
-from backend.models_admin.platform_user import PlatformUser
+from backend.models_admin.platform_user import PlatformUser, AGENCY_ADMIN_ROLE_NAME
 from backend.models_admin.account import Account, Client  # Client for legacy compatibility
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.device import Device
 from backend.models_admin.device_log import DeviceLog
 from backend.models_admin.license import License
-from backend.models_admin.agent import Agent
-from backend.models_admin.agent_type import AgentType
+from backend.models_admin.agency import Agency
+from backend.models_admin.agency_type import AgencyType
 from backend.models_admin.payment_method import PaymentMethod
 from backend.models_admin.pricing_plan import PricingPlan
 from backend.models_admin.invoice import Invoice, InvoiceLine
 from backend.models_admin.contract import Contract
-from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
-from jose import jwt, JWTError
+from backend.utils.zip_lookup import lookup_zip
 from backend.config.templates import templates
 from backend.config.settings import APP_NAME
 
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-except Exception:  # pragma: no cover
-    letter = None
-    canvas = None
+from reportlab.lib.pagesizes import letter
+from backend.services.report_pdf import GlobalReportCanvas
+from backend.services.reporting import ReportPrintContext, report_context
+from backend.services.resource_storage import AwsumStorageService
+from backend.services.images import image_url, image_mutation_form
+from backend.services.image_service import commit_entity_image, image_operation_lock
+from backend.services.paths import AwsumPathResolver
+from backend.services.money import format_money
+from backend.services.business_contact import BusinessContactService
+from backend.services.license_email import load_company_branding
+from backend.services.agency_email import build_agency_registration_email
+from backend.services.email_layout import AwsumEmailLayout
+from backend.services.mail_common import EmailConfigurationError, MailDeliveryError, validate_email_address
+from backend.services.system_settings import send_configured_email
 
 router = APIRouter()
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
-LEGACY_TEST_STORE_CODE = "CUST_00001"
-TEST_STORE_CODE = "CLT_00001"  # Legacy code kept for backwards-compat filtering
-CLIENT_STORE_PREFIX = "STR_"
+LEGACY_TEST_STORE_CODE = "CUST00001"
+TEST_STORE_CODE = "CLT00001"
+LEGACY_TEST_STORE_CODES = {"CLT_00001", "CUST00001", "CUST_00001"}
+CLIENT_STORE_PREFIX = "ST"
+CLIENT_STORE_CODE_DIGITS = 6
 CLIENT_STORE_SEQ_START = 20001
-ACCOUNT_CODE_PREFIX = "CLT_"
+STORE_CODE_ADVISORY_LOCK_KEY = 11001003
+ACCOUNT_CODE_PREFIX = "CLT"
 ACCOUNT_CODE_SEQ_START = 11001
 ACCOUNT_CODE_ADVISORY_LOCK_KEY = 11001001
-AGENT_CODE_PREFIX = "AGT_"
+AGENCY_CODE_PREFIX = "AGT"
 ALLOWED_DASHBOARD_TYPES = {"PLATFORM", "STANDARD", "RESTAURANT", "DELI", "TUXEDO_RENTAL"}
-BASE_DIR = Path(__file__).resolve().parents[2]
-BRANDS_STATIC_ROOT = BASE_DIR / "static" / "images" / "brands"
+BASE_DIR = PROJECT_ROOT
 DEVICE_ACTIVATION_TTL_MINUTES = 30
-CONTRACT_PDF_ROOT = BASE_DIR / "data" / "contracts"
+PLATFORM_USER_ROLE_NAMES = {"superadmin", "admin", "staff"}
+MAX_BCRYPT_PASSWORD_BYTES = 72
 
 get_next_client_store_id = get_next_account_store_id
 
@@ -83,6 +96,97 @@ def _parse_optional_iso_datetime(value: Optional[str]):
     if not value:
         return None
     return datetime.fromisoformat(value)
+
+
+US_COUNTRY_NAME = "United States"
+_US_COUNTRY_ALIASES = {"US", "USA", "U.S.", "U.S.A.", "UNITED STATES", "UNITED STATES OF AMERICA"}
+
+
+def _normalize_country(value) -> str:
+    # Saved Country is "United States" for US/empty input; other countries are kept as entered.
+    text_value = str(value or "").strip()
+    if not text_value or text_value.upper() in _US_COUNTRY_ALIASES:
+        return US_COUNTRY_NAME
+    return text_value
+
+
+STORE_LICENSE_STATUSES = ("ACTIVE", "SUSPENDED", "EXPIRED", "CANCELLED")
+STORE_OPTION_SCOPES = ("STORE", "MERCHANT")
+# payload key -> (option column, scope payload key, scope column)
+STORE_OPTION_FIELDS = {
+    "opt_customer": ("b_opt_customer", "customer_scope", "c_customer_scope"),
+    "opt_time_attendance": ("b_opt_time_attendance", None, None),
+    "opt_inventory": ("b_opt_inventory", None, None),
+    "opt_loyalty": ("b_opt_loyalty", "loyalty_scope", "c_loyalty_scope"),
+    "opt_accounting": ("b_opt_accounting", None, None),
+}
+_LICENSE_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def generate_store_license_key(db: Session) -> str:
+    for _ in range(20):
+        key = "SL-" + "".join(secrets.choice(_LICENSE_KEY_ALPHABET) for _ in range(8))
+        if not db.query(Store.i_store_id).filter(Store.c_store_license_key == key).first():
+            return key
+    raise HTTPException(status_code=409, detail="Unable to generate a unique Store License Key.")
+
+
+def _parse_option_flag(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "on", "yes", "y"}
+
+
+def _apply_store_license_and_options(db: Session, store: Store, payload: dict, creating: bool) -> None:
+    if "license_count" in payload or creating:
+        raw = payload.get("license_count")
+        if raw is None or str(raw).strip() == "":
+            store.n_license_count = 0 if creating else None
+        else:
+            try:
+                qty = int(str(raw).strip())
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Device License Quantity must be a whole number.")
+            if qty < 0:
+                raise HTTPException(status_code=400, detail="Device License Quantity cannot be negative.")
+            store.n_license_count = qty
+
+    if "store_license_status" in payload or creating:
+        status = str(payload.get("store_license_status") or "").strip().upper() or ("ACTIVE" if creating else None)
+        if status is not None and status not in STORE_LICENSE_STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid Store License Status.")
+        store.c_store_license_status = status
+    if "store_license_start_date" in payload:
+        store.dt_store_license_start = _parse_optional_iso_datetime(payload.get("store_license_start_date"))
+    if not store.c_store_license_key:
+        store.c_store_license_key = generate_store_license_key(db)
+
+    for option_key, (option_col, scope_key, scope_col) in STORE_OPTION_FIELDS.items():
+        if option_key in payload or creating:
+            setattr(store, option_col, _parse_option_flag(payload.get(option_key)))
+        if not scope_col:
+            continue
+        if not getattr(store, option_col):
+            setattr(store, scope_col, None)
+            continue
+        if scope_key in payload or not getattr(store, scope_col):
+            scope = str(payload.get(scope_key) or "").strip().upper() or "STORE"
+            if scope not in STORE_OPTION_SCOPES:
+                raise HTTPException(status_code=400, detail=f"Invalid {scope_key.replace('_', ' ').title()}.")
+            setattr(store, scope_col, scope)
+
+
+def _store_license_and_options(store: Store) -> dict:
+    data = {
+        "store_license_key": store.c_store_license_key,
+        "store_license_status": store.c_store_license_status,
+        "store_license_start_date": store.dt_store_license_start.isoformat() if store.dt_store_license_start else None,
+        "customer_scope": store.c_customer_scope or "",
+        "loyalty_scope": store.c_loyalty_scope or "",
+    }
+    for option_key, (option_col, _, _) in STORE_OPTION_FIELDS.items():
+        data[option_key] = "on" if getattr(store, option_col) else "off"
+    return data
 
 
 def _normalize_dashboard_type(value: Optional[str]) -> Optional[str]:
@@ -268,14 +372,14 @@ def _contract_html(contract: Contract) -> str:
                     <tbody>
                         <tr><th>Pricing Plan ID</th><td>{contract.i_pricing_plan_id or '-'}</td></tr>
                         <tr><th>Contract Term (Month)</th><td>{int(contract.i_contract_term_month or 1)}</td></tr>
-                        <tr><th>Setup Fee</th><td class='fee'>{float(contract.n_setup_fee or 0):,.2f}</td></tr>
-                        <tr><th>Monthly Base Fee</th><td class='fee'>{float(contract.n_monthly_base_fee or 0):,.2f}</td></tr>
-                        <tr><th>Monthly Device Fee</th><td class='fee'>{float(contract.n_monthly_device_fee or 0):,.2f}</td></tr>
-                        <tr><th>Monthly User Fee</th><td class='fee'>{float(contract.n_monthly_user_fee or 0):,.2f}</td></tr>
-                        <tr><th>Monthly Total Fee</th><td class='fee'>{float(contract.n_monthly_total_fee or 0):,.2f}</td></tr>
+                        <tr><th>Setup Fee</th><td class='fee'>{format_money(contract.n_setup_fee or 0)}</td></tr>
+                        <tr><th>Monthly Base Fee</th><td class='fee'>{format_money(contract.n_monthly_base_fee or 0)}</td></tr>
+                        <tr><th>Monthly Device Fee</th><td class='fee'>{format_money(contract.n_monthly_device_fee or 0)}</td></tr>
+                        <tr><th>Monthly User Fee</th><td class='fee'>{format_money(contract.n_monthly_user_fee or 0)}</td></tr>
+                        <tr><th>Monthly Total Fee</th><td class='fee'>{format_money(contract.n_monthly_total_fee or 0)}</td></tr>
                         <tr><th>Tax Rate (%)</th><td class='fee'>{float(contract.n_tax_rate or 0):,.4f}</td></tr>
-                        <tr><th>Tax Amount</th><td class='fee'>{float(contract.n_tax_amount or 0):,.2f}</td></tr>
-                        <tr><th>Total Monthly Fee</th><td class='fee'><strong>{float(contract.n_total_monthly_fee or 0):,.2f}</strong></td></tr>
+                        <tr><th>Tax Amount</th><td class='fee'>{format_money(contract.n_tax_amount or 0)}</td></tr>
+                        <tr><th>Total Monthly Fee</th><td class='fee'><strong>{format_money(contract.n_total_monthly_fee or 0)}</strong></td></tr>
                     </tbody>
                 </table>
             </body>
@@ -283,12 +387,9 @@ def _contract_html(contract: Contract) -> str:
         """
 
 
-def _build_contract_pdf_bytes(contract: Contract) -> bytes:
-        if canvas is None or letter is None:
-                raise HTTPException(status_code=500, detail="PDF engine is unavailable. Install 'reportlab'.")
-
+def _build_contract_pdf_bytes(contract: Contract, context: ReportPrintContext) -> bytes:
         buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=letter)
+        pdf = GlobalReportCanvas(buffer, pagesize=letter, report_context=context)
         width, height = letter
         y = height - 48
 
@@ -304,14 +405,14 @@ def _build_contract_pdf_bytes(contract: Contract) -> bytes:
         write_line(f"Period: {contract.dt_contract_start_date or '-'} ~ {contract.dt_contract_end_date or '-'}")
         y -= 8
         write_line("Monthly Fee Details", bold=True, step=20)
-        write_line(f"Setup Fee: {float(contract.n_setup_fee or 0):,.2f}")
-        write_line(f"Monthly Base Fee: {float(contract.n_monthly_base_fee or 0):,.2f}")
-        write_line(f"Monthly Device Fee: {float(contract.n_monthly_device_fee or 0):,.2f}")
-        write_line(f"Monthly User Fee: {float(contract.n_monthly_user_fee or 0):,.2f}")
-        write_line(f"Monthly Total Fee: {float(contract.n_monthly_total_fee or 0):,.2f}")
+        write_line(f"Setup Fee: {format_money(contract.n_setup_fee or 0)}")
+        write_line(f"Monthly Base Fee: {format_money(contract.n_monthly_base_fee or 0)}")
+        write_line(f"Monthly Device Fee: {format_money(contract.n_monthly_device_fee or 0)}")
+        write_line(f"Monthly User Fee: {format_money(contract.n_monthly_user_fee or 0)}")
+        write_line(f"Monthly Total Fee: {format_money(contract.n_monthly_total_fee or 0)}")
         write_line(f"Tax Rate (%): {float(contract.n_tax_rate or 0):,.4f}")
-        write_line(f"Tax Amount: {float(contract.n_tax_amount or 0):,.2f}")
-        write_line(f"Total Monthly Fee: {float(contract.n_total_monthly_fee or 0):,.2f}", bold=True)
+        write_line(f"Tax Amount: {format_money(contract.n_tax_amount or 0)}")
+        write_line(f"Total Monthly Fee: {format_money(contract.n_total_monthly_fee or 0)}", bold=True)
 
         pdf.showPage()
         pdf.save()
@@ -320,32 +421,36 @@ def _build_contract_pdf_bytes(contract: Contract) -> bytes:
 
 
 def _generate_client_store_code(db: Session) -> tuple[str, int]:
-    max_seq = (
-        db.query(Store.i_store_seq)
-        .filter(
-            Store.i_store_seq.is_not(None),
-            Store.i_store_seq >= CLIENT_STORE_SEQ_START,
-            Store.c_is_test != 1,
-        )
-        .order_by(Store.i_store_seq.desc())
-        .limit(1)
-        .scalar()
-    )
+    # Business stores get ST000001, ST000002, ...; the Platform Admin store is never counted.
+    # The advisory lock serializes generators; unique constraints stay the final guard.
+    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": STORE_CODE_ADVISORY_LOCK_KEY})
+    max_code = db.execute(
+        text(
+            """
+            SELECT COALESCE(MAX(CAST(SUBSTRING(c_store_code FROM '([0-9]+)$') AS INTEGER)), 0)
+            FROM tb_store WHERE c_store_code ~ '^ST[0-9]{6}$' AND i_store_id <> :admin_id
+            """
+        ),
+        {"admin_id": ADMIN_STORE_ID},
+    ).scalar()
+    max_seq = db.execute(text("SELECT COALESCE(MAX(i_store_seq), 0) FROM tb_store")).scalar()
+    return f"{CLIENT_STORE_PREFIX}{int(max_code or 0) + 1:0{CLIENT_STORE_CODE_DIGITS}d}", int(max_seq or 0) + 1
 
-    next_seq = CLIENT_STORE_SEQ_START if not max_seq or max_seq < CLIENT_STORE_SEQ_START else max_seq + 1
 
-    while True:
-        candidate_code = f"{CLIENT_STORE_PREFIX}{next_seq:05d}"
-        exists = db.query(Store.i_store_id).filter(Store.c_store_code == candidate_code).first()
-        if not exists:
-            return candidate_code, next_seq
-        next_seq += 1
+def _get_business_store(db: Session, store_id: int) -> Store:
+    # The Platform Admin store (ADMIN_STORE_ID / "Admin") is a platform identity, not a business Store.
+    if store_id == ADMIN_STORE_ID:
+        raise HTTPException(status_code=403, detail="The Platform Admin store cannot be used as a business Store.")
+    store = db.query(Store).filter(Store.i_store_id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    return store
 
 
 def _generate_next_client_code(db: Session) -> str:
     db.execute(
         text("SELECT pg_advisory_xact_lock(:lock_key)"),
-        {"lock_key": CLIENT_CODE_ADVISORY_LOCK_KEY},
+        {"lock_key": ACCOUNT_CODE_ADVISORY_LOCK_KEY},
     )
 
     max_seq = db.execute(
@@ -356,53 +461,49 @@ def _generate_next_client_code(db: Session) -> str:
                 :seq_start - 1
             ) AS max_seq
             FROM tb_client
-            WHERE c_client_code ~ '^CLT_[0-9]+$'
+            WHERE c_client_code ~ '^CLT_?[0-9]+$'
             """
         ),
-        {"seq_start": CLIENT_CODE_SEQ_START},
+        {"seq_start": ACCOUNT_CODE_SEQ_START},
     ).scalar()
 
-    next_seq = CLIENT_CODE_SEQ_START if not max_seq or max_seq < CLIENT_CODE_SEQ_START else max_seq + 1
-    return f"{CLIENT_CODE_PREFIX}{next_seq:05d}"
+    next_seq = ACCOUNT_CODE_SEQ_START if not max_seq or max_seq < ACCOUNT_CODE_SEQ_START else max_seq + 1
+    return f"{ACCOUNT_CODE_PREFIX}{next_seq:05d}"
 
 
-def _generate_agent_code(agent_id: int) -> str:
-    return f"{AGENT_CODE_PREFIX}{int(agent_id):05d}"
+def _generate_agency_code(agency_id: int) -> str:
+    return f"{AGENCY_CODE_PREFIX}{int(agency_id):05d}"
 
 
-def _sanitize_asset_code(value: str) -> str:
-    normalized = re.sub(r"[^A-Za-z0-9_-]", "", str(value or "").strip())
-    if not normalized:
-        raise HTTPException(status_code=400, detail="Invalid code for logo path.")
-    return normalized.upper()
+def _save_organization_logo(db, organization, file, context, code, *, merchant_code=None):
+    from backend.services import images
+    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_client_id", "STORE": "i_store_id"}[context]
+    owner = AwsumStorageService(db).resolve_owner(context, getattr(organization, identity_field))
+    if owner != images.AwsumPathResolver.for_owner(context, code, merchant_code=merchant_code):
+        raise HTTPException(409, "Logo owner does not match the saved organization relationship.")
+    images.validate_owner(db, owner)
+    data = images.read_image_upload(file)
+    with image_operation_lock(owner, "logo"):
+        db.refresh(organization, with_for_update=True)
+        warning = commit_entity_image(db, organization, owner, "logo", category="logo",
+                                      image_data=data, reference_field="c_logo_url")
+    reference = organization.c_logo_url
+    url = images.image_url(reference)
+    return JSONResponse({"success": True, "image_path": reference, "logo_url": url, "icon_url": url,
+                         "image_warning": warning})
 
 
-def _validate_logo_upload(file: UploadFile) -> None:
-    if not file or not file.filename:
-        raise HTTPException(status_code=400, detail="Logo file is required.")
-    content_type = (file.content_type or "").lower()
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Logo must be an image file.")
-
-
-def _write_logo_assets(target_dir: Path, file: UploadFile) -> None:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    data = file.file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Logo file is empty.")
-    (target_dir / "logo.png").write_bytes(data)
-    # Sync uploaded logo as the dashboard favicon/brand icon as well
-    (target_dir / "icon.png").write_bytes(data)
-
-
-def _delete_logo_assets(target_dir: Path) -> int:
-    deleted = 0
-    for file_name in ("logo.png", "icon.png"):
-        path = target_dir / file_name
-        if path.exists():
-            path.unlink()
-            deleted += 1
-    return deleted
+def _remove_organization_logo(db, organization, context):
+    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_client_id", "STORE": "i_store_id"}[context]
+    owner = AwsumStorageService(db).resolve_owner(context, getattr(organization, identity_field))
+    with image_operation_lock(owner, "logo"):
+        db.refresh(organization, with_for_update=True)
+        from backend.services import images
+        previous = images.resolve_image_file(organization.c_logo_url)
+        warning = commit_entity_image(db, organization, owner, "logo", category="logo",
+                                      remove_image=True, reference_field="c_logo_url")
+    return JSONResponse({"success": True, "deleted_files": int(previous is not None and not previous.exists()),
+                         "image_warning": warning})
 
 
 def _ensure_client_store(db: Session, client_id: int, store_id: int) -> tuple[Client, Store]:
@@ -465,13 +566,13 @@ def _resolve_license_status(device: Device, license_obj: License | None) -> str:
     return "Active"
 
 
-def _serialize_device(device: Device, license_obj: License | None, agent_obj: Agent | None = None) -> dict:
+def _serialize_device(device: Device, license_obj: License | None, agency_obj: Agency | None = None) -> dict:
     return {
         "device_id": device.i_device_id,
         "store_id": device.i_store_id,
         "license_id": device.i_license_id,
-        "installed_by_agent_id": device.i_installed_by_agent_id,
-        "installed_by_agent_name": agent_obj.c_agent_name if agent_obj else None,
+        "installed_by_agency_id": device.i_installed_by_agency_id,
+        "installed_by_agency_name": agency_obj.c_agency_name if agency_obj else None,
         "device_code": device.c_device_uuid,
         "device_name": device.c_device_name,
         "device_type": device.c_device_type,
@@ -547,7 +648,7 @@ def _log_device_event(
         c_event_type=str(event_type or "").strip().upper() or "UPDATED",
         c_hardware_id=str(payload.get("hardware_id") or payload.get("bound_hardware_id") or device.c_bound_hardware_id or "").strip() or None,
         c_ip_address=_resolve_request_ip(request, payload),
-        c_agent=str(payload.get("agent") or getattr(request, "headers", {}).get("user-agent") or "").strip() or None,
+        c_agent=str(payload.get("agency") or getattr(request, "headers", {}).get("user-agent") or "").strip() or None,
         c_os=str(payload.get("os") or device.c_os or "").strip() or None,
         c_version=str(payload.get("app_version") or payload.get("version") or device.c_app_version or "").strip() or None,
         c_action_by=str(action_by or payload.get("action_by") or payload.get("activated_by") or "").strip() or None,
@@ -558,16 +659,16 @@ def _log_device_event(
     return event_log
 
 
-def _resolve_agent(agent_id: Optional[object], db: Session, *, required: bool = False) -> Optional[Agent]:
-    normalized_id = _parse_optional_int(agent_id, "agent_id")
+def _resolve_agency(agency_id: Optional[object], db: Session, *, required: bool = False) -> Optional[Agency]:
+    normalized_id = _parse_optional_int(agency_id, "agency_id")
     if normalized_id is None:
         if required:
-            raise HTTPException(status_code=400, detail="agent_id is required.")
+            raise HTTPException(status_code=400, detail="agency_id is required.")
         return None
-    agent = db.query(Agent).filter(Agent.i_agent_id == normalized_id).first()
-    if not agent:
-        raise HTTPException(status_code=400, detail="Invalid agent_id.")
-    return agent
+    agency = db.query(Agency).filter(Agency.i_agency_id == normalized_id).first()
+    if not agency:
+        raise HTTPException(status_code=400, detail="Invalid agency_id.")
+    return agency
 
 
 # ---------------------------
@@ -575,43 +676,12 @@ def _resolve_agent(agent_id: Optional[object], db: Session, *, required: bool = 
 # ---------------------------
 
 def get_current_user(request: Request, db: Session):
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        uid: int = payload.get("uid")
-        store = payload.get("store")
-        role: int = payload.get("role")
-        principal_type = payload.get("principal_type", "platform_user")
-        if uid is None:
-            raise HTTPException(status_code=401, detail="Invalid token.")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token.")
-
-    if principal_type != "platform_user":
-        raise HTTPException(status_code=401, detail="Invalid token principal for platform DB.")
-
-    user = db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == uid).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found.")
-
-    try:
-        store = int(store)
-    except (TypeError, ValueError):
-        pass
-
-    user.login_store = store
-    user.login_role = role
-    if user.i_must_change_password == 1:
-        raise HTTPException(status_code=403, detail="Password change required.")
-    return user
+    from backend.services.web_sessions import authenticate
+    return authenticate(request, db)
 
 
 def require_platform_admin(user):
-    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
+    if user.login_role != 1 or getattr(user, "i_agency_id", None) is not None:
         raise HTTPException(status_code=403, detail="Not authorized.")
 
 
@@ -637,6 +707,44 @@ def _stamp_updated(entity, user):
 # Store API
 # ---------------------------
 
+@router.get("/platform/zip-lookup/{zip_code}")
+def zip_lookup(zip_code: str, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    return JSONResponse(lookup_zip(zip_code))
+
+
+STORE_LIST_SORT_OPTIONS = (
+    "merchant_asc", "merchant_desc", "store_asc", "store_desc",
+    "agency_asc", "agency_desc", "newest", "oldest",
+)
+STORE_LIST_MAX_PAGE_SIZE = 100
+
+
+def _store_list_order_by(sort_key: str, merchant, agency):
+    """Order-by clauses for the store list; Store ID is always the final tie-breaker."""
+    merchant_name = func.lower(merchant.c_client_name)
+    store_name = func.lower(Store.c_store_name)
+    agency_name = func.lower(agency.c_agency_name)
+    if sort_key == "merchant_asc":
+        clauses = [merchant_name.asc().nulls_last(), store_name.asc()]
+    elif sort_key == "merchant_desc":
+        clauses = [merchant_name.desc().nulls_last(), store_name.asc()]
+    elif sort_key == "store_asc":
+        clauses = [store_name.asc(), merchant_name.asc().nulls_last()]
+    elif sort_key == "store_desc":
+        clauses = [store_name.desc(), merchant_name.asc().nulls_last()]
+    elif sort_key == "agency_asc":
+        clauses = [agency_name.asc().nulls_last(), merchant_name.asc().nulls_last(), store_name.asc()]
+    elif sort_key == "agency_desc":
+        clauses = [agency_name.desc().nulls_last(), merchant_name.asc().nulls_last(), store_name.asc()]
+    elif sort_key == "newest":
+        clauses = [Store.dt_created.desc().nulls_last()]
+    else:  # oldest
+        clauses = [Store.dt_created.asc().nulls_last()]
+    return clauses + [Store.i_store_id.asc()]
+
+
 @router.get("/platform/stores")
 def list_stores(
     request: Request,
@@ -648,6 +756,11 @@ def list_stores(
     channel_type: Optional[str] = None,
     device_type: Optional[str] = None,
     client_id: Optional[int] = None,
+    agency_id: Optional[int] = None,
+    sort: Optional[str] = None,
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(20, ge=1, le=STORE_LIST_MAX_PAGE_SIZE),
+    locate_id: Optional[int] = None,
 ):
     """Returns a JSON list of stores, or renders the Store Management page for HTML requests."""
     user = get_current_user(request, db)
@@ -658,10 +771,11 @@ def list_stores(
     if "text/html" in accept:
         roles = db.query(Role).all()
         business_types = db.query(BusinessType).filter(BusinessType.c_status == "active").all()
-        stores = db.query(Store).order_by(Store.i_store_id).all()
+        stores = db.query(Store).filter(Store.i_store_id != ADMIN_STORE_ID).order_by(Store.i_store_id).all()
         users = db.query(PlatformUser).all()
 
         return _set_no_cache_headers(templates.TemplateResponse(
+            request,
             "platform/platform_stores.html",
             {
                 "request": request,
@@ -685,7 +799,20 @@ def list_stores(
         ))
 
     # JSON API request: return the filtered list
-    query = db.query(Store)
+    # sort/page switch on the master-grid behavior; plain calls keep the legacy list behavior.
+    grid_mode = sort is not None or page is not None
+    sort_key = (sort or "merchant_asc").strip()
+    if grid_mode and sort_key not in STORE_LIST_SORT_OPTIONS:
+        raise HTTPException(status_code=400, detail="Invalid sort option.")
+
+    merchant_alias = aliased(Account)
+    agency_alias = aliased(Agency)
+    query = (
+        db.query(Store)
+        .outerjoin(merchant_alias, merchant_alias.i_client_id == Store.i_account_id)
+        .outerjoin(agency_alias, agency_alias.i_agency_id == Store.i_installed_by_agency_id)
+        .filter(Store.i_store_id != ADMIN_STORE_ID)
+    )
 
     if status:
         query = query.filter(Store.c_status == status)
@@ -699,19 +826,39 @@ def list_stores(
     if device_type:
         query = query.filter(Store.c_device_type.ilike(f"%{device_type}%"))
 
-    if search:
+    if search and search.strip():
         term = f"%{search.strip()}%"
-        query = query.filter(
-            or_(
-                Store.c_store_name.ilike(term),
-                Store.c_store_code.ilike(term),
-                Store.c_email.ilike(term),
-                Store.c_phone.ilike(term),
+        code_term = f"%{search.strip().replace('_', '')}%"
+        if grid_mode:
+            query = query.filter(
+                or_(
+                    agency_alias.c_agency_name.ilike(term),
+                    agency_alias.c_agency_code.ilike(term),
+                    agency_alias.c_agency_code.ilike(code_term),
+                    merchant_alias.c_client_name.ilike(term),
+                    merchant_alias.c_client_code.ilike(term),
+                    merchant_alias.c_client_code.ilike(code_term),
+                    Store.c_store_name.ilike(term),
+                    Store.c_store_code.ilike(term),
+                    Store.c_store_code.ilike(code_term),
+                )
             )
-        )
+        else:
+            query = query.filter(
+                or_(
+                    Store.c_store_name.ilike(term),
+                    Store.c_store_code.ilike(term),
+                    Store.c_store_code.ilike(code_term),
+                    Store.c_email.ilike(term),
+                    Store.c_phone.ilike(term),
+                )
+            )
 
     if client_id is not None:
         query = query.filter(Store.i_account_id == client_id)
+
+    if agency_id is not None:
+        query = query.filter(Store.i_installed_by_agency_id == agency_id)
 
     if business_type:
         query = query.join(BusinessType, Store.i_business_type == BusinessType.i_business_type_id)
@@ -720,13 +867,37 @@ def list_stores(
             | BusinessType.c_business_code.ilike(f"%{business_type}%")
         )
 
-    stores = query.order_by(Store.i_store_id).all()
+    pagination = None
+    if grid_mode:
+        order_by = _store_list_order_by(sort_key, merchant_alias, agency_alias)
+        query = query.order_by(*order_by)
+        if page is not None:
+            total = query.order_by(None).with_entities(func.count(Store.i_store_id)).scalar() or 0
+            total_pages = max(1, -(-total // page_size))
+            current_page = page
+            if locate_id is not None:
+                ids = [row[0] for row in query.with_entities(Store.i_store_id).all()]
+                if locate_id in ids:
+                    current_page = ids.index(locate_id) // page_size + 1
+            current_page = min(current_page, total_pages)
+            stores = query.offset((current_page - 1) * page_size).limit(page_size).all()
+            pagination = {
+                "total": total,
+                "page": current_page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "sort": sort_key,
+            }
+        else:
+            stores = query.all()
+    else:
+        stores = query.order_by(Store.i_store_id).all()
 
     results = []
     for s in stores:
         bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == s.i_business_type).first()
         client = db.query(Client).filter(Client.i_account_id == s.i_account_id).first() if s.i_account_id else None
-        store_agent = db.query(Agent).filter(Agent.i_agent_id == s.i_installed_by_agent_id).first() if s.i_installed_by_agent_id else None
+        store_agency = db.query(Agency).filter(Agency.i_agency_id == s.i_installed_by_agency_id).first() if s.i_installed_by_agency_id else None
         results.append({
             "store_id": s.i_store_id,
             "store_seq": s.i_store_seq,
@@ -770,11 +941,16 @@ def list_stores(
             "max_terminal_count": s.i_max_terminal_count,
             "license_expire_date": s.dt_license_expire.isoformat() if s.dt_license_expire else None,
             "memo": s.c_memo,
-            "installed_by_agent_id": s.i_installed_by_agent_id,
-            "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
+            "notes": s.c_notes,
+            "installed_by_agency_id": s.i_installed_by_agency_id,
+            "installed_by_agency_name": store_agency.c_agency_name if store_agency else None,
+            "installed_by_agency_code": store_agency.c_agency_code if store_agency else None,
             "created_at": s.dt_created.isoformat() if s.dt_created else None,
+            **_store_license_and_options(s),
         })
 
+    if pagination is not None:
+        return _set_no_cache_headers(JSONResponse({"items": results, **pagination}))
     return _set_no_cache_headers(JSONResponse(results))
 
 
@@ -783,13 +959,11 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    store = db.query(Store).filter(Store.i_store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found.")
+    store = _get_business_store(db, store_id)
 
     bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
     client = db.query(Client).filter(Client.i_account_id == store.i_account_id).first() if store.i_account_id else None
-    store_agent = db.query(Agent).filter(Agent.i_agent_id == store.i_installed_by_agent_id).first() if store.i_installed_by_agent_id else None
+    store_agency = db.query(Agency).filter(Agency.i_agency_id == store.i_installed_by_agency_id).first() if store.i_installed_by_agency_id else None
 
     data = {
         "store_id": store.i_store_id,
@@ -837,8 +1011,10 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
         "created_at": store.dt_created.isoformat() if store.dt_created else None,
         "memo": store.c_memo,
         "remark": store.c_remark,
-        "installed_by_agent_id": store.i_installed_by_agent_id,
-        "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
+        "notes": store.c_notes,
+        "installed_by_agency_id": store.i_installed_by_agency_id,
+        "installed_by_agency_name": store_agency.c_agency_name if store_agency else None,
+        **_store_license_and_options(store),
     }
 
     return _set_no_cache_headers(JSONResponse(data))
@@ -858,14 +1034,9 @@ def upload_client_logo(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found.")
 
-    _validate_logo_upload(file)
-    client_code = _sanitize_asset_code(client.c_client_code or "")
-    target_dir = BRANDS_STATIC_ROOT / "clients" / client_code
-    _write_logo_assets(target_dir, file)
-
-    logo_url = f"/static/images/brands/clients/{client_code}/logo.png"
-    icon_url = f"/static/images/brands/clients/{client_code}/icon.png"
-    return JSONResponse({"success": True, "logo_url": logo_url, "icon_url": icon_url})
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    return _save_organization_logo(db, client, file, "MERCHANT", client.c_client_code)
 
 
 @router.post("/platform/store/{store_id}/logo")
@@ -888,15 +1059,9 @@ def upload_store_logo(
     if not client:
         raise HTTPException(status_code=400, detail="Linked Client not found.")
 
-    _validate_logo_upload(file)
-    client_code = _sanitize_asset_code(client.c_client_code or "")
-    store_code = _sanitize_asset_code(store.c_store_code or "")
-    target_dir = BRANDS_STATIC_ROOT / "clients" / client_code / "stores" / store_code
-    _write_logo_assets(target_dir, file)
-
-    logo_url = f"/static/images/brands/clients/{client_code}/stores/{store_code}/logo.png"
-    icon_url = f"/static/images/brands/clients/{client_code}/stores/{store_code}/icon.png"
-    return JSONResponse({"success": True, "logo_url": logo_url, "icon_url": icon_url})
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    return _save_organization_logo(db, store, file, "STORE", store.c_store_code, merchant_code=client.c_client_code)
 
 
 @router.delete("/platform/client/{client_id}/logo")
@@ -908,10 +1073,9 @@ def reset_client_logo(client_id: int, request: Request, db: Session = Depends(ge
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    client_code = _sanitize_asset_code(client.c_client_code or "")
-    target_dir = BRANDS_STATIC_ROOT / "clients" / client_code
-    deleted = _delete_logo_assets(target_dir)
-    return JSONResponse({"success": True, "deleted_files": deleted})
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    return _remove_organization_logo(db, client, "MERCHANT")
 
 
 @router.delete("/platform/store/{store_id}/logo")
@@ -929,11 +1093,76 @@ def reset_store_logo(store_id: int, request: Request, db: Session = Depends(get_
     if not client:
         raise HTTPException(status_code=400, detail="Linked Client not found.")
 
-    client_code = _sanitize_asset_code(client.c_client_code or "")
-    store_code = _sanitize_asset_code(store.c_store_code or "")
-    target_dir = BRANDS_STATIC_ROOT / "clients" / client_code / "stores" / store_code
-    deleted = _delete_logo_assets(target_dir)
-    return JSONResponse({"success": True, "deleted_files": deleted})
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    return _remove_organization_logo(db, store, "STORE")
+
+
+@router.post("/platform/agency/{agency_id}/logo")
+def upload_agency_logo(
+    agency_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    agency = db.get(Agency, agency_id)
+    if agency is None:
+        raise HTTPException(404, "Agency not found.")
+    return _save_organization_logo(db, agency, file, "AGENCY", agency.c_agency_code)
+
+
+@router.delete("/platform/agency/{agency_id}/logo")
+def reset_agency_logo(agency_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    agency = db.get(Agency, agency_id)
+    if agency is None:
+        raise HTTPException(404, "Agency not found.")
+    return _remove_organization_logo(db, agency, "AGENCY")
+
+
+# Business Contacts: one shared API for AGENCY / MERCHANT / STORE (owner_type + owner_id).
+def _contact_service(request: Request, db: Session, mutate: bool = False):
+    from backend.services.business_contact import BusinessContactService
+    require_platform_admin(get_current_user(request, db))
+    if mutate:
+        from backend.routers.system_settings import _validate_origin
+        _validate_origin(request)
+    return BusinessContactService(db)
+
+
+@router.get("/platform/business-contacts/{owner_type}/{owner_id}")
+def list_business_contacts(owner_type: str, owner_id: int, request: Request, db: Session = Depends(get_db)):
+    return _contact_service(request, db).get_contacts(owner_type, owner_id)
+
+
+@router.post("/platform/business-contacts/{owner_type}/{owner_id}")
+def create_business_contact(owner_type: str, owner_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _contact_service(request, db, True).create_contact(owner_type, owner_id, payload)
+
+
+@router.put("/platform/business-contacts/{owner_type}/{owner_id}/order")
+def reorder_business_contacts(owner_type: str, owner_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _contact_service(request, db, True).reorder(owner_type, owner_id, list(payload.get("contact_ids") or []))
+
+
+@router.put("/platform/business-contact/{contact_id}")
+def update_business_contact(contact_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _contact_service(request, db, True).update_contact(contact_id, payload)
+
+
+@router.post("/platform/business-contact/{contact_id}/primary")
+def set_primary_business_contact(contact_id: int, request: Request, db: Session = Depends(get_db)):
+    return _contact_service(request, db, True).set_primary(contact_id)
+
+
+@router.delete("/platform/business-contact/{contact_id}")
+def delete_business_contact(contact_id: int, request: Request, db: Session = Depends(get_db)):
+    _contact_service(request, db, True).delete_contact(contact_id)
+    return {"deleted": True}
 
 
 @router.post("/platform/store")
@@ -949,11 +1178,18 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
     client_id_raw = payload.get("client_id")
     client_id = _parse_optional_int(client_id_raw, "client_id")
     if client_id is None:
-        raise HTTPException(status_code=400, detail="client_id is required.")
+        raise HTTPException(status_code=400, detail="Merchant is required.")
 
     client = db.query(Client).filter(Client.i_account_id == client_id).first()
     if not client:
-        raise HTTPException(status_code=400, detail="Invalid client_id.")
+        raise HTTPException(status_code=400, detail="Selected Merchant does not exist.")
+
+    agency_id_new = _parse_optional_int(payload.get("installed_by_agency_id"), "installed_by_agency_id")
+    # The legacy Accounts > Stores tab has no Agency field, so it stays optional there.
+    if agency_id_new is None and not payload.get("_agency_optional"):
+        raise HTTPException(status_code=400, detail="Agency is required.")
+    if agency_id_new is not None and not db.query(Agency.i_agency_id).filter(Agency.i_agency_id == agency_id_new).first():
+        raise HTTPException(status_code=400, detail="Selected Agency does not exist.")
 
     for _ in range(5):
         generated_store_code, generated_seq = _generate_client_store_code(db)
@@ -973,7 +1209,7 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
             c_city=payload.get("city"),
             c_state=payload.get("state"),
             c_zip=payload.get("zip"),
-            c_country=payload.get("country"),
+            c_country=_normalize_country(payload.get("country")),
             c_default_tax_rate=payload.get("default_tax_rate"),
             c_timezone=payload.get("timezone"),
             c_tax_source=payload.get("tax_source") or "auto",
@@ -999,6 +1235,7 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
             c_device_type=payload.get("device_type"),
             dt_license_expire=_parse_optional_iso_datetime(payload.get("license_expire_date")),
             c_memo=payload.get("memo"),
+            c_notes=(str(payload.get("notes")).strip()[:5000] or None) if payload.get("notes") is not None else None,
             c_remark=payload.get("remark"),
         )
 
@@ -1007,15 +1244,16 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
             if bt_obj:
                 store.i_business_type = bt_obj.i_business_type_id
 
-        if payload.get("installed_by_agent_id"):
-            agent_id = _parse_optional_int(payload.get("installed_by_agent_id"), "installed_by_agent_id")
-            store.i_installed_by_agent_id = agent_id
+        if agency_id_new is not None:
+            store.i_installed_by_agency_id = agency_id_new
 
+        _apply_store_license_and_options(db, store, payload, creating=True)
         _stamp_created(store, user)
         db.add(store)
         try:
             db.commit()
-            return JSONResponse({"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq})
+            storage = AwsumStorageService(db).initialize_after_registration("STORE", next_id)
+            return JSONResponse({"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq, **storage})
         except IntegrityError as exc:
             db.rollback()
             if (
@@ -1035,9 +1273,7 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    store = db.query(Store).filter(Store.i_store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found.")
+    store = _get_business_store(db, store_id)
 
     # Bulk-update allowed fields
     for key, value in {
@@ -1055,7 +1291,6 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
         "address_line2": "c_address_line2",
         "city": "c_city",
         "state": "c_state",
-        "country": "c_country",
         "default_tax_rate": "c_default_tax_rate",
         "timezone": "c_timezone",
         "tax_source": "c_tax_source",
@@ -1077,6 +1312,8 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
 
     if "address" in payload and "address_line1" not in payload:
         store.c_address_line1 = payload.get("address")
+    if "country" in payload:
+        store.c_country = _normalize_country(payload.get("country"))
 
     if "license_expire_date" in payload:
         store.dt_license_expire = _parse_optional_iso_datetime(payload.get("license_expire_date"))
@@ -1094,20 +1331,47 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
         if bt_obj:
             store.i_business_type = bt_obj.i_business_type_id
 
-    if "installed_by_agent_id" in payload:
-        agent_id = _parse_optional_int(payload.get("installed_by_agent_id"), "installed_by_agent_id")
-        store.i_installed_by_agent_id = agent_id
+    if "installed_by_agency_id" in payload:
+        agency_id = _parse_optional_int(payload.get("installed_by_agency_id"), "installed_by_agency_id")
+        if agency_id is not None and not db.query(Agency.i_agency_id).filter(Agency.i_agency_id == agency_id).first():
+            raise HTTPException(status_code=400, detail="Selected Agency does not exist.")
+        store.i_installed_by_agency_id = agency_id
+
+    if "notes" in payload:
+        notes_val = str(payload.get("notes") or "").strip()
+        if len(notes_val) > 5000:
+            raise HTTPException(status_code=400, detail="Notes is too long.")
+        store.c_notes = notes_val or None
 
     if "client_id" in payload:
         client_id_raw = payload.get("client_id")
         client_id = _parse_optional_int(client_id_raw, "client_id")
         if client_id is None:
-            raise HTTPException(status_code=400, detail="client_id cannot be empty.")
+            raise HTTPException(status_code=400, detail="Merchant cannot be empty.")
         client = db.query(Client).filter(Client.i_account_id == client_id).first()
         if not client:
-            raise HTTPException(status_code=400, detail="Invalid client_id.")
+            raise HTTPException(status_code=400, detail="Selected Merchant does not exist.")
+        if store.i_account_id != client.i_account_id:
+            from backend.services.paths import AwsumPathResolver, resource_storage_path
+            from backend.services import images
+            previous_merchant = db.get(Client, store.i_account_id)
+            if store.c_logo_url or store.c_db_path:
+                raise HTTPException(409, "Store has owned resources. Use a reviewed resource transfer before changing its Merchant.")
+            if previous_merchant:
+                try:
+                    old_owner = AwsumPathResolver("STORE", merchant_code=previous_merchant.c_client_code,
+                                                  store_code=store.c_store_code)
+                except ValueError as exc:
+                    raise HTTPException(409, "Store owner requires review before transfer.") from exc
+                roots = (
+                    resource_storage_path(old_owner.get_data_path("common")).parent,
+                    images.image_storage_root().joinpath(*old_owner.get_context_root().lstrip("/").split("/")),
+                )
+                if any(root.is_dir() and any(file.is_file() for file in root.rglob("*")) for root in roots):
+                    raise HTTPException(409, "Store has image/data files. Transfer resources before changing its Merchant.")
         store.i_account_id = client.i_account_id
 
+    _apply_store_license_and_options(db, store, payload, creating=False)
     _stamp_updated(store, user)
     db.commit()
     return JSONResponse({"success": True})
@@ -1118,11 +1382,9 @@ def delete_store(store_id: int, request: Request, db: Session = Depends(get_db))
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    store = db.query(Store).filter(Store.i_store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found.")
+    store = _get_business_store(db, store_id)
 
-    if store.c_is_test == 1 or store.c_store_code in {TEST_STORE_CODE, LEGACY_TEST_STORE_CODE}:
+    if store.c_is_test == 1 or store.c_store_code in LEGACY_TEST_STORE_CODES | {TEST_STORE_CODE}:
         raise HTTPException(status_code=403, detail="Test Store cannot be deleted.")
 
     store.c_status = "inactive"
@@ -1179,7 +1441,7 @@ def list_client_stores(client_id: int, request: Request, db: Session = Depends(g
             "timezone": s.c_timezone,
             "tax_source": s.c_tax_source,
             "memo": s.c_memo,
-            "installed_by_agent_id": s.i_installed_by_agent_id,
+            "installed_by_agency_id": s.i_installed_by_agency_id,
         })
     return _set_no_cache_headers(JSONResponse(results))
 
@@ -1227,7 +1489,7 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
         "status": store.c_status,
         "store_status": store.c_status,
         "memo": store.c_memo,
-        "installed_by_agent_id": store.i_installed_by_agent_id,
+        "installed_by_agency_id": store.i_installed_by_agency_id,
     }
     return _set_no_cache_headers(JSONResponse(data))
 
@@ -1236,6 +1498,7 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
 def create_client_store(client_id: int, request: Request, payload: dict, db: Session = Depends(get_db)):
     payload = dict(payload or {})
     payload["client_id"] = client_id
+    payload["_agency_optional"] = True
     return create_store(request, payload, db)
 
 
@@ -1276,14 +1539,14 @@ def list_store_devices(client_id: int, store_id: int, request: Request, db: Sess
         for lic in db.query(License).filter(License.i_license_id.in_(license_ids)).all():
             license_map[lic.i_license_id] = lic
 
-    agent_ids = [d.i_installed_by_agent_id for d in devices if d.i_installed_by_agent_id]
-    agent_map = {}
-    if agent_ids:
-        for agent in db.query(Agent).filter(Agent.i_agent_id.in_(agent_ids)).all():
-            agent_map[agent.i_agent_id] = agent
+    agency_ids = [d.i_installed_by_agency_id for d in devices if d.i_installed_by_agency_id]
+    agency_map = {}
+    if agency_ids:
+        for agency in db.query(Agency).filter(Agency.i_agency_id.in_(agency_ids)).all():
+            agency_map[agency.i_agency_id] = agency
 
     return _set_no_cache_headers(JSONResponse([
-        _serialize_device(device, license_map.get(device.i_license_id), agent_map.get(device.i_installed_by_agent_id)) for device in devices
+        _serialize_device(device, license_map.get(device.i_license_id), agency_map.get(device.i_installed_by_agency_id)) for device in devices
     ]))
 
 
@@ -1302,7 +1565,7 @@ def get_store_device_detail(client_id: int, store_id: int, device_id: int, reque
         raise HTTPException(status_code=404, detail="Device not found for this store.")
 
     license_obj = db.query(License).filter(License.i_license_id == device.i_license_id).first() if device.i_license_id else None
-    agent_obj = db.query(Agent).filter(Agent.i_agent_id == device.i_installed_by_agent_id).first() if device.i_installed_by_agent_id else None
+    agency_obj = db.query(Agency).filter(Agency.i_agency_id == device.i_installed_by_agency_id).first() if device.i_installed_by_agency_id else None
     logs = (
         db.query(DeviceLog)
         .filter(DeviceLog.i_device_id == device.i_device_id)
@@ -1311,7 +1574,7 @@ def get_store_device_detail(client_id: int, store_id: int, device_id: int, reque
     )
 
     return _set_no_cache_headers(JSONResponse({
-        "device": _serialize_device(device, license_obj, agent_obj),
+        "device": _serialize_device(device, license_obj, agency_obj),
         "logs": [_serialize_device_log(log) for log in logs],
     }))
 
@@ -1335,7 +1598,7 @@ def create_store_device(client_id: int, store_id: int, payload: dict, request: R
         if license_obj.i_store_id != store_id:
             raise HTTPException(status_code=400, detail="License must belong to the same store.")
 
-    installed_agent = _resolve_agent(payload.get("installed_by_agent_id"), db)
+    installed_agent = _resolve_agency(payload.get("installed_by_agency_id"), db)
 
     device_type_id = _parse_optional_int(payload.get("device_type_id"), "device_type_id")
     serial_no = str(payload.get("serial_no") or "").strip() or None
@@ -1352,7 +1615,7 @@ def create_store_device(client_id: int, store_id: int, payload: dict, request: R
     device = Device(
         i_store_id=store_id,
         i_license_id=license_id,
-        i_installed_by_agent_id=installed_agent.i_agent_id if installed_agent else None,
+        i_installed_by_agency_id=installed_agent.i_agency_id if installed_agent else None,
         c_device_uuid=_generate_store_device_code(db, store_id),
         c_device_name=device_name,
         c_device_type=str(payload.get("device_type") or "").strip() or None,
@@ -1441,11 +1704,11 @@ def update_store_device(client_id: int, store_id: int, device_id: int, payload: 
         device.c_note = str(payload.get("note") or "").strip() or None
 
     installed_agent = None
-    if "installed_by_agent_id" in payload:
-        installed_agent = _resolve_agent(payload.get("installed_by_agent_id"), db)
-        device.i_installed_by_agent_id = installed_agent.i_agent_id if installed_agent else None
-    elif device.i_installed_by_agent_id:
-        installed_agent = db.query(Agent).filter(Agent.i_agent_id == device.i_installed_by_agent_id).first()
+    if "installed_by_agency_id" in payload:
+        installed_agent = _resolve_agency(payload.get("installed_by_agency_id"), db)
+        device.i_installed_by_agency_id = installed_agent.i_agency_id if installed_agent else None
+    elif device.i_installed_by_agency_id:
+        installed_agent = db.query(Agency).filter(Agency.i_agency_id == device.i_installed_by_agency_id).first()
 
     license_obj = None
     if "license_id" in payload:
@@ -1497,6 +1760,10 @@ def delete_store_device(client_id: int, store_id: int, device_id: int, request: 
     )
     if not device:
         raise HTTPException(status_code=404, detail="Device not found for this store.")
+
+    from backend.models_admin.license_device_link import LicenseDeviceLink
+    if db.query(LicenseDeviceLink.i_link_id).filter(LicenseDeviceLink.i_device_id == device.i_device_id).first():
+        raise HTTPException(status_code=409, detail="Device has license link history and cannot be deleted.")
 
     db.query(DeviceLog).filter(DeviceLog.i_device_id == device.i_device_id).delete(synchronize_session=False)
     db.delete(device)
@@ -1584,6 +1851,25 @@ def validate_device_binding(payload: dict, request: Request, db: Session = Depen
     if not device.c_bound_hardware_id:
         raise HTTPException(status_code=403, detail="Device is not bound to hardware.")
 
+    # License-based devices: authorized only while an active link and a valid license exist.
+    from backend.models_admin.license_device_link import LicenseDeviceLink
+    if db.query(LicenseDeviceLink.i_link_id).filter(LicenseDeviceLink.i_device_id == device.i_device_id).first():
+        active_link = (
+            db.query(LicenseDeviceLink)
+            .filter(LicenseDeviceLink.i_device_id == device.i_device_id, LicenseDeviceLink.dt_unlinked_at.is_(None))
+            .first()
+        )
+        if not active_link:
+            raise HTTPException(status_code=403, detail="Device is no longer linked to a license.")
+        linked_license = db.query(License).filter(License.i_license_id == active_link.i_license_id).first()
+        license_status = str(getattr(linked_license, "c_status", "") or "").lower()
+        if (
+            not linked_license
+            or license_status not in {"active", "trial"}
+            or (linked_license.dt_end and linked_license.dt_end < datetime.now())
+        ):
+            raise HTTPException(status_code=403, detail="License is not active.")
+
     if device.c_bound_hardware_id != hardware_id:
         raise HTTPException(status_code=403, detail="Hardware mismatch.")
 
@@ -1617,10 +1903,10 @@ def validate_device_binding(payload: dict, request: Request, db: Session = Depen
     })
 
 
-# Agents
+# Agencies
 
-@router.get("/platform/agent-types")
-def list_agent_types(
+@router.get("/platform/agency-types")
+def list_agency_types(
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, alias="q"),
@@ -1629,47 +1915,62 @@ def list_agent_types(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(AgentType)
+    query = db.query(AgencyType)
 
     normalized_status = _normalize_status(status, {"active", "inactive"})
     if normalized_status:
-        query = query.filter(AgentType.c_status == normalized_status)
+        query = query.filter(AgencyType.c_status == normalized_status)
 
     if search:
         term = f"%{search.strip()}%"
         query = query.filter(
             or_(
-                AgentType.c_agent_type_code.ilike(term),
-                AgentType.c_agent_type_name.ilike(term),
+                AgencyType.c_agency_type_code.ilike(term),
+                AgencyType.c_agency_type_name.ilike(term),
             )
         )
 
-    items = query.order_by(AgentType.i_agent_type_id).all()
+    items = query.order_by(AgencyType.i_agency_type_id).all()
     return JSONResponse([
         {
-            "id": item.i_agent_type_id,
-            "agent_type_code": item.c_agent_type_code,
-            "agent_type_name": item.c_agent_type_name,
+            "id": item.i_agency_type_id,
+            "agency_type_code": item.c_agency_type_code,
+            "agency_type_name": item.c_agency_type_name,
             "status": item.c_status,
         }
         for item in items
     ])
 
 
-@router.post("/platform/agent-type")
-def create_agent_type(payload: dict, request: Request, db: Session = Depends(get_db)):
+def _validate_agency_type_fields(type_code: str, type_name: str) -> None:
+    if not type_code:
+        raise HTTPException(status_code=400, detail="Agency Type Code is required.")
+    if not type_name:
+        raise HTTPException(status_code=400, detail="Agency Type Name is required.")
+    if len(type_code) > 30:
+        raise HTTPException(status_code=400, detail="Agency Type Code must be 30 characters or fewer.")
+    if len(type_name) > 120:
+        raise HTTPException(status_code=400, detail="Agency Type Name must be 120 characters or fewer.")
+
+
+@router.post("/platform/agency-type")
+def create_agency_type(payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    type_code = str(payload.get("agent_type_code") or "").strip().upper()
-    type_name = str(payload.get("agent_type_name") or "").strip()
-    if not type_code or not type_name:
-        raise HTTPException(status_code=400, detail="agent_type_code and agent_type_name are required")
+    type_code = str(payload.get("agency_type_code") or "").strip().upper()
+    type_name = str(payload.get("agency_type_name") or "").strip()
+    _validate_agency_type_fields(type_code, type_name)
 
-    item = AgentType(
-        c_agent_type_code=type_code,
-        c_agent_type_name=type_name,
-        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
+    try:
+        status_value = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+    except HTTPException:
+        raise HTTPException(status_code=400, detail="Status must be Active or Inactive.")
+
+    item = AgencyType(
+        c_agency_type_code=type_code,
+        c_agency_type_name=type_name,
+        c_status=status_value,
     )
     db.add(item)
 
@@ -1677,53 +1978,57 @@ def create_agent_type(payload: dict, request: Request, db: Session = Depends(get
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="agent_type_code already exists")
+        raise HTTPException(status_code=409, detail="Agency Type Code already exists.")
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Unable to save the agency type. Please try again.")
 
     db.refresh(item)
-    return JSONResponse({"id": item.i_agent_type_id})
+    return JSONResponse({"id": item.i_agency_type_id})
 
 
-@router.put("/platform/agent-type/{agent_type_id}")
-def update_agent_type(agent_type_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.put("/platform/agency-type/{agency_type_id}")
+def update_agency_type(agency_type_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+    item = db.query(AgencyType).filter(AgencyType.i_agency_type_id == agency_type_id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Agent type not found")
+        raise HTTPException(status_code=404, detail="Agency type not found")
 
-    if "agent_type_code" in payload:
-        type_code = str(payload.get("agent_type_code") or "").strip().upper()
-        if not type_code:
-            raise HTTPException(status_code=400, detail="agent_type_code is required")
-        item.c_agent_type_code = type_code
-    if "agent_type_name" in payload:
-        type_name = str(payload.get("agent_type_name") or "").strip()
-        if not type_name:
-            raise HTTPException(status_code=400, detail="agent_type_name is required")
-        item.c_agent_type_name = type_name
+    type_code = str(payload.get("agency_type_code", item.c_agency_type_code) or "").strip().upper()
+    type_name = str(payload.get("agency_type_name", item.c_agency_type_name) or "").strip()
+    _validate_agency_type_fields(type_code, type_name)
+    item.c_agency_type_code = type_code
+    item.c_agency_type_name = type_name
     if "status" in payload:
-        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+        try:
+            item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+        except HTTPException:
+            raise HTTPException(status_code=400, detail="Status must be Active or Inactive.")
 
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="agent_type_code already exists")
+        raise HTTPException(status_code=409, detail="Agency Type Code already exists.")
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Unable to save the agency type. Please try again.")
 
     return JSONResponse({"success": True})
 
 
-@router.delete("/platform/agent-type/{agent_type_id}")
-def delete_agent_type(agent_type_id: int, request: Request, db: Session = Depends(get_db)):
+@router.delete("/platform/agency-type/{agency_type_id}")
+def delete_agency_type(agency_type_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
+    item = db.query(AgencyType).filter(AgencyType.i_agency_type_id == agency_type_id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Agent type not found")
+        raise HTTPException(status_code=404, detail="Agency type not found")
 
-    linked_agent_count = db.query(Agent.i_agent_id).filter(Agent.i_agent_type_id == agent_type_id).count()
+    linked_agent_count = db.query(Agency.i_agency_id).filter(Agency.i_agency_type_id == agency_type_id).count()
     if linked_agent_count > 0:
         item.c_status = "inactive"
         db.commit()
@@ -1733,7 +2038,7 @@ def delete_agent_type(agent_type_id: int, request: Request, db: Session = Depend
     db.commit()
     return JSONResponse({"success": True, "mode": "hard-delete"})
 
-@router.get("/platform/agents")
+@router.get("/platform/agencies")
 def list_agents(
     request: Request,
     db: Session = Depends(get_db),
@@ -1743,124 +2048,226 @@ def list_agents(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(Agent, AgentType).outerjoin(AgentType, Agent.i_agent_type_id == AgentType.i_agent_type_id)
+    query = db.query(Agency, AgencyType).outerjoin(AgencyType, Agency.i_agency_type_id == AgencyType.i_agency_type_id)
 
     normalized_status = _normalize_status(status, {"active", "inactive"})
     if normalized_status:
-        query = query.filter(Agent.c_status == normalized_status)
+        query = query.filter(Agency.c_status == normalized_status)
 
     if search:
         term = f"%{search.strip()}%"
+        code_term = f"%{search.strip().replace('_', '')}%"
         query = query.filter(
             or_(
-                Agent.c_agent_code.ilike(term),
-                Agent.c_agent_name.ilike(term),
-                Agent.c_company_name.ilike(term),
-                Agent.c_contact_name.ilike(term),
-                Agent.c_email.ilike(term),
-                Agent.c_phone.ilike(term),
-                AgentType.c_agent_type_name.ilike(term),
+                Agency.c_agency_code.ilike(term),
+                Agency.c_agency_code.ilike(code_term),
+                Agency.c_agency_name.ilike(term),
+                Agency.c_company_name.ilike(term),
+                Agency.c_contact_name.ilike(term),
+                Agency.c_email.ilike(term),
+                Agency.c_phone.ilike(term),
+                AgencyType.c_agency_type_name.ilike(term),
             )
         )
 
-    items = query.order_by(Agent.i_agent_id).all()
+    items = query.order_by(Agency.i_agency_id).all()
+    from backend.services.business_contact import BusinessContactService
+    primary_names = BusinessContactService(db).primary_names("AGENCY", [agency.i_agency_id for agency, _ in items])
+    agency_admin_ids = {
+        agency_id for (agency_id,) in db.query(PlatformUser.i_agency_id)
+        .join(Role, Role.i_role_id == PlatformUser.i_role_id)
+        .filter(
+            PlatformUser.i_agency_id.in_([agency.i_agency_id for agency, _ in items]),
+            Role.c_name == AGENCY_ADMIN_ROLE_NAME,
+        ).all()
+    }
     return JSONResponse([
         {
-            "id": agent.i_agent_id,
-            "agent_type_id": agent.i_agent_type_id,
-            "agent_type_code": agent_type.c_agent_type_code if agent_type else None,
-            "agent_type_name": agent_type.c_agent_type_name if agent_type else None,
-            "agent_code": agent.c_agent_code,
-            "agent_name": agent.c_contact_name or agent.c_agent_name,
-            "company_name": agent.c_company_name,
-            "contact_name": agent.c_contact_name or agent.c_agent_name,
-            "phone": agent.c_phone,
-            "email": agent.c_email,
-            "address_line1": agent.c_address_line1,
-            "address_line2": agent.c_address_line2,
-            "city": agent.c_city,
-            "state": agent.c_state,
-            "zip": agent.c_zip,
-            "country": agent.c_country,
-            "commission_rate": float(agent.n_commission_rate) if agent.n_commission_rate is not None else None,
-            "memo": agent.c_memo,
-            "status": agent.c_status,
-            "created_at": agent.dt_created_at.isoformat() if agent.dt_created_at else None,
+            "id": agency.i_agency_id,
+            "has_agency_admin": agency.i_agency_id in agency_admin_ids,
+            "agency_type_id": agency.i_agency_type_id,
+            "agency_type_code": agency_type.c_agency_type_code if agency_type else None,
+            "agency_type_name": agency_type.c_agency_type_name if agency_type else None,
+            "agency_code": agency.c_agency_code,
+            "agent_name": agency.c_contact_name or agency.c_agency_name,
+            "company_name": agency.c_company_name,
+            "contact_name": primary_names.get(agency.i_agency_id) or agency.c_contact_name or "",
+            "phone": agency.c_phone,
+            "email": agency.c_email,
+            "address_line1": agency.c_address_line1,
+            "address_line2": agency.c_address_line2,
+            "city": agency.c_city,
+            "state": agency.c_state,
+            "zip": agency.c_zip,
+            "country": agency.c_country,
+            "commission_rate": float(agency.n_commission_rate) if agency.n_commission_rate is not None else None,
+            "memo": agency.c_memo,
+            "status": agency.c_status,
+            "created_at": agency.dt_created_at.isoformat() if agency.dt_created_at else None,
         }
-        for agent, agent_type in items
+        for agency, agency_type in items
     ])
 
 
-@router.post("/platform/agent")
+_AGENCY_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_agency_email(value: object) -> Optional[str]:
+    email = str(value or "").strip()
+    if not email:
+        return None
+    if len(email) > 255 or not _AGENCY_EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    return email
+
+
+def _parse_agency_commission(value: object) -> Optional[Decimal]:
+    try:
+        rate = _parse_optional_decimal(value, "commission_rate")
+    except HTTPException:
+        raise HTTPException(status_code=400, detail="Commission Rate must be a number between 0 and 100.")
+    if rate is not None and (not rate.is_finite() or rate < 0 or rate > 100):
+        raise HTTPException(status_code=400, detail="Commission Rate must be a number between 0 and 100.")
+    return rate
+
+
+def _check_agency_lengths(payload: dict) -> None:
+    limits = {
+        "company_name": 255, "contact_name": 120, "phone": 50, "email": 255, "address_line1": 255,
+        "address_line2": 255, "city": 120, "state": 120, "zip": 20, "country": 120, "memo": 4000,
+    }
+    for key, limit in limits.items():
+        if len(str(payload.get(key) or "").strip()) > limit:
+            raise HTTPException(status_code=400, detail=f"{key.replace('_', ' ').title()} must be {limit} characters or fewer.")
+
+def _agency_phone_password(phone: object) -> str | None:
+    digits = re.sub(r"[^0-9]", "", str(phone or ""))
+    return f"Awsum@{digits[-4:]}" if len(digits) >= 4 else None
+
+
+def _activate_agency(db: Session, agency: Agency) -> dict:
+    if agency.c_status != "active":
+        return {}
+    existing = db.query(PlatformUser).filter(PlatformUser.i_agency_id == agency.i_agency_id).first()
+    if existing:
+        return {"agency_user_created": False, "login_email": existing.c_email}
+    contact = BusinessContactService(db).get_primary_contact("AGENCY", agency.i_agency_id)
+    if not contact:
+        raise HTTPException(400, "Save the Agency as Inactive, add an active Primary Contact, then activate it.")
+    email = _platform_user_email(contact.c_email)
+    first_name, last_name = _platform_user_name(
+        {"first_name": contact.c_first_name, "last_name": contact.c_last_name}
+    )
+    _require_unique_platform_user_email(db, email, agency_id=agency.i_agency_id)
+    role = db.query(Role).filter(Role.c_name == AGENCY_ADMIN_ROLE_NAME).first()
+    if not role or (role.c_status or "").lower() != "active":
+        raise HTTPException(400, "An active Agency Admin Role is required. Restart after applying the user migration.")
+    password = _agency_phone_password(contact.c_phone) or secrets.token_urlsafe(18)
+    agency_user = PlatformUser(
+        i_store_id=ADMIN_STORE_ID, i_agency_id=agency.i_agency_id, i_role_id=role.i_role_id,
+        c_first_name=first_name, c_last_name=last_name, c_email=email, c_phone=contact.c_phone,
+        c_password=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+        c_status="active", i_must_change_password=0,
+    )
+    db.add(agency_user)
+    db.flush()
+    return {"agency_user_created": True, "login_email": email,
+            "temporary_password": password}
+
+
+@router.post("/platform/agency")
 def create_agent(payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
+    _check_agency_lengths(payload)
+    # Person names are managed by the common Business Contact (First/Last); legacy contact_name is optional.
     contact_name = str(payload.get("contact_name") or payload.get("agent_name") or "").strip()
-    if not contact_name:
-        raise HTTPException(status_code=400, detail="contact_name is required")
+    company_name = str(payload.get("company_name") or "").strip()
+    if not company_name:
+        raise HTTPException(status_code=400, detail="Company Name is required.")
 
-    agent_type_id = _parse_optional_int(payload.get("agent_type_id"), "agent_type_id")
-    if agent_type_id is not None:
-        agent_type = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
-        if not agent_type:
-            raise HTTPException(status_code=400, detail="Invalid agent_type_id")
+    agency_type_id = _parse_optional_int(payload.get("agency_type_id"), "agency_type_id")
+    if agency_type_id is None:
+        raise HTTPException(status_code=400, detail="Agency Type is required.")
+    agency_type = db.query(AgencyType).filter(AgencyType.i_agency_type_id == agency_type_id).first()
+    if not agency_type:
+        raise HTTPException(status_code=400, detail="Invalid Agency Type.")
+    email = _validate_agency_email(payload.get("email"))
+    commission_rate = _parse_agency_commission(payload.get("commission_rate"))
 
-    item = Agent(
-        i_agent_type_id=agent_type_id,
-        c_agent_code=f"TMP_{secrets.token_hex(6).upper()}",
-        c_agent_name=contact_name,
-        c_company_name=str(payload.get("company_name") or "").strip() or None,
-        c_contact_name=contact_name,
+    item = Agency(
+        i_agency_type_id=agency_type_id,
+        c_agency_code=f"TMP_{secrets.token_hex(6).upper()}",
+        c_agency_name=(contact_name or company_name)[:120],
+        c_company_name=company_name,
+        c_contact_name=contact_name or None,
         c_phone=str(payload.get("phone") or "").strip() or None,
-        c_email=str(payload.get("email") or "").strip() or None,
+        c_email=email,
         c_address_line1=str(payload.get("address_line1") or "").strip() or None,
         c_address_line2=str(payload.get("address_line2") or "").strip() or None,
         c_city=str(payload.get("city") or "").strip() or None,
         c_state=str(payload.get("state") or "").strip() or None,
         c_zip=str(payload.get("zip") or "").strip() or None,
-        c_country=str(payload.get("country") or "").strip() or None,
-        n_commission_rate=_parse_optional_decimal(payload.get("commission_rate"), "commission_rate"),
+        c_country=_normalize_country(payload.get("country")),
+        n_commission_rate=commission_rate,
         c_memo=str(payload.get("memo") or "").strip() or None,
-        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
+        c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "inactive",
     )
-    db.add(item)
-    db.flush()
-    item.c_agent_code = _generate_agent_code(item.i_agent_id)
-    db.commit()
+    try:
+        db.add(item)
+        db.flush()
+        item.c_agency_code = _generate_agency_code(item.i_agency_id)
+        activation = _activate_agency(db, item)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        logging.getLogger(__name__).exception("Unable to create Agency")
+        raise HTTPException(status_code=500, detail="Unable to create the agency. Please try again.")
     db.refresh(item)
 
-    return JSONResponse({"id": item.i_agent_id, "agent_code": item.c_agent_code})
+    storage = AwsumStorageService(db).initialize_after_registration("AGENCY", item.i_agency_id)
+    return _set_no_cache_headers(JSONResponse(
+        {"id": item.i_agency_id, "agency_code": item.c_agency_code, **storage, **activation}
+    ))
 
 
-@router.put("/platform/agent/{agent_id}")
-def update_agent(agent_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.put("/platform/agency/{agency_id}")
+def update_agent(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+    item = db.query(Agency).filter(Agency.i_agency_id == agency_id).with_for_update().first()
     if not item:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail="Agency not found")
 
-    if "agent_type_id" in payload:
-        agent_type_id = _parse_optional_int(payload.get("agent_type_id"), "agent_type_id")
-        if agent_type_id is not None:
-            agent_type = db.query(AgentType).filter(AgentType.i_agent_type_id == agent_type_id).first()
-            if not agent_type:
-                raise HTTPException(status_code=400, detail="Invalid agent_type_id")
-        item.i_agent_type_id = agent_type_id
+    _check_agency_lengths(payload)
+    if "agency_type_id" in payload:
+        agency_type_id = _parse_optional_int(payload.get("agency_type_id"), "agency_type_id")
+        if agency_type_id is None:
+            raise HTTPException(status_code=400, detail="Agency Type is required.")
+        agency_type = db.query(AgencyType).filter(AgencyType.i_agency_type_id == agency_type_id).first()
+        if not agency_type:
+            raise HTTPException(status_code=400, detail="Invalid Agency Type.")
+        item.i_agency_type_id = agency_type_id
     if "contact_name" in payload or "agent_name" in payload:
         contact_name = str(payload.get("contact_name") or payload.get("agent_name") or "").strip()
         if not contact_name:
-            raise HTTPException(status_code=400, detail="contact_name is required")
-        item.c_agent_name = contact_name
+            raise HTTPException(status_code=400, detail="Contact Name is required.")
+        item.c_agency_name = contact_name
         item.c_contact_name = contact_name
     if "company_name" in payload:
-        item.c_company_name = str(payload.get("company_name") or "").strip() or None
+        company_name = str(payload.get("company_name") or "").strip()
+        if not company_name:
+            raise HTTPException(status_code=400, detail="Company Name is required.")
+        item.c_company_name = company_name
     if "phone" in payload:
         item.c_phone = str(payload.get("phone") or "").strip() or None
     if "email" in payload:
-        item.c_email = str(payload.get("email") or "").strip() or None
+        item.c_email = _validate_agency_email(payload.get("email"))
     if "address_line1" in payload:
         item.c_address_line1 = str(payload.get("address_line1") or "").strip() or None
     if "address_line2" in payload:
@@ -1872,26 +2279,102 @@ def update_agent(agent_id: int, payload: dict, request: Request, db: Session = D
     if "zip" in payload:
         item.c_zip = str(payload.get("zip") or "").strip() or None
     if "country" in payload:
-        item.c_country = str(payload.get("country") or "").strip() or None
+        item.c_country = _normalize_country(payload.get("country"))
     if "commission_rate" in payload:
-        item.n_commission_rate = _parse_optional_decimal(payload.get("commission_rate"), "commission_rate")
+        item.n_commission_rate = _parse_agency_commission(payload.get("commission_rate"))
     if "memo" in payload:
         item.c_memo = str(payload.get("memo") or "").strip() or None
     if "status" in payload:
         item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
 
-    db.commit()
-    return JSONResponse({"success": True})
+    try:
+        activation = _activate_agency(db, item)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "A user with this login email already exists.")
+    except SQLAlchemyError:
+        db.rollback()
+        logging.getLogger(__name__).exception("Unable to save Agency activation")
+        raise HTTPException(status_code=500, detail="Unable to save the agency. Please try again.")
+    return _set_no_cache_headers(JSONResponse({"success": True, "id": agency_id, **activation}))
 
 
-@router.delete("/platform/agent/{agent_id}")
-def delete_agent(agent_id: int, request: Request, db: Session = Depends(get_db)):
+def _agency_registration_email(db: Session, agency_id: int, payload: dict, request: Request):
+    from backend.routers.auth import password_matches
+
+    agency = db.get(Agency, agency_id)
+    if not agency or agency.c_status != "active":
+        raise HTTPException(400, "An active Agency is required.")
+    agency_user = db.query(PlatformUser).join(Role, Role.i_role_id == PlatformUser.i_role_id).filter(
+        PlatformUser.i_agency_id == agency_id, Role.c_name == AGENCY_ADMIN_ROLE_NAME,
+    ).first()
+    if not agency_user or agency_user.c_status != "active":
+        raise HTTPException(400, "An active Agency User is required.")
+    contact = BusinessContactService(db).get_primary_contact("AGENCY", agency_id)
+    if not contact:
+        raise HTTPException(400, "An active Primary Contact is required.")
+    try:
+        recipient = validate_email_address(payload.get("recipient", contact.c_email))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    password = str(payload.get("temporary_password") or "")
+    if password and not password_matches(agency_user, password):
+        raise HTTPException(400, "The temporary password is no longer valid. Reopen without it to send login information.")
+    if not password and agency_user.dt_password_changed is None:
+        # The User phone is the creation-time snapshot, not the current Contact phone.
+        candidate = _agency_phone_password(agency_user.c_phone)
+        if candidate and password_matches(agency_user, candidate):
+            password = candidate
+    login_url = str(request.base_url).rstrip("/") + f"/login/agency/{agency.c_agency_code}"
+    company = load_company_branding(db)
+    return build_agency_registration_email(
+        recipient=recipient, company=company, agency_name=agency.c_company_name or agency.c_agency_name,
+        agency_code=agency.c_agency_code, login_email=agency_user.c_email,
+        login_url=login_url, initial_password=password, must_change_password=agency_user.i_must_change_password == 1,
+    )
+
+
+@router.post("/platform/agency/{agency_id}/registration-email/preview")
+def preview_agency_registration_email(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    require_platform_admin(get_current_user(request, db))
+    message = _agency_registration_email(db, agency_id, payload, request)
+    return _set_no_cache_headers(JSONResponse({
+        "html": AwsumEmailLayout.preview_message(message),
+        "subject": str(message["Subject"]), "recipient": str(message["To"]),
+        "message": message.get_body(preferencelist=("plain",)).get_content(),
+    }))
+
+
+@router.post("/platform/agency/{agency_id}/registration-email")
+def send_agency_registration_email(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    require_platform_admin(get_current_user(request, db))
+    message = _agency_registration_email(db, agency_id, payload, request)
+    try:
+        message_id, _ = send_configured_email(db, message)
+    except EmailConfigurationError as exc:
+        logging.getLogger(__name__).warning("Agency registration email configuration failed: %s", exc)
+        raise HTTPException(503, str(exc)) from exc
+    except MailDeliveryError as exc:
+        logging.getLogger(__name__).warning("Agency registration email was not accepted: %s", exc)
+        raise HTTPException(502, str(exc)) from exc
+    return _set_no_cache_headers(JSONResponse({
+        "accepted": True, "recipient": str(message["To"]), "message_id": message_id,
+        "delivery_note": "Accepted by the mail server; recipient delivery is not confirmed.",
+    }))
+
+
+@router.delete("/platform/agency/{agency_id}")
+def delete_agent(agency_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
+    item = db.query(Agency).filter(Agency.i_agency_id == agency_id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail="Agency not found")
 
     item.c_status = "inactive"
     db.commit()
@@ -1930,7 +2413,7 @@ def list_licenses(
 
     store_ids = [item.i_store_id for item in items if item.i_store_id is not None]
     client_ids = [item.i_client_id for item in items if item.i_client_id is not None]
-    agent_ids = [item.i_agent_id for item in items if item.i_agent_id is not None]
+    agency_ids = [item.i_agency_id for item in items if item.i_agency_id is not None]
 
     store_map = {
         row.i_store_id: row.c_store_name
@@ -1940,10 +2423,10 @@ def list_licenses(
         row.i_client_id: row.c_client_name
         for row in db.query(Client).filter(Client.i_client_id.in_(client_ids)).all()
     } if client_ids else {}
-    agent_map = {
-        row.i_agent_id: row.c_agent_name
-        for row in db.query(Agent).filter(Agent.i_agent_id.in_(agent_ids)).all()
-    } if agent_ids else {}
+    agency_map = {
+        row.i_agency_id: row.c_agency_name
+        for row in db.query(Agency).filter(Agency.i_agency_id.in_(agency_ids)).all()
+    } if agency_ids else {}
 
     return JSONResponse([
         {
@@ -1955,14 +2438,14 @@ def list_licenses(
             "store_name": store_map.get(item.i_store_id),
             "client_id": item.i_client_id,
             "client_name": client_map.get(item.i_client_id),
-            "agent_id": item.i_agent_id,
-            "agent_name": agent_map.get(item.i_agent_id),
+            "agency_id": item.i_agency_id,
+            "agent_name": agency_map.get(item.i_agency_id),
             "max_devices": item.i_max_devices,
             "max_users": item.i_max_users,
             "start_date": item.dt_start.isoformat() if item.dt_start else None,
             "end_date": item.dt_end.isoformat() if item.dt_end else None,
             "monthly_fee": float(item.n_monthly_fee) if item.n_monthly_fee is not None else None,
-            "agent_commission": float(item.n_agent_commission) if item.n_agent_commission is not None else None,
+            "agency_commission": float(item.n_agency_commission) if item.n_agency_commission is not None else None,
             "platform_fee": float(item.n_platform_fee) if item.n_platform_fee is not None else None,
             "status": item.c_status or "active",
         }
@@ -1993,11 +2476,11 @@ def create_license(payload: dict, request: Request, db: Session = Depends(get_db
         if not client:
             raise HTTPException(status_code=400, detail="Invalid client_id")
 
-    agent_id = _parse_optional_int(payload.get("agent_id"), "agent_id")
-    if agent_id is not None:
-        agent = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
-        if not agent:
-            raise HTTPException(status_code=400, detail="Invalid agent_id")
+    agency_id = _parse_optional_int(payload.get("agency_id"), "agency_id")
+    if agency_id is not None:
+        agency = db.query(Agency).filter(Agency.i_agency_id == agency_id).first()
+        if not agency:
+            raise HTTPException(status_code=400, detail="Invalid agency_id")
 
     item = License(
         c_license_key=license_key,
@@ -2005,13 +2488,13 @@ def create_license(payload: dict, request: Request, db: Session = Depends(get_db
         c_license_type=str(payload.get("license_type") or "").strip() or None,
         i_store_id=store_id,
         i_client_id=client_id,
-        i_agent_id=agent_id,
+        i_agency_id=agency_id,
         i_max_devices=_parse_optional_int(payload.get("max_devices"), "max_devices"),
         i_max_users=_parse_optional_int(payload.get("max_users"), "max_users"),
         dt_start=_parse_optional_iso_datetime(payload.get("start_date")),
         dt_end=_parse_optional_iso_datetime(payload.get("end_date")),
         n_monthly_fee=_parse_optional_decimal(payload.get("monthly_fee"), "monthly_fee"),
-        n_agent_commission=_parse_optional_decimal(payload.get("agent_commission"), "agent_commission"),
+        n_agency_commission=_parse_optional_decimal(payload.get("agency_commission"), "agency_commission"),
         n_platform_fee=_parse_optional_decimal(payload.get("platform_fee"), "platform_fee"),
         c_status=_normalize_status(payload.get("status"), {"active", "inactive", "suspended", "trial", "expired"}) or "active",
     )
@@ -2061,13 +2544,13 @@ def update_license(license_id: int, payload: dict, request: Request, db: Session
             if not client:
                 raise HTTPException(status_code=400, detail="Invalid client_id")
         item.i_client_id = client_id
-    if "agent_id" in payload:
-        agent_id = _parse_optional_int(payload.get("agent_id"), "agent_id")
-        if agent_id is not None:
-            agent = db.query(Agent).filter(Agent.i_agent_id == agent_id).first()
-            if not agent:
-                raise HTTPException(status_code=400, detail="Invalid agent_id")
-        item.i_agent_id = agent_id
+    if "agency_id" in payload:
+        agency_id = _parse_optional_int(payload.get("agency_id"), "agency_id")
+        if agency_id is not None:
+            agency = db.query(Agency).filter(Agency.i_agency_id == agency_id).first()
+            if not agency:
+                raise HTTPException(status_code=400, detail="Invalid agency_id")
+        item.i_agency_id = agency_id
     if "max_devices" in payload:
         item.i_max_devices = _parse_optional_int(payload.get("max_devices"), "max_devices")
     if "max_users" in payload:
@@ -2078,8 +2561,8 @@ def update_license(license_id: int, payload: dict, request: Request, db: Session
         item.dt_end = _parse_optional_iso_datetime(payload.get("end_date"))
     if "monthly_fee" in payload:
         item.n_monthly_fee = _parse_optional_decimal(payload.get("monthly_fee"), "monthly_fee")
-    if "agent_commission" in payload:
-        item.n_agent_commission = _parse_optional_decimal(payload.get("agent_commission"), "agent_commission")
+    if "agency_commission" in payload:
+        item.n_agency_commission = _parse_optional_decimal(payload.get("agency_commission"), "agency_commission")
     if "platform_fee" in payload:
         item.n_platform_fee = _parse_optional_decimal(payload.get("platform_fee"), "platform_fee")
     if "status" in payload:
@@ -2103,6 +2586,10 @@ def delete_license(license_id: int, request: Request, db: Session = Depends(get_
     item = db.query(License).filter(License.i_license_id == license_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="License not found")
+
+    from backend.models_admin.license_device_link import LicenseDeviceLink
+    if db.query(LicenseDeviceLink.i_link_id).filter(LicenseDeviceLink.i_license_id == license_id).first():
+        raise HTTPException(status_code=409, detail="License has device link history; revoke it instead of deleting.")
 
     item.c_status = "inactive"
     _stamp_updated(item, user)
@@ -2263,7 +2750,7 @@ def export_stores(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(Store)
+    query = db.query(Store).filter(Store.i_store_id != ADMIN_STORE_ID)
     if status:
         query = query.filter(Store.c_status == status)
 
@@ -2802,17 +3289,32 @@ def download_contract_pdf(contract_id: int, request: Request, db: Session = Depe
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
-    pdf_bytes = _build_contract_pdf_bytes(contract)
+    pdf_bytes = _build_contract_pdf_bytes(contract, report_context(db, user))
+    from uuid import uuid4
+    from backend.services.paths import AwsumPathResolver, validate_owner
+    from backend.services.resource_storage import write_data
+    store = db.get(Store, contract.i_store_id)
+    merchant = db.get(Client, contract.i_account_id)
+    if store is None or merchant is None or store.i_account_id != merchant.i_client_id:
+        raise HTTPException(409, "Contract Store does not belong to its Merchant.")
+    owner = AwsumPathResolver("STORE", merchant_code=merchant.c_client_code, store_code=store.c_store_code)
+    validate_owner(db, owner)
     file_name = f"contract_{contract.i_contract_id}.pdf"
-    CONTRACT_PDF_ROOT.mkdir(parents=True, exist_ok=True)
-    target_path = CONTRACT_PDF_ROOT / file_name
-    target_path.write_bytes(pdf_bytes)
-
-    contract.c_contract_pdf_path = str(target_path.relative_to(BASE_DIR)).replace("\\", "/")
-    db.commit()
+    logical = owner.get_data_path("common", f"contract-{contract.i_contract_id}-{uuid4().hex}.pdf")
+    target_path = write_data(request, db, logical, pdf_bytes)
+    contract.c_contract_pdf_path = logical
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        try:
+            target_path.unlink()
+        except OSError as cleanup_error:
+            exc.add_note(f"Unreferenced contract cleanup failed: {cleanup_error}")
+        raise
 
     headers = {"Content-Disposition": f'attachment; filename="{file_name}"'}
-    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
+    return _set_no_cache_headers(StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers))
 
 @router.get("/platform/invoices")
 def list_invoices(
@@ -2893,7 +3395,7 @@ def download_invoice_html(invoice_id: int, request: Request, db: Session = Depen
     )
 
     line_rows = "".join(
-        f"<tr><td>{line.c_line_type}</td><td>{line.c_description}</td><td style='text-align:right'>{float(line.n_quantity or 0):,.4f}</td><td style='text-align:right'>{float(line.n_unit_price or 0):,.2f}</td><td style='text-align:right'>{float(line.n_amount or 0):,.2f}</td></tr>"
+        f"<tr><td>{line.c_line_type}</td><td>{line.c_description}</td><td style='text-align:right'>{float(line.n_quantity or 0):,.4f}</td><td style='text-align:right'>{format_money(line.n_unit_price or 0)}</td><td style='text-align:right'>{format_money(line.n_amount or 0)}</td></tr>"
         for line in lines
     )
 
@@ -2935,9 +3437,9 @@ def download_invoice_html(invoice_id: int, request: Request, db: Session = Depen
           <tbody>{line_rows}</tbody>
         </table>
         <table class='totals'>
-          <tr><td class='label'>Subtotal</td><td class='value'>{float(invoice.n_subtotal or 0):,.2f}</td></tr>
-          <tr><td class='label'>Tax</td><td class='value'>{float(invoice.n_tax or 0):,.2f}</td></tr>
-          <tr><td class='label'>Total ({invoice.c_currency})</td><td class='value'>{float(invoice.n_total or 0):,.2f}</td></tr>
+          <tr><td class='label'>Subtotal</td><td class='value'>{format_money(invoice.n_subtotal or 0)}</td></tr>
+          <tr><td class='label'>Tax</td><td class='value'>{format_money(invoice.n_tax or 0)}</td></tr>
+          <tr><td class='label'>Total ({invoice.c_currency})</td><td class='value'>{format_money(invoice.n_total or 0)}</td></tr>
         </table>
       </body>
     </html>
@@ -2990,6 +3492,137 @@ def void_invoice(invoice_id: int, request: Request, db: Session = Depends(get_db
 
 # Users
 
+def _platform_user_email(value: object) -> str:
+    email = str(value or "").strip().lower()
+    if not email or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    return email
+
+
+def _platform_user_name(payload: dict) -> tuple[str, str]:
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required.")
+        first_name, separator, last_name = name.partition(" ")
+        return first_name, last_name.strip() if separator else ""
+
+    first_name = str(payload.get("first_name") or "").strip()
+    last_name = str(payload.get("last_name") or "").strip()
+    if not first_name and not last_name:
+        raise HTTPException(status_code=400, detail="Name is required.")
+    return first_name, last_name
+
+
+def _platform_user_bool(value: object, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise HTTPException(status_code=400, detail=f"{field_name} must be true or false.")
+
+
+def _get_platform_user_role(db: Session, value: object) -> Role:
+    try:
+        role_id = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Select a valid Role.")
+
+    role = db.query(Role).filter(Role.i_role_id == role_id).first()
+    if (
+        not role
+        or (role.c_status or "").strip().lower() != "active"
+        or (role.c_name or "").strip().casefold() not in PLATFORM_USER_ROLE_NAMES
+    ):
+        raise HTTPException(status_code=400, detail="Select an active Platform User Role.")
+    return role
+
+
+def _require_unique_platform_user_email(
+    db: Session, email: str, *, exclude_user_id: int | None = None, agency_id: int | None = None,
+) -> None:
+    query = db.query(PlatformUser).filter(
+        func.lower(func.trim(PlatformUser.c_email)) == email,
+        PlatformUser.i_agency_id == agency_id if agency_id is not None else PlatformUser.i_agency_id.is_(None),
+    )
+    if exclude_user_id is not None:
+        query = query.filter(PlatformUser.i_platform_user_id != exclude_user_id)
+    if query.first():
+        detail = "An Agency User with this email already exists in this Agency." if agency_id is not None else \
+            "A Platform User with this email already exists."
+        raise HTTPException(status_code=409, detail=detail)
+
+
+def _validate_platform_user_password(password: object, confirm_password: object) -> str:
+    value = str(password or "")
+    if not value:
+        raise HTTPException(status_code=400, detail="Temporary password is required.")
+    if value != str(confirm_password or ""):
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+    if len(value.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+        raise HTTPException(status_code=400, detail=f"Password is too long (max {MAX_BCRYPT_PASSWORD_BYTES} bytes).")
+    return value
+
+
+def _get_platform_user(db: Session, user_id: int) -> PlatformUser:
+    target = (
+        db.query(PlatformUser)
+        .filter(
+            PlatformUser.i_platform_user_id == user_id,
+            PlatformUser.i_store_id == ADMIN_STORE_ID,
+            PlatformUser.i_agency_id.is_(None),
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Platform user not found.")
+    return target
+
+
+def _active_superadmin_count(db: Session) -> int:
+    count = (
+        db.query(func.count(PlatformUser.i_platform_user_id))
+        .join(Role, Role.i_role_id == PlatformUser.i_role_id)
+        .filter(
+            PlatformUser.i_store_id == ADMIN_STORE_ID,
+            func.lower(PlatformUser.c_status) == "active",
+            func.lower(Role.c_name) == "superadmin",
+            func.lower(Role.c_status) == "active",
+        )
+        .scalar()
+    )
+    return int(count or 0)
+
+
+def _guard_platform_user_change(
+    db: Session,
+    actor: PlatformUser,
+    target: PlatformUser,
+    next_status: str,
+    next_role: Role | None,
+) -> None:
+    if target.i_platform_user_id == actor.i_platform_user_id and next_status == "inactive":
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own Platform User account.")
+
+    current_role = db.query(Role).filter(Role.i_role_id == target.i_role_id).first() if target.i_role_id else None
+    is_active_superadmin = (
+        (target.c_status or "").strip().lower() == "active"
+        and current_role is not None
+        and (current_role.c_name or "").strip().casefold() == "superadmin"
+        and (current_role.c_status or "").strip().lower() == "active"
+    )
+    remains_active_superadmin = (
+        next_status == "active"
+        and next_role is not None
+        and (next_role.c_name or "").strip().casefold() == "superadmin"
+    )
+    if is_active_superadmin and not remains_active_superadmin and _active_superadmin_count(db) <= 1:
+        raise HTTPException(status_code=400, detail="The last active SuperAdmin cannot be deactivated or demoted.")
+
+
 @router.get("/platform/users")
 def list_users(
     request: Request,
@@ -3000,12 +3633,15 @@ def list_users(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(PlatformUser)
+    query = db.query(PlatformUser).filter(
+        PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None)
+    )
     normalized_status = _normalize_status(status, {"active", "inactive"})
+    if status and not normalized_status:
+        raise HTTPException(status_code=400, detail="Status must be active or inactive.")
     if normalized_status:
-        query = query.filter(PlatformUser.c_status == normalized_status)
-
-    if search:
+        query = query.filter(func.lower(PlatformUser.c_status) == normalized_status)
+    if search and search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
             or_(
@@ -3016,88 +3652,205 @@ def list_users(
         )
 
     users = query.order_by(PlatformUser.i_platform_user_id).all()
-    return JSONResponse([{
-        "id": u.i_platform_user_id,
-        "email": u.c_email,
-        "first_name": u.c_first_name,
-        "last_name": u.c_last_name,
-        "store_id": u.i_store_id,
-        "store_name": "Admin",
-        "client_id": None,
-        "client_name": None,
-        "role": "PlatformAdmin",
-        "status": u.c_status,
-    } for u in users])
+    role_ids = {item.i_role_id for item in users if item.i_role_id is not None}
+    role_map = {
+        role.i_role_id: role.c_name
+        for role in db.query(Role).filter(Role.i_role_id.in_(role_ids)).all()
+    } if role_ids else {}
+    return JSONResponse([
+        {
+            "id": item.i_platform_user_id,
+            "name": " ".join(part for part in (item.c_first_name, item.c_last_name) if part).strip(),
+            "first_name": item.c_first_name,
+            "last_name": item.c_last_name,
+            "email": item.c_email,
+            "role_id": item.i_role_id,
+            "role": role_map.get(item.i_role_id),
+            "status": (item.c_status or "inactive").strip().lower(),
+            "must_change_password": bool(item.i_must_change_password),
+            "last_login": item.dt_last_login.isoformat() if item.dt_last_login else None,
+            "created_at": item.dt_created.isoformat() if item.dt_created else None,
+            "image_path": item.c_image_path,
+            "image_url": image_url(item.c_image_path),
+        }
+        for item in users
+    ])
 
 
 @router.post("/platform/user")
 def create_user(payload: dict, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
-
-    email = payload.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="email is required")
-
-    # TODO: implement proper password hashing + validation; using a placeholder for now
-    pwd = payload.get("password") or "password"
-
-    new_user = PlatformUser(
-        c_email=email,
-        c_password=pwd,
-        c_first_name=payload.get("first_name"),
-        c_last_name=payload.get("last_name"),
-        i_store_id=ADMIN_STORE_ID,
-        c_status=payload.get("status") or "active",
-    )
-
-    _stamp_created(new_user, user)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return JSONResponse({"id": new_user.i_platform_user_id})
+    return _save_user(None, payload, request, db)
 
 
 @router.put("/platform/user/{user_id}")
 def update_user(user_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
+    return _save_user(user_id, payload, request, db)
 
-    u = db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Platform user not found")
+
+def _save_user(user_id: int | None, payload: dict, request: Request, db: Session,
+               *, image_data: bytes | None = None, remove_image: bool = False):
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    with image_operation_lock(AwsumStorageService(db).resolve_owner("PLATFORM"), "users"):
+        if user_id is None:
+            return _create_user(payload, request, db, image_data=image_data)
+        return _update_user(user_id, payload, request, db, image_data=image_data, remove_image=remove_image)
+
+
+@router.post("/platform/user/with-image")
+def create_user_with_image(
+    request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+    remove_image: bool = Form(False), db: Session = Depends(get_db),
+):
+    from backend.routers.system_settings import _validate_origin
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    _validate_origin(request)
+    values, data = image_mutation_form(payload, remove_image, image)
+    return _save_user(None, values, request, db, image_data=data)
+
+
+@router.put("/platform/user/{user_id}/with-image")
+def update_user_with_image(
+    user_id: int, request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+    remove_image: bool = Form(False), db: Session = Depends(get_db),
+):
+    from backend.routers.system_settings import _validate_origin
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    _validate_origin(request)
+    values, data = image_mutation_form(payload, remove_image, image)
+    return _save_user(user_id, values, request, db, image_data=data, remove_image=remove_image)
+
+
+def _create_user(payload: dict, request: Request, db: Session, *, image_data: bytes | None = None):
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+
+    first_name, last_name = _platform_user_name(payload)
+    email = _platform_user_email(payload.get("email"))
+    _require_unique_platform_user_email(db, email)
+    password = _validate_platform_user_password(payload.get("password"), payload.get("confirm_password"))
+    role = _get_platform_user_role(db, payload.get("role_id"))
+    status = str(payload.get("status") or "active").strip().lower()
+    if status not in {"active", "inactive"}:
+        raise HTTPException(status_code=400, detail="Status must be active or inactive.")
+    must_change_password = _platform_user_bool(payload.get("must_change_password", True), "Must Change Password")
+
+    new_user = PlatformUser(
+        i_store_id=ADMIN_STORE_ID,
+        i_role_id=role.i_role_id,
+        c_first_name=first_name,
+        c_last_name=last_name,
+        c_email=email,
+        c_password=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+        c_status=status,
+        i_must_change_password=int(must_change_password),
+    )
+    db.add(new_user)
+    try:
+        db.flush()
+        warning = commit_entity_image(db, new_user, AwsumStorageService(db).resolve_owner("PLATFORM"), new_user.i_platform_user_id,
+                                      category="users", image_data=image_data)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A Platform User with this email already exists.")
+    db.refresh(new_user)
+    return JSONResponse({"success": True, "id": new_user.i_platform_user_id,
+                         "image_path": new_user.c_image_path, "image_url": image_url(new_user.c_image_path),
+                         "image_warning": warning})
+
+
+def _update_user(user_id: int, payload: dict, request: Request, db: Session,
+                 *, image_data: bytes | None = None, remove_image: bool = False):
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    target = _get_platform_user(db, user_id)
+    db.refresh(target, with_for_update=True)
 
     if "email" in payload:
-        u.c_email = payload.get("email")
-    if "first_name" in payload:
-        u.c_first_name = payload.get("first_name")
-    if "last_name" in payload:
-        u.c_last_name = payload.get("last_name")
+        email = _platform_user_email(payload.get("email"))
+        _require_unique_platform_user_email(db, email, exclude_user_id=user_id)
+        target.c_email = email
+    if "name" in payload or "first_name" in payload or "last_name" in payload:
+        target.c_first_name, target.c_last_name = _platform_user_name(payload)
+
+    next_role = db.query(Role).filter(Role.i_role_id == target.i_role_id).first() if target.i_role_id else None
+    if "role_id" in payload:
+        next_role = _get_platform_user_role(db, payload.get("role_id"))
+
+    next_status = (target.c_status or "inactive").strip().lower()
     if "status" in payload:
-        u.c_status = payload.get("status")
+        next_status = str(payload.get("status") or "").strip().lower()
+        if next_status not in {"active", "inactive"}:
+            raise HTTPException(status_code=400, detail="Status must be active or inactive.")
 
-    # Platform DB users always belong to the admin store
-    u.i_store_id = ADMIN_STORE_ID
+    _guard_platform_user_change(db, actor, target, next_status, next_role)
+    if "role_id" in payload:
+        target.i_role_id = next_role.i_role_id
+    target.c_status = next_status
+    if "must_change_password" in payload:
+        target.i_must_change_password = int(_platform_user_bool(payload["must_change_password"], "Must Change Password"))
+    target.i_store_id = ADMIN_STORE_ID
 
-    _stamp_updated(u, user)
+    _stamp_updated(target, actor)
+    try:
+        warning = commit_entity_image(db, target, AwsumStorageService(db).resolve_owner("PLATFORM"), target.i_platform_user_id,
+                                      category="users", image_data=image_data, remove_image=remove_image)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A Platform User with this email already exists.")
+    return JSONResponse({"success": True, "id": target.i_platform_user_id,
+                         "image_path": target.c_image_path, "image_url": image_url(target.c_image_path),
+                         "image_warning": warning})
+
+
+@router.post("/platform/user/{user_id}/reset-password")
+def reset_user_password(user_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    target = _get_platform_user(db, user_id)
+    password = _validate_platform_user_password(payload.get("password"), payload.get("confirm_password"))
+
+    target.c_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    target.i_must_change_password = 1
+    _stamp_updated(target, actor)
     db.commit()
-    return JSONResponse({"success": True})
+    return JSONResponse({"success": True, "must_change_password": True})
+
+
+@router.patch("/platform/user/{user_id}/status")
+def set_user_status(user_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    target = _get_platform_user(db, user_id)
+
+    next_status = str(payload.get("status") or "").strip().lower()
+    if next_status not in {"active", "inactive"}:
+        raise HTTPException(status_code=400, detail="Status must be active or inactive.")
+    role = db.query(Role).filter(Role.i_role_id == target.i_role_id).first() if target.i_role_id else None
+    _guard_platform_user_change(db, actor, target, next_status, role)
+
+    target.c_status = next_status
+    target.i_store_id = ADMIN_STORE_ID
+    _stamp_updated(target, actor)
+    db.commit()
+    return JSONResponse({"success": True, "status": target.c_status})
 
 
 @router.delete("/platform/user/{user_id}")
 def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
+    """Legacy delete route; Platform Users are deactivated, never deleted."""
+    actor = get_current_user(request, db)
+    require_platform_admin(actor)
+    target = _get_platform_user(db, user_id)
+    role = db.query(Role).filter(Role.i_role_id == target.i_role_id).first() if target.i_role_id else None
+    _guard_platform_user_change(db, actor, target, "inactive", role)
 
-    u = db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Platform user not found")
-
-    u.c_status = "inactive"
-    _stamp_updated(u, user)
+    target.c_status = "inactive"
+    _stamp_updated(target, actor)
     db.commit()
-    return JSONResponse({"success": True})
+    return JSONResponse({"success": True, "status": target.c_status})
 
 
 # Clients
@@ -3120,9 +3873,11 @@ def list_clients(
 
     if search:
         term = f"%{search.strip()}%"
+        code_term = f"%{search.strip().replace('_', '')}%"
         query = query.filter(
             or_(
                 Client.c_client_code.ilike(term),
+                Client.c_client_code.ilike(code_term),
                 Client.c_account_name.ilike(term),
                 Client.c_first_name.ilike(term),
                 Client.c_last_name.ilike(term),
@@ -3155,8 +3910,8 @@ def list_clients(
         client_business_map[account_id] = bt_name_map.get(business_type_id)
 
     agent_name_map = {
-        row.i_agent_id: (row.c_contact_name or row.c_agent_name)
-        for row in db.query(Agent).all()
+        row.i_agency_id: (row.c_contact_name or row.c_agency_name)
+        for row in db.query(Agency).all()
     }
 
     return JSONResponse([
@@ -3173,9 +3928,9 @@ def list_clients(
                 else client_business_map.get(i.i_account_id)
             ),
             "channel_type": i.c_channel_type,
-            "i_agent_id": i.i_agent_id,
-            "primary_agent_id": i.i_agent_id,
-            "primary_agent_name": agent_name_map.get(i.i_agent_id),
+            "i_agency_id": i.i_agency_id,
+            "primary_agency_id": i.i_agency_id,
+            "primary_agency_name": agent_name_map.get(i.i_agency_id),
             "first_name": i.c_first_name,
             "last_name": i.c_last_name,
             "email": i.c_email,
@@ -3208,9 +3963,9 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
         for row in db.query(BusinessType).all()
     }
 
-    agent_map = {
-        row.i_agent_id: row
-        for row in db.query(Agent).all()
+    agency_map = {
+        row.i_agency_id: row
+        for row in db.query(Agency).all()
     }
 
     account_ids = [account.i_account_id for account in accounts]
@@ -3244,12 +3999,12 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
                 _serialize_device(
                     device,
                     license_map.get(device.i_license_id),
-                    agent_map.get(device.i_installed_by_agent_id),
+                    agency_map.get(device.i_installed_by_agency_id),
                 )
             )
 
     for store in stores:
-        store_agent = agent_map.get(store.i_installed_by_agent_id)
+        store_agency = agency_map.get(store.i_installed_by_agency_id)
         stores_by_account_id[store.i_account_id].append({
             "store_id": store.i_store_id,
             "store_seq": store.i_store_seq,
@@ -3276,8 +4031,8 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
             "timezone": store.c_timezone,
             "tax_source": store.c_tax_source,
             "memo": store.c_memo,
-            "installed_by_agent_id": store.i_installed_by_agent_id,
-            "installed_by_agent_name": store_agent.c_agent_name if store_agent else None,
+            "installed_by_agency_id": store.i_installed_by_agency_id,
+            "installed_by_agency_name": store_agency.c_agency_name if store_agency else None,
             "devices": devices_by_store_id.get(store.i_store_id, []),
         })
 
@@ -3292,9 +4047,9 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
             "client_name": account.c_account_name,
             "business_type": business_type_map.get(account.i_business_type),
             "channel_type": account.c_channel_type,
-            "i_agent_id": account.i_agent_id,
-            "primary_agent_id": account.i_agent_id,
-            "primary_agent_name": (agent_map.get(account.i_agent_id).c_contact_name or agent_map.get(account.i_agent_id).c_agent_name) if agent_map.get(account.i_agent_id) else None,
+            "i_agency_id": account.i_agency_id,
+            "primary_agency_id": account.i_agency_id,
+            "primary_agency_name": (agency_map.get(account.i_agency_id).c_contact_name or agency_map.get(account.i_agency_id).c_agency_name) if agency_map.get(account.i_agency_id) else None,
             "first_name": account.c_first_name,
             "last_name": account.c_last_name,
             "email": account.c_email,
@@ -3331,12 +4086,12 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             raise HTTPException(status_code=400, detail="invalid business_type")
         target_bt_id = bt_obj.i_business_type_id
 
-    primary_agent_raw = payload.get("primary_agent_id") if "primary_agent_id" in payload else payload.get("i_agent_id")
-    primary_agent_id = _parse_optional_int(primary_agent_raw, "primary_agent_id")
-    if primary_agent_id is not None:
-        primary_agent = db.query(Agent).filter(Agent.i_agent_id == primary_agent_id).first()
-        if not primary_agent:
-            raise HTTPException(status_code=400, detail="invalid primary_agent_id")
+    primary_agency_raw = payload.get("primary_agency_id") if "primary_agency_id" in payload else payload.get("i_agency_id")
+    primary_agency_id = _parse_optional_int(primary_agency_raw, "primary_agency_id")
+    if primary_agency_id is not None:
+        primary_agency = db.query(Agency).filter(Agency.i_agency_id == primary_agency_id).first()
+        if not primary_agency:
+            raise HTTPException(status_code=400, detail="invalid primary_agency_id")
 
     address_line1 = (
         payload.get("address_line1")
@@ -3351,7 +4106,7 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             c_client_code=generated_client_code,
             c_account_name=client_name,
             i_business_type=target_bt_id,
-            i_agent_id=primary_agent_id,
+            i_agency_id=primary_agency_id,
             c_channel_type=payload.get("channel_type"),
             c_first_name=payload.get("first_name"),
             c_last_name=payload.get("last_name"),
@@ -3362,7 +4117,7 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
             c_city=payload.get("city"),
             c_state=payload.get("state"),
             c_zip=payload.get("zip"),
-            c_country=payload.get("country") or "USA",
+            c_country=_normalize_country(payload.get("country")),
             c_memo=payload.get("memo"),
             c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
         )
@@ -3372,7 +4127,8 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
         try:
             db.commit()
             db.refresh(item)
-            return JSONResponse({"id": item.i_account_id, "c_client_code": item.c_client_code})
+            storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_account_id)
+            return JSONResponse({"id": item.i_account_id, "c_client_code": item.c_client_code, **storage})
         except IntegrityError as exc:
             db.rollback()
             lowered = str(exc).lower()
@@ -3426,21 +4182,21 @@ def update_client(client_id: int, payload: dict, request: Request, db: Session =
     if "zip" in payload:
         item.c_zip = payload.get("zip")
     if "country" in payload:
-        item.c_country = payload.get("country") or "USA"
+        item.c_country = _normalize_country(payload.get("country"))
     if "memo" in payload:
         item.c_memo = payload.get("memo")
     if "status" in payload:
         item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"})
     if "channel_type" in payload:
         item.c_channel_type = payload.get("channel_type") or None
-    if "primary_agent_id" in payload or "i_agent_id" in payload:
-        primary_agent_raw = payload.get("primary_agent_id") if "primary_agent_id" in payload else payload.get("i_agent_id")
-        primary_agent_id = _parse_optional_int(primary_agent_raw, "primary_agent_id")
-        if primary_agent_id is not None:
-            primary_agent = db.query(Agent).filter(Agent.i_agent_id == primary_agent_id).first()
-            if not primary_agent:
-                raise HTTPException(status_code=400, detail="invalid primary_agent_id")
-        item.i_agent_id = primary_agent_id
+    if "primary_agency_id" in payload or "i_agency_id" in payload:
+        primary_agency_raw = payload.get("primary_agency_id") if "primary_agency_id" in payload else payload.get("i_agency_id")
+        primary_agency_id = _parse_optional_int(primary_agency_raw, "primary_agency_id")
+        if primary_agency_id is not None:
+            primary_agency = db.query(Agency).filter(Agency.i_agency_id == primary_agency_id).first()
+            if not primary_agency:
+                raise HTTPException(status_code=400, detail="invalid primary_agency_id")
+        item.i_agency_id = primary_agency_id
 
     if "business_type" in payload:
         requested_bt_name = (payload.get("business_type") or "").strip()
@@ -3483,6 +4239,305 @@ def delete_client(client_id: int, request: Request, db: Session = Depends(get_db
     return JSONResponse({"success": True})
 
 
+# Merchants (backed by the existing tb_client table; no schema change)
+
+MERCHANT_CODE_PREFIX = "MER"
+MERCHANT_CODE_ADVISORY_LOCK_KEY = 11001002
+MERCHANT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+MERCHANT_TEXT_LIMITS = {
+    "first_name": 120, "last_name": 120, "email": 255, "phone": 50,
+    "address_line1": 255, "address_line2": 255, "city": 120, "state": 120, "zip": 20, "country": 120, "website": 1000, "notes": 5000, "timezone": 64,
+    }
+def _generate_next_merchant_code(db: Session) -> str:
+    # The advisory lock serializes generators; the unique constraint on
+    # c_client_code remains the final guard (callers retry on collision).
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": MERCHANT_CODE_ADVISORY_LOCK_KEY},
+    )
+    max_seq = db.execute(
+        text(
+            """
+            SELECT COALESCE(MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER)), 0)
+            FROM tb_client
+            WHERE c_client_code ~ '^MER_?[0-9]+$'
+            """
+        )
+    ).scalar()
+    return f"{MERCHANT_CODE_PREFIX}{int(max_seq or 0) + 1:05d}"
+
+
+def _merchant_agency_label(agency: Optional[Agency]) -> str:
+    if not agency:
+        return ""
+    return f"{agency.c_agency_code} - {agency.c_company_name or agency.c_agency_name}"
+
+
+def _serialize_merchant(item: Client, agency_map: dict, bt_name_map: dict) -> dict:
+    return {
+        "id": item.i_account_id,
+        "merchant_code": item.c_client_code,
+        "merchant_name": item.c_account_name,
+        "primary_agency_id": str(item.i_agency_id) if item.i_agency_id is not None else "",
+        "primary_agency_name": _merchant_agency_label(agency_map.get(item.i_agency_id)),
+        "business_type": bt_name_map.get(item.i_business_type) or "",
+        "status": item.c_status,
+        "created_date": item.dt_created.strftime("%Y-%m-%d") if item.dt_created else "",
+        "first_name": item.c_first_name or "",
+        "last_name": item.c_last_name or "",
+        "email": item.c_email or "",
+        "website": item.c_website or "",
+        "notes": item.c_notes or "",
+        "phone": item.c_phone or "",
+        "address_line1": item.c_address_line1 or "",
+        "address_line2": item.c_address_line2 or "",
+        "city": item.c_city or "",
+        "state": item.c_state or "",
+        "zip": item.c_zip or "",
+        "country": item.c_country or "",
+        "timezone": item.c_timezone or "",
+    }
+
+
+def _merchant_clean_text(payload: dict, key: str) -> Optional[str]:
+    value = payload.get(key)
+    if value is None:
+        return None
+    value = str(value).strip()
+    if len(value) > MERCHANT_TEXT_LIMITS[key]:
+        raise HTTPException(status_code=400, detail=f"{key} is too long.")
+    return value or None
+
+
+def _merchant_resolve_agency(db: Session, raw) -> int:
+    agency_id = _parse_optional_int(raw, "primary_agency_id")
+    if agency_id is None:
+        raise HTTPException(status_code=400, detail="Primary Agency is required.")
+    if not db.query(Agency.i_agency_id).filter(Agency.i_agency_id == agency_id).first():
+        raise HTTPException(status_code=400, detail="Selected Primary Agency does not exist.")
+    return agency_id
+
+
+def _merchant_resolve_business_type(db: Session, raw) -> int:
+    name = str(raw or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Business Type is required.")
+    bt = db.query(BusinessType).filter(BusinessType.c_name == name).first()
+    if not bt:
+        raise HTTPException(status_code=400, detail="Selected Business Type does not exist.")
+    return bt.i_business_type_id
+
+
+def _merchant_validate_email(payload: dict) -> Optional[str]:
+    email = _merchant_clean_text(payload, "email")
+    if email and not MERCHANT_EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid contact email address.")
+    return email
+
+
+def _merchant_validate_website(payload: dict) -> Optional[str]:
+    # Accepts "abcmarket.com" or "https://abcmarket.com"; always stored with a scheme.
+    raw = _merchant_clean_text(payload, "website")
+    if not raw:
+        return None
+    value = raw if re.match(r"^https?://", raw, re.I) else f"https://{raw}"
+    value = re.sub(r"^https?://", lambda m: m.group(0).lower(), value, flags=re.I)
+    if not re.fullmatch(r"https?://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:\d{1,5})?(/\S*)?", value):
+        raise HTTPException(status_code=400, detail="Please enter a valid website, e.g. abcmarket.com or https://abcmarket.com.")
+    if len(value) > 255:
+        raise HTTPException(status_code=400, detail="Website is too long.")
+    return value
+
+
+@router.get("/platform/merchants")
+def list_merchants(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, alias="q"),
+    status: Optional[str] = None,
+):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    query = db.query(Client)
+    normalized_status = _normalize_status(status, {"active", "inactive"})
+    if normalized_status:
+        query = query.filter(Client.c_status == normalized_status)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        code_term = f"%{search.strip().replace('_', '')}%"
+        query = query.filter(
+            or_(
+                Client.c_client_code.ilike(term),
+                Client.c_client_code.ilike(code_term),
+                Client.c_client_name.ilike(term),
+                Client.c_first_name.ilike(term),
+                Client.c_last_name.ilike(term),
+                Client.c_email.ilike(term),
+                Client.c_phone.ilike(term),
+            )
+        )
+
+    agency_map = {a.i_agency_id: a for a in db.query(Agency).all()}
+    bt_name_map = {b.i_business_type_id: b.c_name for b in db.query(BusinessType).all()}
+    items = query.order_by(Client.i_client_id).all()
+    return _set_no_cache_headers(JSONResponse([_serialize_merchant(i, agency_map, bt_name_map) for i in items]))
+
+
+@router.post("/platform/merchant")
+def create_merchant(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    name = str(payload.get("merchant_name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Merchant Name is required.")
+    if len(name) > 255:
+        raise HTTPException(status_code=400, detail="Merchant Name is too long.")
+    agency_id = _merchant_resolve_agency(db, payload.get("primary_agency_id"))
+    business_type_id = _merchant_resolve_business_type(db, payload.get("business_type"))
+    email = _merchant_validate_email(payload)
+    status_value = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+    if db.query(Client.i_client_id).filter(func.lower(Client.c_client_name) == name.lower()).first():
+        raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
+
+    # Merchant code is always server-generated; any client-supplied code is ignored.
+    for _ in range(5):
+        item = Client(
+            c_client_code=_generate_next_merchant_code(db),
+            c_account_name=name,
+            i_business_type=business_type_id,
+            i_agency_id=agency_id,
+            c_first_name=_merchant_clean_text(payload, "first_name"),
+            c_last_name=_merchant_clean_text(payload, "last_name"),
+            c_email=email,
+            c_website=_merchant_validate_website(payload),
+            c_notes=_merchant_clean_text(payload, "notes"),
+            c_phone=_merchant_clean_text(payload, "phone"),
+            c_address_line1=_merchant_clean_text(payload, "address_line1"),
+            c_address_line2=_merchant_clean_text(payload, "address_line2"),
+            c_city=_merchant_clean_text(payload, "city"),
+            c_state=_merchant_clean_text(payload, "state"),
+            c_zip=_merchant_clean_text(payload, "zip"),
+            c_country=_normalize_country(_merchant_clean_text(payload, "country")),
+            c_timezone=_merchant_clean_text(payload, "timezone"),
+            c_status=status_value,
+        )
+        _stamp_created(item, user)
+        db.add(item)
+        try:
+            db.commit()
+            db.refresh(item)
+            storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_account_id)
+            return JSONResponse({"id": item.i_account_id, "merchant_code": item.c_client_code, **storage})
+        except IntegrityError as exc:
+            db.rollback()
+            lowered = str(exc).lower()
+            if "c_client_name" in lowered:
+                raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
+            if "c_client_code" in lowered:
+                continue
+            raise HTTPException(status_code=400, detail="Unable to save the merchant. Please check the entered values.")
+    raise HTTPException(status_code=409, detail="Could not generate a unique merchant code. Please try again.")
+
+
+@router.put("/platform/merchant/{merchant_id}")
+def update_merchant(merchant_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(Client).filter(Client.i_client_id == merchant_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
+
+    # Merchant code is immutable; Store agencies are intentionally never touched here.
+    if "merchant_name" in payload:
+        name = str(payload.get("merchant_name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Merchant Name is required.")
+        if len(name) > 255:
+            raise HTTPException(status_code=400, detail="Merchant Name is too long.")
+        duplicate = (
+            db.query(Client.i_client_id)
+            .filter(func.lower(Client.c_client_name) == name.lower(), Client.i_client_id != merchant_id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
+        item.c_account_name = name
+    if "primary_agency_id" in payload:
+        item.i_agency_id = _merchant_resolve_agency(db, payload.get("primary_agency_id"))
+    if "business_type" in payload:
+        item.i_business_type = _merchant_resolve_business_type(db, payload.get("business_type"))
+    if "status" in payload:
+        normalized = _normalize_status(payload.get("status"), {"active", "inactive"})
+        if normalized:
+            item.c_status = normalized
+    if "email" in payload:
+        item.c_email = _merchant_validate_email(payload)
+    if "website" in payload:
+        item.c_website = _merchant_validate_website(payload)
+    if "notes" in payload:
+        item.c_notes = _merchant_clean_text(payload, "notes")
+    for key, column in (
+        ("first_name", "c_first_name"), ("last_name", "c_last_name"), ("phone", "c_phone"),
+        ("address_line1", "c_address_line1"), ("address_line2", "c_address_line2"),
+        ("city", "c_city"), ("state", "c_state"),         ("zip", "c_zip"), ("timezone", "c_timezone"),
+    ):
+        if key in payload:
+            setattr(item, column, _merchant_clean_text(payload, key))
+    if "country" in payload:
+        item.c_country = _normalize_country(_merchant_clean_text(payload, "country"))
+
+    _stamp_updated(item, user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
+    return JSONResponse({"success": True, "id": merchant_id})
+
+
+@router.delete("/platform/merchant/{merchant_id}")
+def delete_merchant(merchant_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+
+    item = db.query(Client).filter(Client.i_client_id == merchant_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
+
+    # Merchants referenced by stores, subscriptions, invoices, etc. are deactivated, never physically deleted.
+    refs = db.execute(
+        text(
+            """
+            SELECT c.conrelid::regclass::text AS tbl, a.attname AS col
+            FROM pg_constraint c
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+            WHERE c.contype = 'f' AND c.confrelid = 'tb_client'::regclass
+            """
+        )
+    ).all()
+    in_use = False
+    for tbl, col in refs:
+        if not re.fullmatch(r"[A-Za-z0-9_\.\"]+", tbl) or not re.fullmatch(r"[A-Za-z0-9_]+", col):
+            continue
+        count = db.execute(text(f'SELECT COUNT(*) FROM {tbl} WHERE "{col}" = :mid'), {"mid": merchant_id}).scalar()
+        if count:
+            in_use = True
+            break
+
+    if in_use:
+        item.c_status = "inactive"
+        _stamp_updated(item, user)
+        db.commit()
+        return JSONResponse({"success": True, "deactivated": True})
+
+    db.delete(item)
+    db.commit()
+    return JSONResponse({"success": True, "deleted": True})
+
+
 # Sessions
 
 @router.get("/platform/sessions")
@@ -3495,47 +4550,79 @@ def list_sessions(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
+    from backend.services.web_sessions import expire_sessions
+    from backend.services.session_context import session_organization
+    from backend.services.session_metadata import session_client_network
+    expire_sessions(db)
+    db.commit()
     query = db.query(SessionTbl, PlatformUser).outerjoin(
         PlatformUser, SessionTbl.i_platform_user_id == PlatformUser.i_platform_user_id
     )
 
-    normalized_status = _normalize_status(status, {"active", "terminated"})
+    normalized_status = (status or "").strip().upper()
+    if normalized_status and normalized_status not in {"ACTIVE", "LOGGED_OUT", "EXPIRED", "TERMINATED"}:
+        raise HTTPException(status_code=422, detail="Invalid session status.")
     if normalized_status:
         query = query.filter(SessionTbl.c_status == normalized_status)
-
-    if search:
-        term = f"%{search.strip()}%"
-        query = query.filter(
-            or_(
-                PlatformUser.c_email.ilike(term),
-                PlatformUser.c_first_name.ilike(term),
-                PlatformUser.c_last_name.ilike(term),
-                SessionTbl.c_jwt_token.ilike(term),
-            )
-        )
 
     rows = query.order_by(SessionTbl.i_session_id.desc()).all()
     results = []
     for sess, u in rows:
+        organization, context_label = session_organization(db, sess)
+        network = session_client_network(sess)
+        if search and not any(
+            search.strip().casefold() in str(value or "").casefold()
+            for value in (organization, context_label, u.c_email if u else None,
+                          u.c_first_name if u else None, u.c_last_name if u else None,
+                          sess.c_client_id, sess.c_user_agent, sess.c_ip_address,
+                          network["client_local_ip"], network["client_location"],
+                          sess.c_browser_name, sess.c_browser_version, sess.c_os_name,
+                          sess.c_os_version, sess.c_device_name, sess.c_device_uuid)
+        ):
+            continue
         results.append(
             {
                 "id": sess.i_session_id,
                 "user_id": sess.i_platform_user_id,
                 "user_email": u.c_email if u else None,
                 "user_name": f"{(u.c_first_name or '').strip()} {(u.c_last_name or '').strip()}".strip() if u else None,
-                "store_id": ADMIN_STORE_ID,
-                "store_name": "Admin",
-                "store_code": "Admin",
-                "client_id": None,
-                "client_name": None,
+                "store_id": sess.i_store_id,
+                "login_context": sess.c_login_context,
+                "organization_name": organization,
+                "context_label": context_label,
+                "store_name": context_label if sess.c_login_context == "STORE" else None,
+                "client_id": sess.i_account_id,
+                "client_name": organization,
+                "device_id": sess.c_client_id,
+                "browser_client_id": sess.c_client_id,
+                "device_uuid": sess.c_device_uuid,
+                "device_name": sess.c_device_name,
+                "app_version": sess.c_app_version,
+                "user_agent": sess.c_user_agent,
+                **network,
+                "ip_address": network["client_public_ip"],
+                "public_ip": network["client_public_ip"],
+                "local_ip": network["client_local_ip"],
+                "country_code": network["client_country_code"],
+                "region": network["client_region"],
+                "city": network["client_city"],
+                "browser_name": sess.c_browser_name,
+                "browser_version": sess.c_browser_version,
+                "os_name": sess.c_os_name,
+                "os_version": sess.c_os_version,
+                "current": sess.c_session_key == getattr(request.state, "web_session_key", None),
                 "status": sess.c_status,
                 "login_at": sess.dt_login.isoformat() if sess.dt_login else None,
                 "last_active_at": sess.dt_last_active.isoformat() if sess.dt_last_active else None,
                 "terminated_at": sess.dt_terminated.isoformat() if sess.dt_terminated else None,
+                "logout_at": sess.dt_logout.isoformat() if sess.dt_logout else None,
+                "expires_at": sess.dt_expires.isoformat() if sess.dt_expires else None,
+                "terminated_by": sess.i_terminated_by,
+                "created_at": sess.dt_created.isoformat() if sess.dt_created else None,
             }
         )
 
-    return JSONResponse(results)
+    return _set_no_cache_headers(JSONResponse(results))
 
 
 @router.put("/platform/session/{session_id}")
@@ -3543,37 +4630,20 @@ def update_session(session_id: int, payload: dict, request: Request, db: Session
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(SessionTbl).filter(SessionTbl.i_session_id == session_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if "status" in payload:
-        normalized_status = _normalize_status(payload.get("status"), {"active", "terminated"})
-        item.c_status = normalized_status
-        if normalized_status == "terminated":
-            item.dt_terminated = datetime.now()
-        elif normalized_status == "active":
-            item.dt_terminated = None
-
-    if "last_active_at" in payload:
-        item.dt_last_active = _parse_optional_iso_datetime(payload.get("last_active_at"))
-
-    _stamp_updated(item, user)
-    db.commit()
-    return JSONResponse({"success": True})
+    raise HTTPException(status_code=405, detail="Sessions are generated by authentication and cannot be edited.")
 
 
 @router.delete("/platform/session/{session_id}")
+@router.post("/platform/session/{session_id}/terminate")
 def delete_session(session_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(SessionTbl).filter(SessionTbl.i_session_id == session_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    item.c_status = "terminated"
-    item.dt_terminated = datetime.now()
-    _stamp_updated(item, user)
-    db.commit()
+    from backend.routers.dashboard import _is_super_admin
+    from backend.routers.system_settings import _validate_origin
+    from backend.services.web_sessions import terminate_session
+    if not _is_super_admin(db, user):
+        raise HTTPException(status_code=403, detail="Only Super Admin can terminate sessions.")
+    _validate_origin(request)
+    terminate_session(db, session_id, user.i_platform_user_id)
     return JSONResponse({"success": True})

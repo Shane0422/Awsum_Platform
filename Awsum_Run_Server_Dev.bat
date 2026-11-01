@@ -66,7 +66,7 @@ exit /b 1
 :ports_ready
 
 echo Starting Uvicorn DEV server on http://127.0.0.1:%PORT% with --reload ...
-"%PYTHON_EXE%" -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT% --reload
+"%PYTHON_EXE%" -m uvicorn backend.main:app --host 127.0.0.1 --port %PORT% --reload --no-proxy-headers
 
 set EXIT_CODE=%errorlevel%
 endlocal & exit /b %EXIT_CODE%

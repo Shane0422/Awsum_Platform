@@ -19,23 +19,28 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from jose import jwt, JWTError
 
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.store import Store
+from backend.models_admin.account import Account
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
-from backend.models_admin.agent import Agent
-from backend.models_admin.agent_type import AgentType
+from backend.models_admin.agency import Agency
+from backend.models_admin.agency_type import AgencyType
 from backend.config.templates import templates, get_brand_context
 from backend.config.settings import APP_NAME
-from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
 
 router = APIRouter()
+
+
+def _is_super_admin(db: Session, user: PlatformUser) -> bool:
+    role = db.query(Role).filter(Role.i_role_id == user.i_role_id).first()
+    return bool(role and role.c_name.strip().casefold() == "superadmin")
+
 
 # ==========================
 # DB 연결 헬퍼
@@ -51,37 +56,8 @@ def get_db():
 # JWT 검증
 # ==========================
 def get_current_user(request: Request, db: Session):
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        uid: int = payload.get("uid")
-        store = payload.get("store")
-        role: int = payload.get("role")
-        principal_type = payload.get("principal_type", "platform_user")
-        if uid is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    if principal_type != "platform_user":
-        raise HTTPException(status_code=401, detail="Invalid token principal for platform DB")
-
-    user = db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == uid).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
-    # Ensure store is a consistent int for permission checks
-    try:
-        store = int(store)
-    except (TypeError, ValueError):
-        pass
-
-    user.login_store = store
-    user.login_role = role
-    return user
+    from backend.services.web_sessions import authenticate
+    return authenticate(request, db, allow_password_change=True)
 
 
 def _set_no_cache_headers(response):
@@ -93,7 +69,7 @@ def _set_no_cache_headers(response):
 
 def _build_login_redirect(request: Request, reason: str = "session_expired") -> RedirectResponse:
     next_path = quote(request.url.path or "/", safe="")
-    url = f"/auth/login?reason={quote(reason, safe='')}&next={next_path}"
+    url = f"/platform-admin?reason={quote(reason, safe='')}&next={next_path}"
     return RedirectResponse(url=url, status_code=303)
 
 
@@ -107,12 +83,6 @@ def _auth_user_or_home_redirect(request: Request, db: Session):
         resp = _build_login_redirect(request, reason="session_expired")
         resp.delete_cookie("access_token")
         return None, _set_no_cache_headers(resp)
-
-
-def _client_brand_code(client_id: Optional[int]) -> Optional[str]:
-    if not client_id:
-        return None
-    return f"CLT_{int(client_id):05d}"
 
 
 def _resolve_store_brand_info(db: Session, login_store: Optional[int]) -> dict:
@@ -131,9 +101,10 @@ def _resolve_store_brand_info(db: Session, login_store: Optional[int]) -> dict:
             "store_code": None,
         }
 
+    account = db.query(Account).filter(Account.i_account_id == store.i_account_id).first()
     return {
         "brand_display_name": (store.c_store_name or "").strip() or APP_NAME,
-        "client_code": _client_brand_code(store.i_account_id),
+        "client_code": account.c_client_code if account else None,
         "store_code": (store.c_store_code or "").strip() or None,
     }
 
@@ -146,15 +117,15 @@ def dashboard_admin(request: Request, db: Session = Depends(get_db)):
     if redirect_resp:
         return redirect_resp
 
-    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
-        return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
+    if user.login_role != 1:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     from backend.models_admin.store import Store
     from backend.models_admin.role import Role
     stores = db.query(Store).all()
     roles = db.query(Role).all()
 
-    return _set_no_cache_headers(templates.TemplateResponse("client/dashboard_admin.html", {
+    return _set_no_cache_headers(templates.TemplateResponse(request, "client/dashboard_admin.html", {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,
@@ -175,8 +146,8 @@ def platform_dashboard(request: Request, db: Session = Depends(get_db)):
         return redirect_resp
 
     # Only platform-level admins should access this page
-    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
-        return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
+    if user.login_role != 1:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     from backend.models_admin.store import Store
 
@@ -202,11 +173,12 @@ def platform_dashboard(request: Request, db: Session = Depends(get_db)):
 
     users = db.query(PlatformUser).all()
 
-    return _set_no_cache_headers(templates.TemplateResponse("platform/platform_dashboard.html", {
+    return _set_no_cache_headers(templates.TemplateResponse(request, "platform/platform_dashboard.html", {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,
         "role": "Platform Admin",
+        "is_super_admin": _is_super_admin(db, user),
         "active_page": "dashboard",
         "login_store": user.login_store,
         "roles": roles,
@@ -231,8 +203,8 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     if redirect_resp:
         return redirect_resp
 
-    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
-        return _set_no_cache_headers(_build_login_redirect(request, reason="platform_admin_required"))
+    if user.login_role != 1:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Normalize aliases used by legacy/deep links.
     # Keep this centralized so template/JS can continue to use singular keys.
@@ -243,7 +215,26 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     elif module == "contracts":
         module = "contract"
 
-    allowed_modules = {"role", "business-type", "agent-type", "account", "agent", "license", "subscription", "pricing-plan", "contract", "invoice", "payment-method", "user", "session", "store", "device-category", "device-type"}
+    if module == "user":
+        return _set_no_cache_headers(templates.TemplateResponse(request, "platform/users.html", {
+            "request": request,
+            "APP_NAME": APP_NAME,
+            "user": user,
+            "role": "Platform Admin",
+            "is_super_admin": _is_super_admin(db, user),
+            "active_page": "master",
+            "active_module": "user",
+            **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
+        }))
+
+    if module == "session":
+        return _set_no_cache_headers(templates.TemplateResponse(request, "platform/sessions.html", {
+            "request": request, "APP_NAME": APP_NAME, "user": user, "role": "Platform Admin",
+            "is_super_admin": _is_super_admin(db, user), "active_page": "master", "active_module": "session",
+            **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
+        }))
+
+    allowed_modules = {"role", "business-type", "agency-type", "account", "merchant", "agency", "license", "subscription", "pricing-plan", "contract", "invoice", "payment-method", "user", "session", "store", "device-category", "device-type"}
     if module not in allowed_modules:
         module = "role"
 
@@ -257,8 +248,8 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     roles = db.query(Role).all()
     business_types = db.query(BusinessType).filter(BusinessType.c_status == "active").all()
     accounts = db.query(Account).filter(Account.c_status == "active").order_by(Account.i_account_id).all()
-    agents = db.query(Agent).order_by(Agent.i_agent_id).all()
-    agent_types = db.query(AgentType).filter(AgentType.c_status == "active").order_by(AgentType.i_agent_type_id).all()
+    agencies = db.query(Agency).order_by(Agency.i_agency_id).all()
+    agency_types = db.query(AgencyType).filter(AgencyType.c_status == "active").order_by(AgencyType.i_agency_type_id).all()
     stores = db.query(Store).order_by(Store.i_store_id).all()
     pricing_plans = (
         db.query(PricingPlan)
@@ -280,19 +271,20 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
     )
     users = db.query(PlatformUser).all()
 
-    return _set_no_cache_headers(templates.TemplateResponse("platform/master_management.html", {
+    return _set_no_cache_headers(templates.TemplateResponse(request, "platform/master_management.html", {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,
         "role": "Platform Admin",
+        "is_super_admin": _is_super_admin(db, user),
         "active_page": "master",
         "active_module": module,
         "roles": roles,
         "business_types": business_types,
         "accounts": accounts,
         "clients": accounts,  # legacy compatibility
-        "agents": agents,
-        "agent_types": agent_types,
+        "agencies": agencies,
+        "agency_types": agency_types,
         "stores": stores,
         "pricing_plans": pricing_plans,
         "device_categories": device_categories,
@@ -326,10 +318,10 @@ def platform_accounts_tree(request: Request, db: Session = Depends(get_db)):
     if redirect_resp:
         return redirect_resp
 
-    if not (user.login_role == 1 or user.login_store == ADMIN_STORE_ID):
-        return _set_no_cache_headers(_build_login_redirect(request, reason="platform_admin_required"))
+    if user.login_role != 1:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    return _set_no_cache_headers(templates.TemplateResponse("platform/accounts_tree.html", {
+    return _set_no_cache_headers(templates.TemplateResponse(request, "platform/accounts_tree.html", {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,

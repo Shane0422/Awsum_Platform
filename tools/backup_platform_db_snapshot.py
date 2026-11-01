@@ -5,6 +5,8 @@ from datetime import datetime
 
 import psycopg
 
+from backend.services.paths import AwsumPathResolver, resource_storage_path
+
 DB_URL = os.getenv(
     "AWSUM_PLATFORM_DATABASE_URL",
     "postgresql://postgres:Awsum123!@127.0.0.1:5432/awsum_platform",
@@ -15,8 +17,8 @@ if DB_URL.startswith("postgresql+psycopg://"):
 
 def main() -> int:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = os.path.join("db_backups", "platform", f"snapshot_{ts}")
-    os.makedirs(root, exist_ok=True)
+    root = resource_storage_path(AwsumPathResolver("PLATFORM").get_data_path("audit")) / "database-snapshots" / f"snapshot_{ts}"
+    root.mkdir(parents=True, exist_ok=False)
 
     metadata = {
         "timestamp": ts,
@@ -71,7 +73,7 @@ def main() -> int:
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=True, indent=2)
 
-    print(json.dumps({"backup_dir": root, "table_count": len(metadata["tables"])}, ensure_ascii=True))
+    print(json.dumps({"backup_dir": str(root), "table_count": len(metadata["tables"])}, ensure_ascii=True))
     return 0
 
 

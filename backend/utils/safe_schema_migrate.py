@@ -95,13 +95,17 @@ def recreate_table(table_class, engine, backup_dir):
     print(f"[MIGRATE] {table_name} recreated and common data migrated ({len(common_cols)} columns).")
 
 
-def safe_schema_migrate(base, engine, backup_dir="./db_backups"):
+def safe_schema_migrate(base, engine, backup_dir=None):
     """
     안전 스키마 마이그레이션
     1) 테이블 없으면 생성
     2) 모델에만 있는 '새 컬럼'은 ALTER TABLE ADD COLUMN으로 추가 (비파괴)
     3) 그 외(컬럼 삭제/PK 변경/중대한 불일치)만 재생성
     """
+    if backup_dir is None:
+        from backend.services.paths import AwsumPathResolver, resource_storage_path
+        backup_dir = resource_storage_path(AwsumPathResolver("PLATFORM").get_data_path("audit"))
+
     # 먼저 모델 기준 테이블 생성(없으면)
     base.metadata.create_all(engine)
 

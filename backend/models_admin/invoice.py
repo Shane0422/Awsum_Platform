@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, Numeric, String
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
@@ -38,3 +38,22 @@ class InvoiceLine(PlatformBase, AuditMixin):
     n_amount = Column(Numeric(12, 2), nullable=False, default=0)
 
     c_currency = Column(String(10), nullable=False, default="USD")
+
+    # MD Master reference plus the values in force when the line was issued.
+    # Later Master edits must not change issued invoices; nothing writes these yet.
+    i_md_id = Column(Integer, ForeignKey("tb_md_master.i_md_id", name="fk_invoice_line_md_master"), nullable=True, index=True)
+    c_item_code_snapshot = Column(String(20), nullable=True)
+    c_item_name_snapshot = Column(String(200), nullable=True)
+    c_price_level_snapshot = Column(String(10), nullable=True)
+    n_retail_price_snapshot = Column(Numeric(12, 2), nullable=True)
+    c_price_mode_snapshot = Column(String(10), nullable=True)
+    n_discount_pct_snapshot = Column(Numeric(5, 2), nullable=True)
+    c_item_kind_snapshot = Column(String(20), nullable=True)
+    c_unit_snapshot = Column(String(30), nullable=True)
+    c_billing_cycle_snapshot = Column(String(20), nullable=True)
+    c_tax_name_snapshot = Column(String(100), nullable=True)
+    n_tax_rate_snapshot = Column(Numeric(7, 4), nullable=True)
+    b_license_required_snapshot = Column(Boolean, nullable=True)
+    c_license_type_snapshot = Column(String(30), nullable=True)
+    i_licenses_per_unit_snapshot = Column(Integer, nullable=True)
+    b_serial_required_snapshot = Column(Boolean, nullable=True)

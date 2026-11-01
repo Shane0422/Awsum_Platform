@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ APP_NAME }} | Platform</title>
-  <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
+  <title>{{ company_name }} | {{ login_branding.description }}</title>
+  {% if brand_icon_path %}<link rel="icon" type="image/png" href="{{ brand_icon_path }}">{% endif %}
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/brand.css">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=2">
   <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
   <style>
+    :root { --platform-hero-image: url('{{ builtin_asset_url("background", "hero_platform.jpg") }}'); }
     .brand-icon {
       --aw-brand-icon-size: 28px;
     }
@@ -44,6 +45,279 @@
     .password-toggle-btn[aria-pressed="true"] .icon-eye-slash {
       display: block;
     }
+
+    header.hero {
+      background-color: transparent;
+      background-image: var(--platform-hero-image);
+    }
+
+    .login-modal-dialog {
+      width: calc(100% - 2rem);
+      max-width: 850px;
+    }
+
+    .login-modal-content {
+      overflow: hidden;
+      border: 0;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(18, 43, 76, 0.2);
+    }
+
+    .login-modal-form {
+      margin: 0;
+    }
+
+    .login-modal-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      min-height: 520px;
+    }
+
+    .login-modal-intro {
+      padding: 42px 34px;
+      color: #173451;
+      background: linear-gradient(145deg, #edf7ff 0%, #dceeff 54%, #f5faff 100%);
+    }
+
+    .login-modal-name {
+      display: block;
+      margin: 0 0 42px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #173451;
+    }
+
+    .login-modal-logo {
+      display: block;
+      width: min(255px, 100%);
+      max-height: 70px;
+      margin: 0 0 42px;
+      object-fit: contain;
+      object-position: left center;
+    }
+
+    .login-modal-eyebrow {
+      margin-bottom: 10px;
+      color: #2876bd;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .login-modal-intro h2 {
+      margin: 0 0 12px;
+      color: #142f4d;
+      font-size: 1.65rem;
+      font-weight: 700;
+    }
+
+    .login-modal-intro-copy {
+      margin-bottom: 28px;
+      color: #56718d;
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+
+    .login-modal-features {
+      display: grid;
+      gap: 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .login-modal-features li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #294763;
+      font-size: 0.91rem;
+      font-weight: 600;
+    }
+
+    .login-modal-feature-mark {
+      display: inline-flex;
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(52, 130, 196, 0.18);
+      border-radius: 50%;
+      color: #2876bd;
+      background: rgba(255, 255, 255, 0.78);
+      font-size: 0.82rem;
+    }
+
+    .login-modal-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 42px 48px 38px;
+      background: #fff;
+    }
+
+    .login-modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 1;
+      border-radius: 50%;
+      background-color: #f1f6fb;
+      opacity: 0.8;
+    }
+
+    .login-modal-title {
+      margin: 0 0 8px;
+      color: #132d4a;
+      font-size: 1.8rem;
+      font-weight: 700;
+    }
+
+    .login-modal-subtitle {
+      margin: 0 0 28px;
+      color: #71839a;
+      font-size: 0.94rem;
+    }
+
+    .login-modal-field {
+      margin-bottom: 18px;
+    }
+
+    .login-modal-field label {
+      display: block;
+      margin-bottom: 8px;
+      color: #304861;
+      font-size: 0.84rem;
+      font-weight: 650;
+    }
+
+    .login-modal-panel .form-control {
+      min-height: 48px;
+      border-color: #dce5ee;
+      border-radius: 9px;
+      color: #18324c;
+      background-color: #fbfdff;
+      box-shadow: none;
+    }
+
+    .login-modal-panel .form-control:focus {
+      border-color: #6aa9e2;
+      background-color: #fff;
+      box-shadow: 0 0 0 3px rgba(61, 143, 213, 0.14);
+    }
+
+    .login-modal-panel .input-group > .form-control {
+      border-radius: 9px 0 0 9px;
+    }
+
+    .login-modal-panel .password-toggle-btn {
+      width: 48px;
+      min-height: 48px;
+      border-color: #dce5ee;
+      border-radius: 0 9px 9px 0;
+      color: #667c92;
+      background: #fbfdff;
+    }
+
+    .login-modal-remember {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 22px;
+      margin: 4px 0 24px;
+    }
+
+    .login-modal-remember .form-check {
+      min-height: auto;
+      margin: 0;
+      padding-left: 1.5rem;
+    }
+
+    .login-modal-remember .form-check-input {
+      margin-top: 0.2rem;
+    }
+
+    .login-modal-remember .form-check-label {
+      color: #62768c;
+      font-size: 0.82rem;
+    }
+
+    .login-modal-submit {
+      min-height: 49px;
+      border: 0;
+      border-radius: 9px;
+      color: #fff;
+      background: linear-gradient(100deg, #277bc1 0%, #2462a8 100%);
+      box-shadow: 0 8px 18px rgba(39, 111, 179, 0.2);
+      font-weight: 650;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .login-modal-submit:hover,
+    .login-modal-submit:focus-visible {
+      color: #fff;
+      background: linear-gradient(100deg, #216eaf 0%, #1f5798 100%);
+      box-shadow: 0 10px 22px rgba(39, 111, 179, 0.27);
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 767.98px) {
+      .login-modal-dialog {
+        width: calc(100% - 1rem);
+        margin: 0.5rem auto;
+      }
+
+      .login-modal-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .login-modal-intro {
+        padding: 28px 28px 24px;
+      }
+
+      .login-modal-logo {
+        width: 205px;
+        max-height: 56px;
+        margin-bottom: 22px;
+      }
+
+      .login-modal-intro h2 {
+        font-size: 1.4rem;
+      }
+
+      .login-modal-intro-copy {
+        margin-bottom: 18px;
+      }
+
+      .login-modal-features {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .login-modal-features li {
+        gap: 8px;
+        font-size: 0.79rem;
+      }
+
+      .login-modal-feature-mark {
+        flex-basis: 24px;
+        width: 24px;
+        height: 24px;
+      }
+
+      .login-modal-panel {
+        padding: 34px 28px 30px;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .login-modal-features {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body class="bg-white text-dark">
@@ -52,8 +326,7 @@
   <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top" style="border-bottom: 1px solid #e5e7eb;">
     <div class="container-fluid px-2 px-lg-3">
       <a class="navbar-brand brand-mark" href="/" aria-label="{{ brand_display_name }}">
-        <img src="{{ brand_icon_path }}" alt="{{ brand_display_name }}" class="brand-icon">
-        <span class="brand-text">{{ brand_display_name }}</span>
+        {% if company_logo_path %}<img src="{{ company_logo_path }}" alt="{{ company_name }}" class="company-logo">{% else %}<span class="brand-text">{{ company_name }}</span>{% endif %}
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -76,20 +349,7 @@
   </nav>
 
   <!-- Hero -->
-  <header id="about" class="hero d-flex align-items-center">
-    <div class="overlay"></div>
-    <div class="container text-center text-white">
-      <div class="row justify-content-center">
-        <div class="col-lg-8">
-          <h1 class="display-5 fw-bold mb-3">Your Multi-Business Platform for Retail & Operations</h1>
-          <p class="lead mb-4">Securely manage stores, teams, and clients across locations with one scalable SaaS platform.</p>
-          <div class="d-flex justify-content-center gap-3 flex-wrap">
-            <button class="btn btn-primary btn-lg px-5" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>
-            <button class="btn btn-outline-light btn-lg px-5" data-bs-toggle="modal" data-bs-target="#registerModal">Get Started</button>
-          </div>
-        </div>
-      </div>
-    </div>
+  <header id="about" class="hero">
   </header>
 
   <!-- Solutions -->
@@ -149,7 +409,7 @@
       </div>
       <div class="row align-items-center gy-4">
         <div class="col-lg-6">
-          <img src="/static/images/platform/feature_store.jpg" alt="Secure access" class="img-fluid rounded shadow-sm">
+          <img src="{{ builtin_asset_url('ui', 'feature_store.jpg') }}" alt="Secure access" class="img-fluid rounded shadow-sm">
         </div>
         <div class="col-lg-6">
           <h3 class="h4 fw-bold">Secure, Company-Level Access</h3>
@@ -164,7 +424,7 @@
 
       <div class="row align-items-center gy-4 mt-5">
         <div class="col-lg-6 order-lg-2">
-          <img src="/static/images/platform/feature_dashboard.jpg" alt="Dashboard" class="img-fluid rounded shadow-sm">
+          <img src="{{ builtin_asset_url('ui', 'feature_dashboard.jpg') }}" alt="Dashboard" class="img-fluid rounded shadow-sm">
         </div>
         <div class="col-lg-6 order-lg-1">
           <h3 class="h4 fw-bold">Everything in One Dashboard</h3>
@@ -179,7 +439,7 @@
 
       <div class="row align-items-center gy-4 mt-5">
         <div class="col-lg-6">
-          <img src="/static/images/platform/feature_users.jpg" alt="Team & Role Management" class="img-fluid rounded shadow-sm">
+          <img src="{{ builtin_asset_url('ui', 'feature_users.jpg') }}" alt="Team & Role Management" class="img-fluid rounded shadow-sm">
         </div>
         <div class="col-lg-6">
           <h3 class="h4 fw-bold">Team & Role Management</h3>
@@ -299,55 +559,88 @@
 
   <!-- Login / Register Modals (unchanged) -->
   <div class="modal fade" id="loginModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <form id="loginForm" autocomplete="off">
-          <div class="modal-header bg-dark text-white">
-            <h5 class="modal-title">Sign In</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body">
-            <input type="text" name="store_code" class="form-control mb-3" placeholder="Store Code (e.g. Admin)" required>
-            <input type="email" name="email" class="form-control mb-3" placeholder="Email" required>
-            <div class="input-group mb-3">
-              <input id="loginPassword" type="password" name="password" class="form-control" placeholder="Password" required>
-              <button
-                type="button"
-                class="btn btn-outline-secondary password-toggle-btn"
-                id="toggleLoginPassword"
-                aria-label="Show password"
-                aria-pressed="false"
-                title="Show password"
-              >
-                <svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13.1 13.1 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.1 13.1 0 0 1 1.172 8z"/>
-                  <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5m-4 2.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0"/>
-                </svg>
-                <svg class="icon-eye-slash" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path d="M13.359 11.238C14.498 10.264 15.347 9.044 16 8c0 0-3-5.5-8-5.5-1.126 0-2.16.279-3.092.72l.772.772A6.5 6.5 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8a12 12 0 0 1-2.24 2.712z"/>
-                  <path d="M11.297 9.176a3.5 3.5 0 0 0-4.473-4.473l.823.823a2.5 2.5 0 0 1 2.824 2.824z"/>
-                  <path d="m2.354 1.646-.708.708 12 12 .708-.708z"/>
-                  <path d="M5.001 7.648l2.351 2.351a1.5 1.5 0 0 1-1.703-1.703z"/>
-                  <path d="M.172 8c.653 1.044 1.502 2.264 2.64 3.238l.771-.771A12 12 0 0 1 1.172 8a13.1 13.1 0 0 1 1.66-2.043l-.708-.708A13.7 13.7 0 0 0 .172 8"/>
-                  <path d="M8 12.5a6.5 6.5 0 0 1-2.32-.428l-.772.772A8 8 0 0 0 8 13.5c5 0 8-5.5 8-5.5a18 18 0 0 0-1.84-2.551l-.708.708A17 17 0 0 1 14.828 8C14.168 9.002 11.88 12.5 8 12.5"/>
-                </svg>
-              </button>
-            </div>
-            <div id="loginError" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+    <div class="modal-dialog modal-dialog-centered login-modal-dialog">
+      <div class="modal-content login-modal-content">
+        <form
+          id="loginForm"
+          method="post"
+          action="{{ '/platform-admin/login' if login_mode|default('general') == 'platform_admin' else '/auth/login' }}"
+          data-login-mode="{{ login_mode|default('general') }}"
+          class="login-modal-form"
+          autocomplete="off"
+        >
+          <input type="hidden" name="login_mode" value="{{ login_mode|default('general') }}">
+          <div class="login-modal-layout">
+            <aside class="login-modal-intro">
+              <img id="loginBrandLogo" src="{{ company_logo_path or '' }}" alt="{{ company_name }}" class="login-modal-logo{{ '' if company_logo_path else ' d-none' }}">
+              <span id="loginBrandName" class="login-modal-name{{ ' d-none' if company_logo_path else '' }}">{{ company_name }}</span>
+              <p id="loginBrandCaption" class="login-modal-eyebrow">{{ login_branding.description }}</p>
+              <h2>Sign In</h2>
+              <p class="login-modal-intro-copy">A connected workspace for managing your business, teams, and stores with confidence.</p>
+              <ul class="login-modal-features">
+                <li><span class="login-modal-feature-mark" aria-hidden="true">&#10003;</span>Multi-Store Management</li>
+                <li><span class="login-modal-feature-mark" aria-hidden="true">&#10003;</span>Team Collaboration</li>
+                <li><span class="login-modal-feature-mark" aria-hidden="true">&#10003;</span>Business Insights</li>
+                <li><span class="login-modal-feature-mark" aria-hidden="true">&#10003;</span>Secure &amp; Reliable</li>
+              </ul>
+            </aside>
 
-            <div class="d-flex flex-wrap gap-2 mb-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="rememberStore">
-                <label class="form-check-label" for="rememberStore">Remember Store Code</label>
+            <section class="login-modal-panel">
+              <button type="button" class="btn-close login-modal-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              <p class="login-modal-eyebrow">Your workspace</p>
+              <h2 class="login-modal-title">Welcome Back</h2>
+              <p id="loginOrganization" class="login-modal-subtitle">{{ company_name }}</p>
+              <p id="loginBrandStatus" class="text-danger small" role="status" aria-live="polite"></p>
+
+              <div class="login-modal-field">
+                <label for="loginAccessCode">Access Code</label>
+                <input id="loginAccessCode" type="text" name="{{ 'access_code' if login_mode|default('general') == 'platform_admin' else 'store_code' }}" class="form-control" placeholder="Enter Access Code" value="{{ login_branding.access_code if login_mode|default('general') == 'platform_admin' or login_entry_fixed|default(false) else '' }}" {{ 'readonly' if login_mode|default('general') == 'platform_admin' or login_entry_fixed|default(false) else '' }} required>
               </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="rememberEmail">
-                <label class="form-check-label" for="rememberEmail">Remember Email</label>
+              <div class="login-modal-field">
+                <label for="loginEmail">Email</label>
+                <input id="loginEmail" type="email" name="email" class="form-control" placeholder="you@company.com" required>
               </div>
-            </div>
-          </div>
-          <div class="modal-footer d-flex justify-content-end">
-            <button type="submit" class="btn btn-dark">Login</button>
+              <div class="login-modal-field">
+                <label for="loginPassword">Password</label>
+                <div class="input-group">
+                  <input id="loginPassword" type="password" name="password" class="form-control" placeholder="Enter your password" required>
+                  <button
+                    type="button"
+                    class="btn password-toggle-btn"
+                    id="toggleLoginPassword"
+                    aria-label="Show password"
+                    aria-pressed="false"
+                    title="Show password"
+                  >
+                    <svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13.1 13.1 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.1 13.1 0 0 1 1.172 8z"/>
+                      <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5m-4 2.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0"/>
+                    </svg>
+                    <svg class="icon-eye-slash" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M13.359 11.238C14.498 10.264 15.347 9.044 16 8c0 0-3-5.5-8-5.5-1.126 0-2.16.279-3.092.72l.772.772A6.5 6.5 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.1 13.1 0 0 1 14.828 8a12 12 0 0 1-2.24 2.712z"/>
+                      <path d="M11.297 9.176a3.5 3.5 0 0 0-4.473-4.473l.823.823a2.5 2.5 0 0 1 2.824 2.824z"/>
+                      <path d="m2.354 1.646-.708.708 12 12 .708-.708z"/>
+                      <path d="M5.001 7.648l2.351 2.351a1.5 1.5 0 0 1-1.703-1.703z"/>
+                      <path d="M.172 8c.653 1.044 1.502 2.264 2.64 3.238l.771-.771A12 12 0 0 1 1.172 8a13.1 13.1 0 0 1 1.66-2.043l-.708-.708A13.7 13.7 0 0 0 .172 8"/>
+                      <path d="M8 12.5a6.5 6.5 0 0 1-2.32-.428l-.772.772A8 8 0 0 0 8 13.5c5 0 8-5.5 8-5.5a18 18 0 0 0-1.84-2.551l-.708.708A17 17 0 0 1 14.828 8C14.168 9.002 11.88 12.5 8 12.5"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div id="loginError" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+
+              <div class="login-modal-remember">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="rememberStore">
+                  <label class="form-check-label" for="rememberStore">Remember Access Code</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="rememberEmail">
+                  <label class="form-check-label" for="rememberEmail">Remember Email</label>
+                </div>
+              </div>
+              <button type="submit" class="btn login-modal-submit w-100">Login</button>
+            </section>
           </div>
         </form>
       </div>
@@ -386,7 +679,8 @@
 
   <script>
   const loginForm = document.getElementById("loginForm");
-  const storeInput = loginForm.querySelector('input[name="store_code"]');
+  const loginEndpoint = loginForm.getAttribute("action") || "/auth/login";
+  const storeInput = loginForm.querySelector("#loginAccessCode");
   const emailInput = loginForm.querySelector('input[name="email"]');
   const passwordInput = loginForm.querySelector('input[name="password"]');
   const togglePasswordBtn = document.getElementById("toggleLoginPassword");
@@ -410,8 +704,8 @@
 
   function populateLoginFromStorage() {
     if (storeInput) {
-      storeInput.value = savedStoreCode || "";
-      rememberStore.checked = !!savedStoreCode;
+      if (!storeInput.readOnly) storeInput.value = savedStoreCode || "";
+      rememberStore.checked = !storeInput.readOnly && !!savedStoreCode;
     }
     if (emailInput) {
       emailInput.value = savedEmail || "";
@@ -425,6 +719,10 @@
   populateLoginFromStorage();
 
   const loginModalEl = document.getElementById('loginModal');
+  if (loginModalEl && (new URLSearchParams(location.search).get('reason') === 'session_expired' || {{ 'true' if login_entry_page|default(false) else 'false' }})) {
+    if (new URLSearchParams(location.search).get('reason') === 'session_expired') setLoginError('Your session has ended or expired. Please sign in again.');
+    bootstrap.Modal.getOrCreateInstance(loginModalEl).show();
+  }
   if (loginModalEl) {
     loginModalEl.addEventListener('show.bs.modal', populateLoginFromStorage);
     loginModalEl.addEventListener('hidden.bs.modal', () => {
@@ -475,13 +773,13 @@
     } catch (e) {
       // Fallback to a stable local backend endpoint when current origin is unhealthy.
     }
-    return fetch(`http://127.0.0.1:8001${path}`, { method: "POST", body: formData });
+    return fetch(new URL(path, window.location.origin), { method: "POST", body: formData });
   }
 
   function navigatePostToStableAuth(path, formData) {
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = `http://127.0.0.1:8001${path}`;
+    form.action = new URL(path, window.location.origin).toString();
     form.style.display = "none";
 
     for (const [key, value] of formData.entries()) {
@@ -508,16 +806,16 @@
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
-      response = await fetch("/auth/login", { method: "POST", body: formData, signal: controller.signal });
+      response = await fetch(loginEndpoint, { method: "POST", body: formData, signal: controller.signal });
       clearTimeout(timeoutId);
 
       // If current origin auth is unstable, switch to stable backend by full-page POST navigation.
       if (!response.redirected && response.status >= 500) {
-        navigatePostToStableAuth("/auth/login", formData);
+        navigatePostToStableAuth(loginEndpoint, formData);
         return;
       }
     } catch (_) {
-      navigatePostToStableAuth("/auth/login", formData);
+      navigatePostToStableAuth(loginEndpoint, formData);
       return;
     }
 
@@ -621,6 +919,8 @@
   confirmPw.addEventListener("input", validatePassword);
   phone.addEventListener("input", validatePhone);
   </script>
+  <script id="loginBrandingData" type="application/json">{{ login_branding|tojson }}</script>
+  <script src="/static/js/login-branding.js?v=1" defer></script>
 
 </body>
 </html>

@@ -6,6 +6,17 @@
 
 ---
 
+# 2026-06-01 작업내역
+
+1. 프로젝트 새 위치로 이동
+2. VS Code 새 폴더 기준으로 재오픈
+3. Python 가상환경 경로 문제 해결
+4. uvicorn 미설치 문제 해결
+5. requirements.txt 정리
+6. 서버 실행 확인
+7. 데이터 폴더 분리 방향 결정
+
+
 ## 1. 프로젝트 개요
 
 멀티스토어 SaaS 플랫폼 (POS/키오스크/모바일 주문 구독 관리).
@@ -27,12 +38,12 @@
 | 테이블 | 모델 파일 | 핵심 컬럼 / 비고 |
 |---|---|---|
 | `tb_platform_user` | platform_user.py | 플랫폼 관리자 계정, `i_must_change_password` 강제 변경 플래그 |
-| `tb_client` (Account) | account.py | `c_client_code`(CLT_XXXXX), `i_agent_id`, 로고 지원 |
-| `tb_store` | store.py | `c_store_code`(STR_XXXXX), dashboard_type, 로고, 세금/타임존 |
+| `tb_client` (Account) | account.py | `c_client_code`(CLTXXXXX), `i_agency_id`, 로고 지원 |
+| `tb_store` | store.py | `c_store_code`(STRXXXXX), dashboard_type, 로고, 세금/타임존 |
 | `tb_role` | role.py | 역할 정의 |
 | `tb_business_type` | business_type.py | 업종 정의 |
-| `tb_agent_type` | agent_type.py | 대리점 유형 |
-| `tb_agent` | agent.py | 대리점, 수수료율, 담당자 정보 |
+| `tb_agency_type` | agency_type.py | 대리점 유형 |
+| `tb_agency` | agency.py | 대리점, 수수료율, 담당자 정보 |
 | `tb_license` | license.py | 라이선스 키, 스토어 연결, 상태 관리 |
 | `tb_device` | device.py | POS/키오스크/모바일 디바이스, 활성화 토큰(TTL 30분), `i_device_type_id`(FK), `c_serial_no`, `dt_installed_at`, `c_memo` |
 | `tb_device_log` | device_log.py | 디바이스 활성화/이벤트 로그 |
@@ -159,8 +170,8 @@ status(active/terminated/expired), contract_pdf_path, created_at
 |---|---|---|
 | Role | `/platform/roles`, `/platform/role[/{id}]` | CRUD |
 | BusinessType | `/platform/business-types`, `/platform/business-type[/{id}]` | CRUD |
-| AgentType | `/platform/agent-types`, `/platform/agent-type[/{id}]` | CRUD |
-| Agent | `/platform/agents`, `/platform/agent[/{id}]` | CRUD |
+| AgencyType | `/platform/agency-types`, `/platform/agency-type[/{id}]` | CRUD |
+| Agency | `/platform/agencies`, `/platform/agency[/{id}]` | CRUD |
 | License | `/platform/licenses`, `/platform/license[/{id}]` | CRUD |
 | PaymentMethod | `/platform/payment-methods`, `/platform/payment-method[/{id}]` | CRUD |
 | User | `/platform/users`, `/platform/user[/{id}]` | CRUD |
@@ -242,7 +253,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 #### 플랫폼 대시보드 (`platform_dashboard.html`)
 - KPI 카드 (총 계정수, 활성/비활성 스토어, 사용자 수, 최근 계정)
-- 사이드바 (Dashboard / Accounts / Agents / Agent Types / Subscriptions / Contracts / Pricing Plans / Invoices / Payment Methods / Device Categories / Device Types / Business Types / Roles / Users / Sessions)
+- 사이드바 (Dashboard / Accounts / Agencies / Agency Types / Subscriptions / Contracts / Pricing Plans / Invoices / Payment Methods / Device Categories / Device Types / Business Types / Roles / Users / Sessions)
 - 사이드바 하단 고정 Logout 버튼 (flex 분리 레이아웃)
 
 #### 마스터 관리 (`master_management.html`) — 공통 CRUD 엔진
@@ -256,8 +267,8 @@ status(active/terminated/expired), contract_pdf_path, created_at
 | 모듈 키 | 경로 | 특이사항 |
 |---|---|---|
 | `account` | /platform/master/account | 로고 업로드, ZIP 자동완성(API), 하위 스토어 패널, 디바이스 패널 |
-| `agent` | /platform/master/agent | 수수료율, 담당자 정보 |
-| `agent-type` | /platform/master/agent-type | 코드 자동 정규화(대문자+언더스코어) |
+| `agency` | /platform/master/agency | 수수료율, 담당자 정보 |
+| `agency-type` | /platform/master/agency-type | 코드 자동 정규화(대문자+언더스코어) |
 | `subscription` | /platform/master/subscription | Monthly Billing Preview (Store Base/Device/User/Subtotal/Tax/Total), Contract Monthly Fee 자동 계산 |
 | `contract` | /platform/master/contract | Contract 상세/월요금/세금 표시, Print Contract(PDF 생성) |
 | `pricing-plan` | /platform/master/pricing-plan | 섹션 그룹화 (포함수량/요금설정), 요금 요약 문장 자동생성 |
@@ -332,7 +343,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 ### 장기
 
-11. **Svelte 클라이언트 대시보드 완성** — `frontend/` 디렉터리, 현재 설정만 존재
+11. **Svelte 클라이언트 대시보드 완성** — `frontend/` 디렉터리 (POS/KIOSK/Customer Ordering 전용, 현재 README만 존재)
 12. **모바일 API** — 스토어 앱용 REST API 별도 라우터
 13. **HTTPS/CORS 설정** — 배포 환경 인프라 구성
 14. **로그 & 모니터링** — 구조화 로그, Sentry 또는 유사 오류 모니터링
@@ -376,8 +387,10 @@ Awsum_Platform/
 │   │   └── login.html
 │   ├── client/                    # 클라이언트 대시보드 (부분 구현)
 │   └── store/                     # 스토어 워크스페이스 (부분 구현)
-├── static/                        # CSS, JS, 이미지, Bootstrap 오프라인
-├── frontend/                      # Svelte 설정 (미완성)
+├── static/                        # 서버 CSS/JS/컴포넌트 번들, Bootstrap 오프라인
+│   └── images/platform/           # 내장 Platform 이미지 (logo/background/favicon/defaults/ui)
+├── shared/image-components/       # 공통 이미지 컴포넌트 소스 (Svelte/Vite)
+├── frontend/                      # POS/KIOSK/Customer Ordering 클라이언트 앱 전용 (미구현)
 ├── tools/                         # 개발/검증 스크립트
 └── PROJECT_STATUS.md              # ← 이 파일
 ```

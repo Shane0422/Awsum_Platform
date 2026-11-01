@@ -62,6 +62,7 @@
   height: var(--aw-brand-icon-size);
   width: var(--aw-brand-icon-size);
   display: block;
+  object-fit: contain;
 }
 
 .brand-text {
@@ -103,4 +104,13 @@
   :root {
     --aw-brand-text-size: 0.94rem;
   }
+}
+
+/* HQ company logo from System Settings: keep the original aspect ratio, never stretch or crop. */
+.company-logo {
+  display: block;
+  height: 32px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
 }

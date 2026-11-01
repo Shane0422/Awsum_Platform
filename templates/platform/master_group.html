@@ -1,0 +1,130 @@
+{% extends "platform/platform_base.html" %}
+
+{% block page_title %}{{ mg_title }}{% endblock %}
+
+{% block content %}
+<style>
+  .mg-page .mg-table th.sortable { cursor: pointer; white-space: nowrap; user-select: none; }
+  .mg-page .mg-table th.sortable.sorted::after { content: " \25B2"; font-size: .65rem; }
+  .mg-page .mg-table th.sortable.sorted.desc::after { content: " \25BC"; }
+  .mg-page .mg-table td { vertical-align: middle; }
+  .mg-page .mg-code { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
+  .mg-thumbnail { display: inline-flex; position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border: 1px solid #e1e7ef; border-radius: 6px; background: #f7f9fc; color: #8a97a8; }
+  .mg-thumbnail img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #f7f9fc; border-radius: 6px; }
+  {% if mg_entity == 'md' %}
+  #mgModal .mg-md-top { display: grid; grid-template-columns: minmax(0, 1fr) 154px; gap: 20px; }
+  #mgModal .mg-image-panel { justify-self: end; }
+  #mgModal .mg-record-code { margin-bottom: 6px; }
+  #mgModal .modal-dialog { max-width: min(1000px, calc(100vw - 1rem)); margin-block: 2dvh; }
+  #mgModal .modal-content, #mgModal form { max-height: 96dvh; }
+  #mgModal .modal-header { padding: 14px 22px 10px; }
+  #mgModal .modal-body { padding: 4px 22px 12px; }
+  #mgModal .modal-footer { padding: 10px 22px; }
+  #mgModal .pm-section + .pm-section, #mgModal .mg-md-top + .pm-section { margin-top: 8px; padding-top: 10px; border-top: 1px solid #eef2f7; }
+  #mgModal .pm-section-head { margin-bottom: 6px; }
+  #mgModal .row { --bs-gutter-y: .5rem; --bs-gutter-x: .8rem; }
+  #mgModal .form-label { margin-bottom: 3px; font-size: 12px; }
+  #mgModal .form-control, #mgModal .form-select, #mgModal .input-group-text { min-height: 34px; padding: 5px 9px; font-size: 13px; border-radius: 6px; }
+  #mgModal .form-select { padding-right: 28px; }
+  #mgModal textarea.form-control { height: 48px; min-height: 48px; }
+  #mgModal .form-text { font-size: 11px; }
+  @media (max-width: 575.98px) { #mgModal .mg-md-top { grid-template-columns: 1fr; } #mgModal .mg-image-panel { justify-self: start; } }
+  {% endif %}
+  #mgModal .mg-price-table { display: grid; gap: 5px; }
+  #mgModal .mg-price-row { display: grid; grid-template-columns: 90px minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(140px, 1fr); gap: 10px; align-items: start; }
+  #mgModal .mg-price-head { font-size: .8125rem; font-weight: 600; color: #6b7f99; padding-bottom: .35rem; border-bottom: 1px solid #eef2f7; }
+  #mgModal .mg-level { display: flex; align-items: center; min-height: 34px; font-weight: 700; color: #173451; }
+  @media (max-width: 767.98px) {
+    #mgModal .mg-price-head { display: none; }
+    #mgModal .mg-price-row { grid-template-columns: 1fr 1fr; padding: .75rem 0; border-bottom: 1px solid #eef2f7; }
+    #mgModal .mg-level { grid-column: 1 / -1; min-height: 0; }
+    #mgModal .mg-price-row > div[data-label]:not(.mg-level)::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 600; color: #6b7f99; margin-bottom: .2rem; }
+  }
+  @media (max-width: 479.98px) { #mgModal .mg-price-row { grid-template-columns: 1fr; } }
+</style>
+<div class="container-fluid px-0 mg-page" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div>
+      <h1 class="h4 mb-1">{{ mg_title }}</h1>
+      <p class="text-muted mb-0" id="mgSubtitle"></p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <div class="btn-group">
+        <button id="mgExportBtn" type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button type="button" class="dropdown-item" data-export-format="excel">Export Excel</button></li>
+          <li><button type="button" class="dropdown-item" data-export-format="csv">Export CSV</button></li>
+          <li><button type="button" class="dropdown-item" data-export-format="pdf">Export PDF</button></li>
+        </ul>
+      </div>
+      <button type="button" class="btn btn-primary" id="mgAddBtn">Add {{ mg_title }}</button>
+    </div>
+  </div>
+
+  <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="row g-2 mb-3">
+        <div class="col-12 col-md-6 col-lg-4">
+          <input type="search" id="mgSearch" class="form-control" placeholder="Search code or name" aria-label="Search">
+        </div>
+        <div class="col-6 col-md-3 col-lg-2">
+          <select id="mgActiveFilter" class="form-select" aria-label="Status filter">
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3 col-lg-2">
+          <select id="mgPageSize" class="form-select" aria-label="Rows per page">
+            <option value="10">10 / page</option>
+            <option value="20" selected>20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover mg-table mb-0">
+          <thead id="mgHead"></thead>
+          <tbody id="mgBody"></tbody>
+        </table>
+      </div>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <span class="text-muted small" id="mgSummary"></span>
+        <div class="btn-group">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mgPrev">Previous</button>
+          <span class="btn btn-outline-secondary btn-sm disabled" id="mgPageLabel"></span>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mgNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade pm-modal{% if mg_entity == 'md' %} pm-modal-lg{% endif %}" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="mgForm" novalidate>
+        <div class="modal-header">
+          <span class="pm-head-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg></span>
+          <div class="pm-head-text">
+            <h2 class="modal-title" id="mgModalTitle"></h2>
+            <span class="pm-head-sub" id="mgModalSub"></span>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="mgFormError" class="alert alert-danger d-none" role="alert"></div>
+          <div class="row g-3" id="mgFields"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="mgSave">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script src="/static/js/master_group.js?v=10"></script>
+{% endblock %}

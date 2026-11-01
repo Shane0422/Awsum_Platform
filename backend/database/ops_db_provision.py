@@ -33,7 +33,7 @@ def build_ops_db_name(prefix: str, numeric_id: int) -> str:
     normalized_prefix = re.sub(r"[^A-Z0-9]", "", (prefix or "").upper())
     if not normalized_prefix:
         raise ValueError("prefix is required")
-    return f"{normalized_prefix}_{int(numeric_id):05d}"
+    return f"{normalized_prefix}{int(numeric_id):05d}"
 
 
 def build_customer_db_name(store_id: int) -> str:

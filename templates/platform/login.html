@@ -19,7 +19,7 @@
       color: var(--aw-color-text);
     }
     header.hero {
-      background: url('/static/images/platform/hero_platform.jpg') center/cover no-repeat;
+      background: url('{{ builtin_asset_url("background", "hero_platform.jpg") }}') center/cover no-repeat;
       height: 100vh;
       position: relative;
     }
@@ -127,19 +127,19 @@
       <div class="row g-4">
         <div class="col-md-4">
           <div class="bg-light rounded shadow-sm overflow-hidden h-100">
-            <img src="/static/images/collection_black.jpg" class="w-100" alt="Classic Black">
+            <img src="{{ builtin_asset_url('ui', 'collection_black.jpg') }}" class="w-100" alt="Classic Black">
             <div class="p-3"><h3 class="h6 fw-semibold">Classic Black</h3></div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bg-light rounded shadow-sm overflow-hidden h-100">
-            <img src="/static/images/collection_navy.jpg" class="w-100" alt="Modern Navy">
+            <img src="{{ builtin_asset_url('ui', 'collection_navy.jpg') }}" class="w-100" alt="Modern Navy">
             <div class="p-3"><h3 class="h6 fw-semibold">Modern Navy</h3></div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bg-light rounded shadow-sm overflow-hidden h-100">
-            <img src="/static/images/collection_white.jpg" class="w-100" alt="Elegant White">
+            <img src="{{ builtin_asset_url('ui', 'collection_white.jpg') }}" class="w-100" alt="Elegant White">
             <div class="p-3"><h3 class="h6 fw-semibold">Elegant White</h3></div>
           </div>
         </div>
@@ -174,9 +174,8 @@
           </div>
           <div class="modal-body">
             <div class="mb-3">
-              <label class="form-label" for="storeCode">Store Code</label>
-              <input id="storeCode" type="text" class="form-control" name="store_code" value="Admin" placeholder="Enter Store Code" required>
-              <div class="form-text">Platform admin Store ID is fixed to <strong>Admin</strong>.</div>
+              <label class="form-label" for="storeCode">Access Code</label>
+              <input id="storeCode" type="text" class="form-control" name="store_code" placeholder="Enter Access Code" required>
             </div>
             <div class="mb-3">
               <label class="form-label" for="email">Email Address</label>
@@ -213,7 +212,7 @@
             <div class="d-flex flex-wrap gap-2 mb-3">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="rememberStore">
-                <label class="form-check-label" for="rememberStore">Remember Store Code</label>
+                <label class="form-check-label" for="rememberStore">Remember Access Code</label>
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="rememberEmail">

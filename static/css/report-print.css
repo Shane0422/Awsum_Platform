@@ -1,0 +1,112 @@
+/* Global paged-media layout. Chrome/Edge 131+ support page-margin boxes. */
+@page {
+  margin: 14mm 12mm 18mm;
+  @top-right {
+    font-family: Arial, "Malgun Gothic", sans-serif;
+    font-size: 7pt;
+    color: #64748b;
+    vertical-align: middle;
+  }
+  @bottom-left {
+    width: 30%;
+    text-align: left;
+  }
+  @bottom-center {
+    width: 40%;
+    text-align: center;
+  }
+  @bottom-right {
+    width: 30%;
+    text-align: right;
+  }
+  @bottom-left {
+    border-top: 0.5pt solid #d1d5db;
+    font: 8pt "Malgun Gothic", Arial, sans-serif;
+    color: #475569;
+    /* Compact bar anchored at the bottom, without changing the content margin. */
+    height: 10pt;
+    margin-top: auto;
+    margin-bottom: 12pt;
+    padding: 3.75pt 0 0;
+    line-height: 10pt;
+    vertical-align: top;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @bottom-center {
+    border-top: 0.5pt solid #d1d5db;
+    font: 8pt "Malgun Gothic", Arial, sans-serif;
+    color: #475569;
+    height: 10pt;
+    margin-top: auto;
+    margin-bottom: 12pt;
+    padding: 3.75pt 0 0;
+    line-height: 10pt;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  @bottom-right {
+    border-top: 0.5pt solid #d1d5db;
+    font: 8pt "Malgun Gothic", Arial, sans-serif;
+    color: #475569;
+    height: 10pt;
+    margin-top: auto;
+    margin-bottom: 12pt;
+    padding: 3.75pt 0 0;
+    line-height: 10pt;
+    vertical-align: top;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.awsum-report {
+  margin: 16px;
+  color: #102a43;
+  background: #fff;
+  font: 10pt Arial, "Malgun Gothic", sans-serif;
+}
+.awsum-report h1 { font-size: 14pt; text-align: center; }
+.awsum-report table { width: 100%; border-collapse: collapse; }
+.awsum-report th, .awsum-report td {
+  border: 1px solid #d1d5db;
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.awsum-report th { background: #f1f5f9; }
+
+@media print {
+  html, body {
+    background: white !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .no-print, .platform-sidebar, .platform-topbar, #sidebar, .sidebar,
+  .workspace-sidebar, .workspace-header, .topbar,
+  .modal, .modal-backdrop { display: none !important; }
+  .platform-shell, .layout, .platform-main, .platform-content, .content, .workspace-shell,
+  .workspace-main, .workspace-content, main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .platform-shell, .layout, .workspace-shell, .workspace-main { display: block !important; }
+  .awsum-report { margin: 0; }
+  .table-responsive, [id$="ListScroll"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { break-inside: avoid; }
+}

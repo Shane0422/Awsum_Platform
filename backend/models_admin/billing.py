@@ -9,7 +9,7 @@ class Billing(PlatformBase):
     i_billing_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=False, index=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=True, index=True)
-    i_agent_id = Column(Integer, ForeignKey("tb_agent.i_agent_id"), nullable=True, index=True)
+    i_agency_id = Column(Integer, ForeignKey("tb_agency.i_agency_id"), nullable=True, index=True)
     n_amount = Column(Numeric(12, 2), nullable=True)
     dt_billing_date = Column(DateTime, nullable=True)
     dt_due_date = Column(DateTime, nullable=True)

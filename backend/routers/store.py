@@ -6,11 +6,10 @@ from sqlalchemy.orm import Session
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.database.store_db import StoreBase, get_store_engine, get_store_backup_dir
 from backend.models_admin.store import Store as StoreModel
+from backend.models_admin.account import Account
 from backend.models_admin.platform_user import PlatformUser
 from backend.utils.safe_schema_migrate import safe_schema_migrate
 from backend.config.templates import templates, get_brand_context
-from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
-from jose import jwt, JWTError
 
 router = APIRouter()
 
@@ -23,45 +22,9 @@ def get_db():
         db.close()
 
 
-def _client_brand_code(client_id: int | None) -> str | None:
-    if not client_id:
-        return None
-    return f"CLT_{int(client_id):05d}"
-
-
 def get_current_user(request: Request, db: Session):
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        uid: int = payload.get("uid")
-        store = payload.get("store")
-        role: int = payload.get("role")
-        principal_type = payload.get("principal_type", "platform_user")
-        if uid is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    if principal_type != "platform_user":
-        raise HTTPException(status_code=401, detail="Invalid token principal for platform DB")
-
-    user = db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == uid).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
-    try:
-        store = int(store)
-    except (TypeError, ValueError):
-        pass
-
-    user.login_store = store
-    user.login_role = role
-    if user.i_must_change_password == 1:
-        raise HTTPException(status_code=403, detail="Password change required")
-    return user
+    from backend.services.web_sessions import authenticate
+    return authenticate(request, db)
 
 
 def require_store_access(user, store_id: int):
@@ -73,11 +36,21 @@ def require_store_access(user, store_id: int):
 
 
 @router.post("/migrate/{store_code}")
-def migrate_store(store_code: str):
+def migrate_store(store_code: str, request: Request, merchant_code: str, db: Session = Depends(get_db)):
     """특정 매장의 DB를 자동 마이그레이션"""
-    engine = get_store_engine(store_code)
-    backup_dir = get_store_backup_dir(store_code)
-    safe_schema_migrate(StoreBase, engine, backup_dir)
+    from backend.services.paths import AwsumPathResolver, authorize_resource
+    from backend.routers.system_settings import _validate_origin
+    try:
+        owner = AwsumPathResolver("STORE", merchant_code=merchant_code, store_code=store_code)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    authorize_resource(request, db, owner)
+    _validate_origin(request)
+    engine = get_store_engine(merchant_code, store_code, db=db)
+    try:
+        safe_schema_migrate(StoreBase, engine, get_store_backup_dir(merchant_code, store_code, db=db))
+    finally:
+        engine.dispose()
     return {"message": f"✅ Store {store_code} DB migrated successfully."}
 
 
@@ -95,6 +68,7 @@ def store_workspace(
     store = db.query(StoreModel).filter(StoreModel.i_store_id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
+    account = db.query(Account).filter(Account.i_account_id == store.i_account_id).first()
 
     # Normalize module name (fallback to dashboard)
     module = (module or "dashboard").lower()
@@ -134,7 +108,7 @@ def store_workspace(
             **get_brand_context(
                 context_type="store",
                 brand_display_name=store.c_store_name,
-                client_code=_client_brand_code(store.i_account_id),
+                client_code=account.c_client_code if account else None,
                 store_code=store.c_store_code,
             ),
         },

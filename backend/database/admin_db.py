@@ -1,19 +1,20 @@
-from pathlib import Path
-
 from sqlalchemy import create_engine, text, func
 from sqlalchemy.orm import sessionmaker, declarative_base
+from backend.core.data_paths import PROJECT_ROOT
+from backend.services.paths import AwsumPathResolver, resource_storage_path
 
 # ==========================================
 # 📂 경로 정의
-# - 플랫폼 DB:  data/platform/admin.db
-# - 플랫폼 백업: db_backups/platform/
+# - Legacy SQLite provider: platform-admin/data/master/admin.db
+# - Backups: platform-admin/data/audit/
 # ==========================================
 
 # 프로젝트 루트는 backend/ 의 상위 2단계
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
 # 플랫폼 DB 전용 저장소
-PLATFORM_DATA_DIR = PROJECT_ROOT / "data" / "platform"
+PLATFORM_OWNER = AwsumPathResolver("PLATFORM")
+PLATFORM_DATA_DIR = resource_storage_path(PLATFORM_OWNER.get_data_path("master"))
+if (PROJECT_ROOT / "data" / "platform" / "admin.db").is_file() and not (PLATFORM_DATA_DIR / "admin.db").exists():
+    raise RuntimeError("Legacy Platform SQLite requires tools.migrate_global_paths before opening.")
 PLATFORM_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = PLATFORM_DATA_DIR / "admin.db"
@@ -255,24 +256,22 @@ def init_admin_db():
     default_admin_password = "Awsum123!"
     default_admin_hash = bcrypt.hashpw(default_admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
+    # Bootstrap only: never modify an existing SuperAdmin / bootstrap account.
+    from backend.models_admin.role import Role
+
+    superadmin_role = db.query(Role).filter_by(c_name="SuperAdmin").first()
+    superadmin_role_id = superadmin_role.i_role_id if superadmin_role else 1
+    existing_superadmin = (
+        db.query(PlatformUser)
+        .filter(PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_role_id == superadmin_role_id)
+        .first()
+    )
     existing_admin = db.query(PlatformUser).filter_by(c_email=default_admin_email, i_store_id=ADMIN_STORE_ID).first()
-    if existing_admin:
-        updated = False
-        if existing_admin.i_store_id != ADMIN_STORE_ID:
-            existing_admin.i_store_id = ADMIN_STORE_ID
-            updated = True
-        try:
-            if not bcrypt.checkpw(default_admin_password.encode("utf-8"), existing_admin.c_password.encode("utf-8")):
-                existing_admin.c_password = default_admin_hash
-                updated = True
-        except Exception:
-            existing_admin.c_password = default_admin_hash
-            updated = True
-        if updated:
-            db.commit()
-            print(f"[OK] Default Platform SuperAdmin user ensured (email={default_admin_email})")
+    if existing_superadmin or existing_admin:
+        pass
     else:
         seed_user = PlatformUser(
+            i_role_id=superadmin_role_id,
             c_email=default_admin_email,
             c_password=default_admin_hash,
             c_first_name="Platform",
@@ -305,6 +304,6 @@ def get_next_customer_store_id(db):
 # ==========================================
 def get_admin_backup_dir():
     """Admin DB 백업 경로"""
-    backup_dir = PROJECT_ROOT / "db_backups" / "platform"
+    backup_dir = resource_storage_path(PLATFORM_OWNER.get_data_path("audit"))
     backup_dir.mkdir(parents=True, exist_ok=True)
     return str(backup_dir)

@@ -31,6 +31,12 @@ db_admin/
 backend/database/admin/
 backend/db_backups/
 data/platform/
+data/media/
+data/image-migrations/
+data/path-migrations/
+data/merchant/
+data/agency/
+data/platform-admin/
 
 # ==========================
 # Legacy tool output files
@@ -53,3 +59,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*.bak

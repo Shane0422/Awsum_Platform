@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Text
 from sqlalchemy.orm import synonym
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
@@ -17,6 +17,7 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
 
     # ✅ 기본 정보
     c_store_name = Column(String, nullable=False)     # 업체명
+    c_logo_url = Column(String(1000), nullable=True)
     c_store_pw   = Column(String, nullable=True)     # 업체 고유 비밀번호 (legacy; not required for profile data)
     dt_pw_expire = Column(DateTime, nullable=True)    # 업체 비밀번호 만료일자 (optional)
 
@@ -74,13 +75,26 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     n_license_count = Column(Integer, nullable=True)
     i_max_user_count = Column(Integer, nullable=True)
     i_max_terminal_count = Column(Integer, nullable=True)
-    dt_license_expire = Column(DateTime, nullable=True)
+    dt_license_expire = Column(DateTime, nullable=True)  # Store License End Date
+    # Store License (Central authority). n_license_count = generic Device License Quantity.
+    c_store_license_key = Column(String(32), nullable=True, unique=True)
+    c_store_license_status = Column(String(20), nullable=True)
+    dt_store_license_start = Column(DateTime, nullable=True)
+    # Store Options (Central authority). Scope is STORE / MERCHANT only while the option is ON.
+    b_opt_customer = Column(Boolean, nullable=True, default=False)
+    b_opt_time_attendance = Column(Boolean, nullable=True, default=False)
+    b_opt_inventory = Column(Boolean, nullable=True, default=False)
+    b_opt_loyalty = Column(Boolean, nullable=True, default=False)
+    b_opt_accounting = Column(Boolean, nullable=True, default=False)
+    c_customer_scope = Column(String(20), nullable=True)
+    c_loyalty_scope = Column(String(20), nullable=True)
     c_dashboard_type = Column(String, nullable=True)
     c_memo = Column(String, nullable=True)
+    c_notes = Column(Text, nullable=True)
     c_remark = Column(String, nullable=True)
 
     # ✅ 담당 에이전트 (설치/관리 담당자)
-    i_installed_by_agent_id = Column(Integer, ForeignKey("tb_agent.i_agent_id"), nullable=True)
+    i_installed_by_agency_id = Column(Integer, ForeignKey("tb_agency.i_agency_id"), nullable=True)
 
     # ✅ 상태
     c_status = Column(String, default="active")       # active / inactive

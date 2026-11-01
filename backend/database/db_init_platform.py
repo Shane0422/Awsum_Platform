@@ -12,8 +12,14 @@ from backend.database.pg_platform import (
 from backend.utils.safe_schema_migrate import safe_schema_migrate
 
 
-CLIENT_CODE_PREFIX = "CLT_"
+CLIENT_CODE_PREFIX = "CLT"
 CLIENT_CODE_SEQ_START = 11001
+
+
+def _ensure_platform_user_last_login_schema(db: Session) -> None:
+    if db.execute(text("SELECT to_regclass('public.tb_platform_user')")).scalar() is None:
+        return
+    db.execute(text("ALTER TABLE tb_platform_user ADD COLUMN IF NOT EXISTS dt_last_login TIMESTAMP NULL"))
 
 
 def _drop_legacy_tb_user_dependencies(db: Session) -> None:
@@ -137,7 +143,7 @@ def _ensure_client_code_schema_and_backfill(db: Session) -> None:
         )
     )
 
-    # Fill missing codes by i_client_id order starting at CLT_11001 and continuing after current max.
+    # Fill missing codes by i_client_id order starting at CLT11001 and continuing after current max.
     db.execute(
         text(
             """
@@ -147,7 +153,7 @@ def _ensure_client_code_schema_and_backfill(db: Session) -> None:
                     :seed_start - 1
                 ) AS current_max
                 FROM tb_client
-                WHERE c_client_code ~ '^CLT_[0-9]+$'
+                WHERE c_client_code ~ '^CLT_?[0-9]+$'
             ),
             missing AS (
                 SELECT i_client_id,
@@ -193,15 +199,15 @@ def _ensure_client_code_schema_and_backfill(db: Session) -> None:
             """
             SELECT COUNT(*)
             FROM tb_client
-            WHERE c_client_code ~ '^CLT_[0-9]+$'
+            WHERE c_client_code ~ '^CLT_?[0-9]+$'
             """
         )
     ).scalar() or 0
     print(f"[MIGRATE] tb_client.c_client_code populated rows: {migrated_rows}")
 
 
-def _ensure_client_primary_agent_schema(db: Session) -> None:
-    """Ensure tb_client.i_agent_id exists and links to tb_agent when available."""
+def _ensure_client_primary_agency_schema(db: Session) -> None:
+    """Ensure tb_client.i_agency_id exists and links to tb_agency when available."""
     has_column = db.execute(
         text(
             """
@@ -209,19 +215,19 @@ def _ensure_client_primary_agent_schema(db: Session) -> None:
             FROM information_schema.columns
             WHERE table_schema = 'public'
               AND table_name = 'tb_client'
-              AND column_name = 'i_agent_id'
+              AND column_name = 'i_agency_id'
             LIMIT 1
             """
         )
     ).scalar()
 
     if not has_column:
-        db.execute(text("ALTER TABLE tb_client ADD COLUMN i_agent_id INTEGER"))
-        print("[MIGRATE] Added tb_client.i_agent_id")
+        db.execute(text("ALTER TABLE tb_client ADD COLUMN i_agency_id INTEGER"))
+        print("[MIGRATE] Added tb_client.i_agency_id")
 
-    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tb_client_i_agent_id ON tb_client (i_agent_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tb_client_i_agency_id ON tb_client (i_agency_id)"))
 
-    has_agent_table = db.execute(text("SELECT to_regclass('public.tb_agent')")).scalar() is not None
+    has_agent_table = db.execute(text("SELECT to_regclass('public.tb_agency')")).scalar() is not None
     if not has_agent_table:
         return
 
@@ -233,18 +239,56 @@ def _ensure_client_primary_agent_schema(db: Session) -> None:
                 IF NOT EXISTS (
                     SELECT 1
                     FROM pg_constraint
-                    WHERE conname = 'fk_tb_client_i_agent_id_tb_agent'
+                    WHERE conname = 'fk_tb_client_i_agency_id_tb_agency'
                       AND conrelid = 'tb_client'::regclass
                 ) THEN
                     ALTER TABLE tb_client
-                    ADD CONSTRAINT fk_tb_client_i_agent_id_tb_agent
-                    FOREIGN KEY (i_agent_id) REFERENCES tb_agent(i_agent_id)
+                    ADD CONSTRAINT fk_tb_client_i_agency_id_tb_agency
+                    FOREIGN KEY (i_agency_id) REFERENCES tb_agency(i_agency_id)
                     ON DELETE SET NULL;
                 END IF;
             END $$;
             """
         )
     )
+
+
+def _ensure_client_website_column(db: Session) -> None:
+    """Ensure tb_client.c_website exists (nullable; existing rows untouched)."""
+    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_website VARCHAR(255)"))
+    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_notes TEXT"))
+    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_timezone VARCHAR(64)"))
+    db.execute(text("ALTER TABLE tb_store ADD COLUMN IF NOT EXISTS c_notes TEXT"))
+
+
+def _ensure_store_license_options_schema(db: Session) -> None:
+    """Store License / Store Options columns (nullable, idempotent) and license key backfill."""
+    for ddl in (
+        "c_store_license_key VARCHAR(32)",
+        "c_store_license_status VARCHAR(20)",
+        "dt_store_license_start TIMESTAMP",
+        "b_opt_customer BOOLEAN",
+        "b_opt_time_attendance BOOLEAN",
+        "b_opt_inventory BOOLEAN",
+        "b_opt_loyalty BOOLEAN",
+        "b_opt_accounting BOOLEAN",
+        "c_customer_scope VARCHAR(20)",
+        "c_loyalty_scope VARCHAR(20)",
+    ):
+        db.execute(text(f"ALTER TABLE tb_store ADD COLUMN IF NOT EXISTS {ddl}"))
+    db.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_tb_store_store_license_key "
+        "ON tb_store (c_store_license_key) WHERE c_store_license_key IS NOT NULL"
+    ))
+    import secrets
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    store_ids = db.execute(text("SELECT i_store_id FROM tb_store WHERE c_store_license_key IS NULL")).scalars().all()
+    for store_id in store_ids:
+        while True:
+            key = "SL-" + "".join(secrets.choice(alphabet) for _ in range(8))
+            if not db.execute(text("SELECT 1 FROM tb_store WHERE c_store_license_key = :k"), {"k": key}).first():
+                break
+        db.execute(text("UPDATE tb_store SET c_store_license_key = :k WHERE i_store_id = :id"), {"k": key, "id": store_id})
 
 
 def _ensure_pricing_plan_schema(db: Session) -> None:
@@ -374,7 +418,7 @@ def _next_client_code_value(db: Session) -> str:
                 :seed_start - 1
             ) AS current_max
             FROM tb_client
-            WHERE c_client_code ~ '^CLT_[0-9]+$'
+            WHERE c_client_code ~ '^CLT_?[0-9]+$'
             """
         ),
         {"seed_start": CLIENT_CODE_SEQ_START},
@@ -429,6 +473,56 @@ def _ensure_device_master_schema(db: Session) -> None:
             """
         ))
         print("[MIGRATE] Ensured tb_device device master columns")
+
+
+def _ensure_license_management_schema(db: Session) -> None:
+    """
+    Idempotent, non-destructive migration for store license management:
+    - partial unique indexes: one active device per license, one active license per device
+    - slot numbers for pre-existing licenses (POS-01 style naming)
+    - link rows for pre-existing activated device/license pairs
+    """
+    for table in ("tb_license", "tb_device", "tb_license_device_link"):
+        if db.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar() is None:
+            return
+
+    db.execute(text(
+        "UPDATE tb_license l SET i_slot_no = s.rn FROM ("
+        "  SELECT i_license_id, ROW_NUMBER() OVER ("
+        "    PARTITION BY i_store_id, UPPER(COALESCE(c_license_type, '')) ORDER BY i_license_id) AS rn"
+        "  FROM tb_license) s "
+        "WHERE l.i_license_id = s.i_license_id AND l.i_slot_no IS NULL"
+    ))
+
+    # Backfill only pairs that would not violate the active-link uniqueness rules.
+    db.execute(text(
+        """
+        INSERT INTO tb_license_device_link
+            (i_license_id, i_device_id, i_store_id, dt_linked_at, c_linked_by)
+        SELECT DISTINCT ON (d.i_license_id)
+            d.i_license_id, d.i_device_id, d.i_store_id,
+            COALESCE(d.dt_first_activated_at, d.dt_created, NOW()), 'migration'
+        FROM tb_device d
+        JOIN tb_license l ON l.i_license_id = d.i_license_id AND l.i_store_id = d.i_store_id
+        WHERE d.i_license_id IS NOT NULL
+          AND LOWER(COALESCE(d.c_status, '')) IN ('activated', 'active')
+          AND NOT EXISTS (
+              SELECT 1 FROM tb_license_device_link k
+              WHERE k.dt_unlinked_at IS NULL
+                AND (k.i_license_id = d.i_license_id OR k.i_device_id = d.i_device_id))
+        ORDER BY d.i_license_id, d.i_device_id DESC
+        """
+    ))
+
+    db.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_license_device_link_active_license "
+        "ON tb_license_device_link (i_license_id) WHERE dt_unlinked_at IS NULL"
+    ))
+    db.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_license_device_link_active_device "
+        "ON tb_license_device_link (i_device_id) WHERE dt_unlinked_at IS NULL"
+    ))
+    print("[MIGRATE] Ensured license management schema")
 
 
 def _seed_device_categories_and_types(db: Session) -> None:
@@ -518,8 +612,8 @@ def init_platform_db() -> None:
         device_type,
         device,
         device_log,
-        agent,
-        agent_type,
+        agency,
+        agency_type,
         billing,
         payment_method,
         subscription,
@@ -528,31 +622,65 @@ def init_platform_db() -> None:
         contract,
         provision_log,
         store_sync_status,
+        store_entitlement,
+        license_device_link,
+        license_email_log,
+        system_settings,
+        system_settings_audit,
+        master_group,
+        business_contact,
     )
     from backend.models_admin.account import Client
     from backend.models_admin.business_type import BusinessType
     from backend.models_admin.role import Role
-    from backend.models_admin.agent_type import AgentType
+    from backend.models_admin.agency_type import AgencyType
     from backend.models_admin.store import Store
     from backend.models_admin.platform_user import PlatformUser
     from backend.models_admin.pricing_plan import PricingPlan
 
     # Align existing schema non-destructively before seed to avoid startup failures
     # when older DBs miss newly added nullable columns.
-    safe_schema_migrate(PlatformBase, platform_engine, backup_dir="./db_backups/platform")
+    from backend.database.web_session_migration import migrate_web_sessions
+    from backend.database.branding_migration import migrate_branding
+    migrate_branding(platform_engine)
+    migrate_web_sessions(platform_engine)
+    from backend.database.md_image_migration import migrate_md_images
+    migrate_md_images(platform_engine)
+    from backend.database.user_image_migration import migrate_user_images
+    migrate_user_images(platform_engine)
+    from backend.database.business_contact_migration import migrate_business_contacts
+    migrate_business_contacts(platform_engine)
+    from backend.database.agency_user_migration import migrate_agency_users
+    migrate_agency_users(platform_engine)
+    from backend.services.paths import AwsumPathResolver, resource_storage_path
+    backup_path = resource_storage_path(AwsumPathResolver("PLATFORM").get_data_path("audit"))
+    safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
+    from backend.services.storage_layout import final_layout_enabled, validate_runtime_references
+    if final_layout_enabled():
+        validate_runtime_references(platform_engine)
+    else:
+        from backend.database.image_storage_migration import migrate_image_storage
+        migrate_image_storage(platform_engine)
+        from backend.database.resource_path_migration import migrate_resource_paths
+        migrate_resource_paths(platform_engine)
 
     db = PlatformSessionLocal()
     try:
+        _ensure_platform_user_last_login_schema(db)
+
         # Enforce platform-user-only auth policy by removing legacy tb_user dependencies.
         _drop_legacy_tb_user_dependencies(db)
         _drop_legacy_tb_user_table(db)
         _drop_legacy_session_user_column(db)
         _drop_legacy_store_type_dependencies(db)
         _ensure_client_code_schema_and_backfill(db)
-        _ensure_client_primary_agent_schema(db)
+        _ensure_client_primary_agency_schema(db)
+        _ensure_client_website_column(db)
+        _ensure_store_license_options_schema(db)
         _ensure_pricing_plan_schema(db)
         _ensure_subscription_schema(db)
         _ensure_device_master_schema(db)
+        _ensure_license_management_schema(db)
         db.commit()
 
         # Client seed
@@ -588,19 +716,20 @@ def init_platform_db() -> None:
             {"c_name": "Manager", "c_description": "Store Manager"},
             {"c_name": "Staff", "c_description": "Store Staff"},
             {"c_name": "Customer", "c_description": "End Customer"},
+            {"c_name": "Agency Admin", "c_description": "Agency Administrator"},
         ]
         for role_item in default_roles:
             if not db.query(Role).filter_by(c_name=role_item["c_name"]).first():
                 db.add(Role(**role_item))
 
-        default_agent_types = [
-            {"c_agent_type_code": "DEALER", "c_agent_type_name": "Dealer", "c_status": "active"},
-            {"c_agent_type_code": "INSTALLER", "c_agent_type_name": "Installer", "c_status": "active"},
+        default_agency_types = [
+            {"c_agency_type_code": "DEALER", "c_agency_type_name": "Dealer", "c_status": "active"},
+            {"c_agency_type_code": "INSTALLER", "c_agency_type_name": "Installer", "c_status": "active"},
         ]
-        for type_item in default_agent_types:
-            existing = db.query(AgentType).filter_by(c_agent_type_code=type_item["c_agent_type_code"]).first()
+        for type_item in default_agency_types:
+            existing = db.query(AgencyType).filter_by(c_agency_type_code=type_item["c_agency_type_code"]).first()
             if not existing:
-                db.add(AgentType(**type_item))
+                db.add(AgencyType(**type_item))
 
         default_pricing_plans = [
             {
@@ -686,28 +815,25 @@ def init_platform_db() -> None:
         superadmin_role = db.query(Role).filter_by(c_name="SuperAdmin").first()
 
         # Platform admin auth source of truth (tb_platform_user)
+        # Bootstrap only: never modify an existing SuperAdmin / bootstrap account.
+        superadmin_role_id = superadmin_role.i_role_id if superadmin_role else 1
+        existing_superadmin = (
+            db.query(PlatformUser)
+            .filter(PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_role_id == superadmin_role_id)
+            .first()
+        )
         existing_platform_admin = (
             db.query(PlatformUser)
             .filter_by(c_email=default_admin_email, i_store_id=ADMIN_STORE_ID)
             .first()
         )
-        if existing_platform_admin:
-            existing_platform_admin.c_status = "active"
-            existing_platform_admin.i_store_id = ADMIN_STORE_ID
-            existing_platform_admin.i_must_change_password = 0
-            try:
-                if not bcrypt.checkpw(default_admin_password.encode("utf-8"), existing_platform_admin.c_password.encode("utf-8")):
-                    existing_platform_admin.c_password = default_admin_hash
-            except Exception:
-                existing_platform_admin.c_password = default_admin_hash
-            if not existing_platform_admin.c_first_name:
-                existing_platform_admin.c_first_name = "Platform"
-            if not existing_platform_admin.c_last_name:
-                existing_platform_admin.c_last_name = "Admin"
+        if existing_superadmin or existing_platform_admin:
+            pass
         else:
             db.add(
                 PlatformUser(
                     i_store_id=ADMIN_STORE_ID,
+                    i_role_id=superadmin_role_id,
                     c_email=default_admin_email,
                     c_password=default_admin_hash,
                     c_first_name="Platform",
@@ -721,12 +847,12 @@ def init_platform_db() -> None:
         tuxedo_business_type = db.query(BusinessType).filter_by(c_business_code="TUXEDO_RENTAL").first()
         test_store_pw = bcrypt.hashpw("Cust00001".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-        target_test_store_code = "CLT_00001"
-        legacy_test_store_code = "CUST_00001"
+        target_test_store_code = "CLT00001"
+        legacy_test_store_codes = ("CLT_00001", "CUST00001", "CUST_00001")
 
         test_store = db.query(Store).filter_by(c_store_code=target_test_store_code).first()
         if not test_store:
-            test_store = db.query(Store).filter_by(c_store_code=legacy_test_store_code).first()
+            test_store = db.query(Store).filter(Store.c_store_code.in_(legacy_test_store_codes)).first()
             if test_store:
                 test_store.c_store_code = target_test_store_code
         # Fallback: find by c_is_test flag in case the code was renamed externally
@@ -786,6 +912,9 @@ def init_platform_db() -> None:
         db.commit()
         if created_contracts:
             print(f"[BACKFILL] Created {created_contracts} missing contract(s) for active subscriptions")
+
+        from backend.services.resource_storage import AwsumStorageService
+        AwsumStorageService(db).initialize_missing_storage()
 
         print("[OK] awsum_platform initialized with default seed data")
     finally:

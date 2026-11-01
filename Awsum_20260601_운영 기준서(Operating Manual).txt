@@ -1,0 +1,341 @@
+# Awsum Platform 로그인 운영 매뉴얼 v1.0
+
+## 1. 목적
+
+Awsum Platform은 Multi-Tenant SaaS 구조를 기반으로 운영된다.
+모든 사용자는 동일한 로그인 화면을 사용하지만, 로그인 후 권한과 소속(Store)에 따라 접근 가능한 메뉴가 달라진다.
+로그인 방식은 다음 3가지 정보를 사용한다.
+
+* Store ID
+* Email
+* Password
+
+---
+
+## 2. 로그인 화면
+
+### 입력 항목
+
+| 항목       | 설명           |
+| -------- | ------------ |
+| Store ID | 로그인 대상 Store |
+| Email    | 사용자 이메일      |
+| Password | 사용자 비밀번호     |
+
+예)
+Store ID
+```text
+Admin
+```
+Email
+```text
+is2ceo@gmail.com
+```
+Password
+```text
+Awsum123!
+```
+또는
+
+Store ID
+```text
+CUST10001
+Email
+`text
+manager@customer.com
+```
+Password
+```text
+********
+```
+
+## 3. 로그인 처리 흐름
+### Step 1
+Store ID 확인
+```text
+Admin ?
+YES
+→ Platform Admin 로그인
+NO
+→ Store User 로그인
+---
+### Step 2
+Platform DB 조회
+```text
+tb_store
+```
+조회 항목
+```text
+Store Code
+Status
+Account ID
+Store ID
+```
+### Step 3
+사용자 인증
+Platform Admin
+```text
+tb_platform_user
+```
+Store User
+```text
+tb_store_user
+```
+### Step 4
+
+비밀번호 검증
+
+bcrypt 해시 비교
+
+### Step 5
+세션 생성
+```text
+tb_session
+
+저장
+
+* 로그인 시간
+* IP
+* User ID
+* Store ID
+
+### Step 6
+JWT 발급
+HttpOnly Cookie 저장
+
+### Step 7
+첫 화면 이동
+Platform Admin
+```text
+/platform/dashboard
+```
+Store User
+```text
+/store/workspace
+```
+## 4. 사용자 구분
+### Platform Admin
+목적
+
+```text
+전체 시스템 관리
+```
+
+접근 가능
+
+```text
+Account
+Store
+User
+Role
+Device
+Subscription
+Invoice
+Master
+```
+예
+```text
+Admin
+is2ceo@gmail.com
+```
+
+### Store User
+목적
+```text
+매장 운영
+``
+
+접근 가능
+```text
+POS
+Inventory
+Customer
+Orders
+Reports
+Employee
+```
+
+예
+
+```text
+CUST10001
+manager@store.com
+```
+
+---
+
+## 5. JWT 구조
+
+JWT에는 최소한 아래 정보를 포함한다.
+
+```json
+{
+  "user_id": 1,
+  "user_type": "platform_admin",
+  "account_id": 10001,
+  "store_id": 20001,
+  "store_code": "Admin",
+  "role": "SuperAdmin",
+  "session_id": 50001
+}
+```
+
+Store User 예
+
+```json
+{
+  "user_id": 101,
+  "user_type": "store_user",
+  "account_id": 10001,
+  "store_id": 20001,
+  "store_code": "CUST10001",
+  "role": "Manager",
+  "session_id": 60001
+}
+```
+
+---
+
+## 6. 권한 체계
+
+### SUPER_ADMIN
+
+전체 시스템
+
+---
+
+### PLATFORM_ADMIN
+
+플랫폼 운영
+
+---
+
+### ACCOUNT_OWNER
+
+고객사 관리자
+
+---
+
+### STORE_MANAGER
+
+매장 관리자
+
+---
+
+### CASHIER
+
+POS 사용자
+
+---
+
+### VIEWER
+
+조회 전용
+
+---
+
+## 7. DB 구조
+
+### Platform DB
+
+```text
+tb_platform_user
+tb_store
+tb_account
+tb_role
+tb_session
+tb_subscription
+tb_invoice
+```
+
+---
+
+### Store User
+
+초기 버전
+
+```text
+tb_store_user
+```
+
+Platform DB 사용
+
+---
+
+향후
+
+```text
+StoreDB
+ └─ tb_user
+```
+
+구조로 확장 가능
+
+---
+
+## 8. 로그인 실패 처리
+
+실패 조건
+
+```text
+존재하지 않는 Store
+비활성 Store
+존재하지 않는 사용자
+비밀번호 오류
+잠긴 계정
+만료된 계정
+```
+
+모든 실패는 동일 메시지 사용
+
+```text
+Invalid Login Information
+```
+
+---
+
+## 9. 로그아웃
+
+처리 내용
+
+```text
+JWT Cookie 삭제
+Session 종료
+Last Activity 기록
+```
+
+---
+
+## 10. Shane 프로젝트 최종 방향
+
+로그인 입구는 하나
+
+```text
+/auth/login
+```
+
+사용자 원장은 분리
+
+```text
+Platform Admin
+    ↓
+tb_platform_user
+
+Store User
+    ↓
+tb_store_user
+```
+
+로그인 성공 후
+
+```text
+Platform Admin
+    ↓
+/platform/dashboard
+
+Store User
+    ↓
+/store/workspace
+```
+
+이 구조를 Awsum Platform의 표준 로그인 아키텍처로 사용한다.

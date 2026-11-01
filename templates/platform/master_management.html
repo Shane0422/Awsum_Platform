@@ -298,6 +298,71 @@
     animation: masterRowFocusPulse 1.1s ease-out;
   }
 
+  /* Store split view: one large card, toolbar on top, list (40%) | detail (60%) below */
+  body.page-master #masterRoleView.store-split {
+    --store-left: 40%;
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 0;
+    --bs-gutter-x: 0; margin: 0; padding: 0;
+    background: #fff; border: 1px solid var(--role-border); border-radius: 12px; box-shadow: var(--role-shadow);
+    overflow: hidden; font-size: 14px;
+  }
+  body.page-master #masterRoleView.store-split > * { margin-top: 0; padding-left: 0; padding-right: 0; }
+  body.page-master #masterRoleView.store-split > .store-tools { flex: 0 0 100%; max-width: 100%; padding: 16px 20px; border-bottom: 1px solid var(--role-border); display: flex; flex-direction: column; gap: 12px; }
+  body.page-master #masterRoleView.store-split > .store-tools.d-none { display: none; }
+  body.page-master #masterRoleView.store-split .store-tools > * { margin: 0 !important; }
+  body.page-master #masterRoleView.store-split .store-tools #masterSearch { width: 100%; height: 38px; font-size: 14px; }
+  body.page-master #masterRoleView.store-split .store-tools .role-section-title { font-size: 1.1rem; }
+  body.page-master #masterRoleView.store-split .store-filter-bar { gap: 12px; }
+  body.page-master #masterRoleView.store-split .store-filter-bar > * { flex: 1 1 170px; min-width: 0; }
+  body.page-master #masterRoleView.store-split .store-filter-bar .filter-combo .master-list-filter { min-width: 0; width: 100%; }
+  body.page-master #masterRoleView.store-split .master-list-filter { height: 36px; font-size: 14px; min-width: 0; }
+  body.page-master #masterRoleView.store-split .master-list-toolbar { justify-content: flex-start; gap: 8px; }
+  body.page-master #masterRoleView.store-split .master-list-toolbar-left:not(:has(*:not(.d-none))) { display: none; }
+  body.page-master #masterRoleView.store-split .master-list-toolbar-right { gap: 8px; }
+  body.page-master #masterRoleView.store-split > #masterListCol { flex: 0 0 100%; max-width: 100%; min-width: 0; display: flex; }
+  body.page-master #masterRoleView.store-split > #masterListCol > .card-modern { flex: 1 1 auto; min-width: 0; border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 16px 20px !important; display: flex; flex-direction: column; }
+  body.page-master #masterRoleView.store-split #masterListScroll { max-height: min(70vh, 640px) !important; flex: 1 1 auto; }
+  body.page-master #masterRoleView.store-split #masterListTable { font-size: 14px; }
+  body.page-master #masterRoleView.store-split #masterListTable thead th { position: sticky; top: 0; z-index: 1; background: #fff; white-space: nowrap; }
+  body.page-master #masterRoleView.store-split #masterListTable tbody tr.table-active { background: #dbe8fb; box-shadow: inset 4px 0 0 #1f5fbf; }
+  body.page-master #masterRoleView.store-split #masterListTable tbody tr.table-active td { font-weight: 600; }
+  body.page-master #masterRoleView.store-split .store-list-pager { margin-top: 12px; flex-wrap: wrap; font-size: 13px; }
+  body.page-master #masterRoleView.store-split .store-pager-controls { flex-wrap: wrap; }
+  body.page-master #masterRoleView.store-split .store-pager-page { white-space: nowrap; }
+  body.page-master #masterRoleView.store-split > #storeDevicesCol { flex: 0 0 100%; max-width: 100%; min-width: 0; background: #f6f8fb; border-top: 1px solid var(--role-border); }
+  body.page-master #masterRoleView.store-split > #storeDevicesCol.d-none { display: none; }
+  body.page-master #masterRoleView.store-split .store-devices-card { border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 16px 20px !important; height: 100%; }
+  .store-cell-main { min-width: 0; max-width: 260px; }
+  .store-cell-merchant { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .store-cell-store { font-size: .9em; color: #5b6b82; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .store-cell-date { font-size: .75rem; color: #8592a6; margin-top: 2px; white-space: nowrap; }
+  body.page-master #masterRoleView.store-split #masterListTable td .cell-ellipsis { display: block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .store-splitter { display: none; }
+  .sd-empty { display: flex; align-items: center; justify-content: center; min-height: 280px; color: #8592a6; font-size: 1.05rem; }
+  .sd-title { font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.3; overflow-wrap: anywhere; }
+  .sd-sub { font-size: 13px; color: #64748b; overflow-wrap: anywhere; }
+  .sd-key { font-family: Consolas, monospace; font-size: 13px; display: inline-block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+  .sd-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #eef1f6; color: #55637a; white-space: nowrap; }
+  .sd-badge.activated, .sd-badge.active { background: #dff5e6; color: #1b7a3c; }
+  .sd-badge.issued { background: #fff3d6; color: #8a6100; }
+  .sd-badge.revoked, .sd-badge.expired, .sd-badge.suspended, .sd-badge.inactive { background: #fde4e4; color: #b02a2a; }
+  .sd-table { font-size: 14px; }
+  .sd-table td, .sd-table th { white-space: nowrap; vertical-align: middle; background: transparent; }
+  .sd-table td.sd-os { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .sd-table-wrap { max-height: 420px; overflow: auto; background: #fff; border-radius: 8px; box-shadow: inset 0 0 0 1px #e4e9f1; }
+  .sd-table-wrap thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+  @media (min-width: 1200px) {
+    body.page-master #masterRoleView.store-split { flex-wrap: wrap; }
+    body.page-master #masterRoleView.store-split > #masterListCol { flex: 0 0 var(--store-left); max-width: var(--store-left); }
+    body.page-master #masterRoleView.store-split > #storeDevicesCol { flex: 1 1 0; max-width: none; border-top: 0; }
+    body.page-master #masterRoleView.store-split > .store-splitter { display: block; flex: 0 0 10px; cursor: col-resize; position: relative; background: #f6f8fb; }
+    body.page-master #masterRoleView.store-split > .store-splitter::after { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: #d3dbe8; }
+    body.page-master #masterRoleView.store-split > .store-splitter:hover::after,
+    body.page-master #masterRoleView.store-split > .store-splitter:focus-visible::after,
+    body.page-master #masterRoleView.store-split > .store-splitter.dragging::after { background: #1f5fbf; width: 3px; left: 3px; }
+    body.page-master #masterRoleView.store-split > .store-splitter.d-none { display: none; }
+  }
+
   @keyframes masterRowFocusPulse {
     0% { box-shadow: inset 3px 0 0 #2563eb, 0 0 0 0 rgba(37, 99, 235, 0.28); }
     100% { box-shadow: inset 3px 0 0 #9db5d7, 0 0 0 12px rgba(37, 99, 235, 0); }
@@ -2356,6 +2421,77 @@
     border-radius: 7px;
   }
 
+  body.page-master #masterRoleView .store-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.34rem;
+    margin-bottom: 0.6rem;
+  }
+
+  body.page-master #masterRoleView .store-filter-bar .filter-combo {
+    position: relative;
+  }
+
+  body.page-master #masterRoleView .store-filter-bar .filter-combo .master-list-filter {
+    min-width: 220px;
+  }
+
+  body.page-master #masterRoleView .filter-combo-menu {
+    position: absolute;
+    z-index: 1050;
+    top: calc(100% + 2px);
+    left: 0;
+    min-width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0.25rem 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    font-size: 0.8rem;
+  }
+
+  body.page-master #masterRoleView .filter-combo-menu li {
+    padding: 0.3rem 0.65rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  body.page-master #masterRoleView .filter-combo-menu li:hover,
+  body.page-master #masterRoleView .filter-combo-menu li.is-selected {
+    background: #eef2ff;
+  }
+
+  body.page-master #masterRoleView .filter-combo-menu li.is-empty {
+    color: #9ca3af;
+    cursor: default;
+  }
+
+  body.page-master #masterRoleView .store-list-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+
+  body.page-master #masterRoleView .store-pager-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.34rem;
+  }
+
+  body.page-master #masterRoleView .store-pager-controls .master-list-filter {
+    min-width: 96px;
+  }
+
   body.page-master #masterRoleView .master-form-section-title {
     margin-top: 0.2rem;
     padding-top: 0.55rem;
@@ -2394,20 +2530,111 @@
       padding: 0.72rem !important;
     }
   }
+
+  /* Agency modal (same design language as Users modal) */
+  #masterEditModal .agency-hdr-icon, #masterEditModal .agency-hdr-sub, #masterEditModal .agency-info-box { display: none; }
+  #masterEditModal.agency-modal .modal-dialog { max-width: 760px; }
+  #masterEditModal.agency-modal .modal-content { border: 1px solid rgba(23,52,81,.08); border-radius: 18px; box-shadow: 0 20px 50px rgba(23,52,81,.16); background: #fff; max-height: calc(100vh - 2rem); overflow: hidden; }
+  #masterEditModal.agency-modal .modal-header { padding: 1.5rem 1.75rem 1.1rem; border-bottom: 1px solid #eef2f7; align-items: center; gap: .9rem; }
+  #masterEditModal.agency-modal .agency-hdr-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: #e8f0fe; color: #2563eb; flex: 0 0 44px; }
+  #masterEditModal.agency-modal .agency-hdr-text { flex: 1 1 auto; min-width: 0; }
+  #masterEditModal.agency-modal .modal-title { color: #173451; font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
+  #masterEditModal.agency-modal .agency-hdr-sub { display: block; color: #718096; font-size: .84rem; margin-top: .15rem; }
+  #masterEditModal.agency-modal .modal-body { padding: 1.25rem 1.75rem; overflow-y: auto; }
+  #masterEditModal.agency-modal #masterFormModal .id-field-wrap { display: none; }
+  #masterEditModal.agency-modal.is-create .agency-created-field { display: none; }
+  #masterEditModal.agency-modal .master-form-section-title { color: #173451; font-weight: 700; font-size: .95rem; padding-top: .9rem; margin-top: .2rem; border-top: 1px solid #eef2f7; }
+  #masterEditModal.agency-modal #masterFormModal > .id-field-wrap + div .master-form-section-title { border-top: 0; padding-top: 0; margin-top: 0; }
+  #masterEditModal.agency-modal .form-label { font-size: .8rem; font-weight: 600; color: #3b4a5e; margin-bottom: .35rem; }
+  #masterEditModal.agency-modal .agency-lbl-icon { color: #6b7f99; margin-right: .4rem; vertical-align: -2px; }
+  #masterEditModal.agency-modal .agency-required { color: #dc2626; }
+  #masterEditModal.agency-modal .form-control, #masterEditModal.agency-modal .form-select { height: 46px; border-radius: 10px; border: 1px solid #d3dcea; padding: 0 .9rem; font-size: .92rem; color: #173451; }
+  #masterEditModal.agency-modal textarea.form-control { height: auto; padding: .7rem .9rem; }
+  #masterEditModal.agency-modal .form-control:focus, #masterEditModal.agency-modal .form-select:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37,99,235,.12); }
+  #masterEditModal.agency-modal .form-control[readonly] { background: #f4f7fb; color: #6b7f99; }
+  #masterEditModal.agency-modal .form-control.is-invalid, #masterEditModal.agency-modal .form-select.is-invalid { border-color: #dc2626; }
+  #masterEditModal.agency-modal .agency-field-help { display: block; color: #718096; font-size: .76rem; margin-top: .3rem; }
+  #masterEditModal.agency-modal .agency-status-wrap { position: relative; }
+  #masterEditModal.agency-modal .agency-status-wrap::before { content: ""; position: absolute; left: .9rem; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: #a0aec0; z-index: 2; pointer-events: none; }
+  #masterEditModal.agency-modal .agency-status-wrap:has(option[value="active"]:checked)::before { background: #22c55e; }
+  #masterEditModal.agency-modal .agency-status-wrap .form-select { padding-left: 2.1rem; }
+  #masterEditModal.agency-modal .agency-info-box { display: flex; gap: .75rem; margin-top: 1.25rem; padding: .9rem 1rem; background: #eef4ff; border: 1px solid #dbe7fb; border-radius: 12px; }
+  #masterEditModal.agency-modal .agency-info-icon { color: #2563eb; flex: 0 0 auto; margin-top: 1px; }
+  #masterEditModal.agency-modal .agency-info-title { color: #173451; font-weight: 600; font-size: .88rem; }
+  #masterEditModal.agency-modal .agency-info-text { color: #5b6b82; font-size: .82rem; }
+  #masterEditModal.agency-modal .modal-footer { padding: 1rem 1.75rem 1.5rem; border-top: 1px solid #eef2f7; justify-content: flex-end !important; }
+  #masterEditModal.agency-modal .modal-footer > .d-flex { flex-direction: row-reverse; }
+  #masterEditModal.agency-modal .modal-footer .btn { height: 42px; padding: 0 1.4rem; border-radius: 10px; font-size: .9rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
+  #masterEditModal.agency-modal #btnModalCancel { background: #fff; border: 1px solid #d3dcea; color: #3b4a5e; }
+  #masterEditModal.agency-modal #btnModalSave { background: #2563eb; border: 1px solid #2563eb; color: #fff; }
+  #masterEditModal.agency-modal #btnModalSave:hover { background: #1d4ed8; }
+  #masterEditModal.agency-modal.agency-type-modal .modal-dialog { max-width: 660px; }
+  #masterEditModal.agency-modal:not(.is-create) .agency-field-help { display: none; }
+  #masterEditModal.agency-modal.is-create #btnModalDelete { display: none !important; }
+  #masterEditModal.agency-modal.business-type-modal #btnModalDelete { display: none !important; }
+  #masterEditModal.agency-modal.store-modal #btnModalDelete,
+  #masterEditModal.agency-modal.store-modal #agencyInfoBox { display: none !important; }
+  #masterEditModal.agency-modal.store-modal .modal-dialog { max-width: min(760px, calc(100vw - 40px)); }
+  #masterEditModal.agency-modal.store-modal .modal-content { height: min(780px, calc(100vh - 2rem)); }
+  #masterEditModal.agency-modal.store-modal .client-detail-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; padding: 0; margin: 0 0 1rem; border-bottom: 1px solid #e3e9f2; }
+  #masterEditModal.agency-modal.store-modal .client-tab-btn { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 .25rem; margin-bottom: -1px; font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: #718096; border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; text-decoration: none; background: transparent; white-space: nowrap; }
+  #masterEditModal.agency-modal.store-modal .client-tab-btn:hover { color: #173451; background: #f4f7fb; text-decoration: none; }
+  #masterEditModal.agency-modal.store-modal .client-tab-btn.active { color: #2563eb; background: #eef4ff; border-bottom-color: #2563eb; text-decoration: none; }
+  #masterEditModal.agency-modal.store-modal .client-tab-panel { border: 0; padding: 0; min-height: 440px; background: transparent; }
+  #masterEditModal.agency-modal.store-modal .client-tab-summary { margin: -.35rem 0 .9rem; font-size: .8rem; color: #718096; }
+  #masterEditModal.agency-modal.store-modal .store-section-heading .master-form-section-title { border-top: 0; padding-top: 0; margin-top: 0; }
+  #masterEditModal.agency-modal.store-modal .store-branding-heading { margin-top: 1.1rem; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-upload-card { border: 1px solid #dbe7fb; border-radius: 12px; background: #f5f8ff; padding: .9rem 1rem; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-upload-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .6rem; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-upload-title { margin: 0; font-size: .82rem; font-weight: 600; color: #173451; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-hint { font-size: .78rem; color: #5b6b82; word-break: break-all; }
+  #masterEditModal.agency-modal.store-modal .brand-file-name { font-size: .8rem; color: #718096; }
+  #masterEditModal.agency-modal.store-modal .brand-file-picker { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-upload-card .btn { height: 36px; border-radius: 9px; font-size: .82rem; font-weight: 600; padding: 0 .9rem; background: #fff; border: 1px solid #d3dcea; color: #3b4a5e; }
+  #masterEditModal.agency-modal.store-modal .brand-logo-upload-card .btn-outline-danger { color: #dc2626; border-color: #f3c6c6; }
+  #masterEditModal.agency-modal.merchant-modal .modal-dialog { max-width: min(720px, calc(100vw - 40px)); }
+  #masterEditModal.agency-modal.merchant-modal .modal-content { height: min(700px, calc(100vh - 2rem)); }
+  #masterEditModal.agency-modal.merchant-modal .client-detail-tabs { grid-template-columns: repeat(4, 1fr); }
+  #masterEditModal.agency-modal.merchant-modal .client-tab-panel { min-height: 390px; }
+  @media (max-width: 575.98px) {
+    #masterEditModal.agency-modal .modal-header, #masterEditModal.agency-modal .modal-body, #masterEditModal.agency-modal .modal-footer { padding-left: 1.1rem; padding-right: 1.1rem; }
+  }
 </style>
 
 <div id="masterRoleView" class="row g-3">
   <div id="masterSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
   <div id="deviceSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  <div id="storeToolsArea" class="store-tools d-none"></div>
   <div id="masterListCol" class="col-12 col-xl-3">
     <div class="card-modern role-panel-left h-100">
-      <div class="d-flex justify-content-between align-items-start mb-3">
+      <div id="masterListHead" class="d-flex justify-content-between align-items-start mb-3">
         <h6 id="masterListTitle" class="role-section-title">{{ active_module | replace('-', ' ') | title }} List</h6>
         <button id="btnMasterRefresh" class="btn btn-sm btn-outline-secondary role-action-btn">Refresh</button>
       </div>
 
-      <div class="mb-3">
+      <div id="masterSearchWrap" class="mb-3">
         <input id="masterSearch" class="form-control" type="search" placeholder="Search..." autocomplete="off">
+      </div>
+
+      <div id="storeFilterBar" class="store-filter-bar d-none">
+        <div class="filter-combo" id="storeAgencyCombo">
+          <input type="text" class="form-control master-list-filter" placeholder="All Agencies" autocomplete="off" aria-label="Filter by Agency" role="combobox" aria-expanded="false">
+          <ul class="filter-combo-menu d-none" role="listbox"></ul>
+        </div>
+        <div class="filter-combo" id="storeMerchantCombo">
+          <input type="text" class="form-control master-list-filter" placeholder="All Merchants" autocomplete="off" aria-label="Filter by Merchant" role="combobox" aria-expanded="false">
+          <ul class="filter-combo-menu d-none" role="listbox"></ul>
+        </div>
+        <select id="storeSortSelect" class="form-select master-list-filter" aria-label="Sort stores">
+          <option value="merchant_asc">Merchant Name (A–Z)</option>
+          <option value="merchant_desc">Merchant Name (Z–A)</option>
+          <option value="store_asc">Store Name (A–Z)</option>
+          <option value="store_desc">Store Name (Z–A)</option>
+          <option value="agency_asc">Agency (A–Z)</option>
+          <option value="agency_desc">Agency (Z–A)</option>
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+        </select>
       </div>
 
       <div id="masterListToolbar" class="master-list-toolbar d-none">
@@ -2440,7 +2667,7 @@
         </div>
       </div>
 
-      <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+      <div id="masterListScroll" class="table-responsive" style="max-height: 520px; overflow-y: auto;">
         <table class="table table-hover align-middle mb-0" id="masterListTable">
           <thead>
             <tr id="masterListHeader"></tr>
@@ -2450,7 +2677,26 @@
           </tbody>
         </table>
       </div>
+      <div id="storeListPager" class="store-list-pager d-none">
+        <span id="storePagerInfo" class="store-pager-info"></span>
+        <div class="store-pager-controls">
+          <select id="storePageSize" class="form-select master-list-filter" aria-label="Rows per page">
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+          </select>
+          <button id="storePagerPrev" type="button" class="btn btn-sm btn-outline-secondary role-action-btn">Prev</button>
+          <span id="storePagerPage" class="store-pager-page"></span>
+          <button id="storePagerNext" type="button" class="btn btn-sm btn-outline-secondary role-action-btn">Next</button>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <div id="storeSplitter" class="store-splitter d-none" role="separator" aria-orientation="vertical" aria-label="Resize store list" aria-valuemin="35" aria-valuemax="70" tabindex="0" title="Drag to resize"></div>
+
+  <div id="storeDevicesCol" class="store-devices-col d-none">
+    <div id="storeDevicesPanel" class="card-modern store-devices-card"></div>
   </div>
 
   <div id="masterEditorCol" class="col-12 col-xl-9">
@@ -2460,16 +2706,16 @@
           <h6 id="masterEditorTitle" class="role-section-title mb-1">{{ active_module | replace('-', ' ') | title }} Details</h6>
           <p id="masterEditorSubtitle" class="role-section-subtitle mb-0">Create or edit records for {{ active_module | replace('-', ' ') | title }}.</p>
           <div id="clientDetailHero" class="client-detail-hero" aria-live="polite">
-            <div id="clientDetailCode" class="client-detail-code">CLT_----</div>
+            <div id="clientDetailCode" class="client-detail-code">CLT----</div>
             <div class="client-detail-main">
-              <img id="clientDetailLogo" class="client-detail-logo" src="/static/images/platform/icon.png" alt="Client logo">
+              <img id="clientDetailLogo" class="client-detail-logo" src="{{ brand_icon_path or '' }}" alt="Client logo">
               <h5 id="clientDetailName" class="client-detail-name">New Client</h5>
               <span id="clientDetailStatus" class="client-header-status pending">pending</span>
             </div>
             <p id="clientDetailHint" class="client-detail-hint">Create Client</p>
           </div>
           <div id="storeDetailHero" class="store-detail-hero" aria-live="polite">
-            <div id="storeDetailCode" class="store-detail-code">STR_----</div>
+            <div id="storeDetailCode" class="store-detail-code">STR----</div>
             <div class="store-detail-main">
               <h5 id="storeDetailName" class="store-detail-name">New Store</h5>
               <span id="storeDetailStatus" class="store-header-status pending">pending</span>
@@ -2516,13 +2762,26 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="masterEditModalTitle">Edit Record</h5>
+        <span class="agency-hdr-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M8 7h3M8 11h3M8 15h3M3 21h18"/></svg></span>
+        <div class="agency-hdr-text">
+          <h5 class="modal-title" id="masterEditModalTitle">Edit Record</h5>
+          <div class="agency-hdr-sub" id="masterEditModalSub"></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        <div id="masterModalError" class="alert alert-danger py-2 px-3 d-none" role="alert"></div>
         <div id="masterFormModal" class="row g-3"></div>
+        <div class="agency-info-box" id="agencyInfoBox">
+          <span class="agency-info-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span>
+          <div>
+            <div class="agency-info-title">Agency Information</div>
+            <div class="agency-info-text" id="agencyInfoText"></div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer d-flex justify-content-between">
+        <button type="button" id="btnAgencyRegistrationEmail" class="btn btn-outline-primary d-none">Registration Email</button>
         <button type="button" id="btnModalCancel" class="btn btn-sm btn-outline-secondary role-action-btn" data-bs-dismiss="modal">Close</button>
         <div class="d-flex gap-2">
           <button type="button" id="btnModalSave" class="btn btn-sm btn-dark role-action-btn">Save</button>
@@ -2599,7 +2858,7 @@
                     <span class="text-muted small">PNG/JPG/WebP</span>
                   </div>
                   <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-                    <img id="clientStoreLogoPreview" class="brand-logo-preview" src="/static/images/platform/icon.png" alt="Store logo preview">
+                    <img id="clientStoreLogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="Store logo preview">
                     <div class="w-100">
                       <div class="brand-file-picker mb-2">
                         <input id="clientStoreLogoFile" type="file" class="d-none" accept="image/*">
@@ -2633,11 +2892,11 @@
                 <input id="field_client_store_phone" type="text" class="form-control" placeholder="Phone">
               </div>
               <div class="col-12 col-md-6">
-                <label class="form-label">Installed By Agent</label>
-                <select id="field_client_store_installed_by_agent_id" class="form-select">
-                  <option value="">Select agent</option>
-                  {% for agent in agents %}
-                  <option value="{{ agent.i_agent_id }}">{{ agent.c_agent_name }}</option>
+                <label class="form-label">Installed By Agency</label>
+                <select id="field_client_store_installed_by_agency_id" class="form-select">
+                  <option value="">Select agency</option>
+                  {% for agency in agencies %}
+                  <option value="{{ agency.i_agency_id }}">{{ agency.c_agency_name }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -2878,11 +3137,17 @@
     "clients": [
       {% for client in clients %}{"value": "{{ client.i_account_id }}", "label": "{{ client.c_account_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
-    "agents": [
-      {% for agent in agents %}{"value": "{{ agent.i_agent_id }}", "label": "{{ agent.c_agent_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
+    "agencies": [
+      {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": "{{ agency.c_agency_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
-    "agentTypes": [
-      {% for at in agent_types %}{"value": "{{ at.i_agent_type_id }}", "label": "{{ at.c_agent_type_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
+    "merchantAgencies": [
+      {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": {{ (agency.c_agency_code ~ ' - ' ~ (agency.c_company_name or agency.c_agency_name))|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
+    ],
+    "storeMerchants": [
+      {% for client in clients %}{"value": "{{ client.i_account_id }}", "label": {{ (client.c_client_code ~ ' - ' ~ client.c_account_name)|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
+    ],
+    "agencyTypes": [
+      {% for at in agency_types %}{"value": "{{ at.i_agency_type_id }}", "label": "{{ at.c_agency_type_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "stores": [
       {% for s in stores %}{"value": "{{ s.i_store_id }}", "label": "{{ s.c_store_name }}", "account_id": {{ s.i_account_id if s.i_account_id is not none else 'null' }}}{% if not loop.last %},{% endif %}{% endfor %}
@@ -2902,8 +3167,9 @@
   }
 </script>
 
+<script src="/static/js/store_devices_panel.js?v=5"></script>
 <script>
-  const activeModuleRaw = "{{ active_module }}";
+  const activeModuleRaw =  "{{ active_module }}";
   const activeModule = activeModuleRaw === 'client' ? 'account' : activeModuleRaw;
   const apiBase = "/platform";
 
@@ -2951,6 +3217,7 @@
   const btnListDelete = document.getElementById('btnListDelete');
   const btnListDownload = document.getElementById('btnListDownload');
   const btnModalSave = document.getElementById('btnModalSave');
+  const btnModalCancel = document.getElementById('btnModalCancel');
   const btnModalDelete = document.getElementById('btnModalDelete');
   const masterEditModalElement = document.getElementById('masterEditModal');
   const masterEditModalTitle = document.getElementById('masterEditModalTitle');
@@ -2975,8 +3242,8 @@
   const masterBusinessTypeOptions = masterSeedData.businessTypes || [];
   const masterClientOptions = masterSeedData.clients || [];
   const masterAccountOptions = masterSeedData.accounts || masterClientOptions;  // new name, fallback to legacy
-  const masterAgentOptions = masterSeedData.agents || [];
-  const masterAgentTypeOptions = masterSeedData.agentTypes || [];
+  const masterAgencyOptions = masterSeedData.agencies || [];
+  const masterAgencyTypeOptions = masterSeedData.agencyTypes || [];
   const masterStoreOptions = masterSeedData.stores || [];
   const masterStoreLookup = {};
   masterStoreOptions.forEach((s) => { masterStoreLookup[String(s.value)] = s; });
@@ -3003,30 +3270,34 @@
     },
     'business-type': {
       endpoint: 'business-type',
-      headers: ['ID', 'Name', 'Description', 'Status'],
+      headers: ['ID', 'Name', 'Code', 'Status'],
       fields: [
-        { name: 'name', label: 'Name', type: 'text' },
-        { name: 'code', label: 'Code', type: 'text' },
-        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
+        { type: 'section', label: 'Business Type Information', colClass: 'col-12' },
+        { name: 'id', label: 'Type ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'col-12 col-md-6' },
+        { name: 'name', label: 'Business Type Name', type: 'text', required: true, icon: 'tag', placeholder: 'e.g. Restaurant', colClass: 'col-12 col-md-6' },
+        { name: 'code', label: 'Business Type Code', type: 'text', required: true, icon: 'hash', placeholder: 'e.g. RESTAURANT', colClass: 'col-12 col-md-6' },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
       ],
     },
-    'agent-type': {
-      endpoint: 'agent-type',
+    'agency-type': {
+      endpoint: 'agency-type',
       headers: ['ID', 'Type Code', 'Type Name', 'Status'],
+      statusIndex: 3,
       fields: [
-        { name: 'agent_type_code', label: 'Agent Type Code', type: 'text' },
-        { name: 'agent_type_name', label: 'Agent Type Name', type: 'text' },
-        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
+        { type: 'section', label: 'Agency Type Details', colClass: 'col-12' },
+        { name: 'agency_type_code', label: 'Agency Type Code', type: 'text', required: true, icon: 'hash', placeholder: 'e.g. DEALER', colClass: 'col-12 col-md-6' },
+        { name: 'agency_type_name', label: 'Agency Type Name', type: 'text', required: true, icon: 'tag', placeholder: 'e.g. Dealer', colClass: 'col-12 col-md-6' },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
       ],
     },
     account: {
       endpoint: 'client',
-      headers: ['ID', 'code', 'Account Name', 'Primary Agent', 'Status'],
+      headers: ['ID', 'code', 'Account Name', 'Primary Agency', 'Status'],
       statusIndex: 4,
       fields: [
-        { name: 'c_account_code', label: 'Account Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save (CLT_11001)' },
+        { name: 'c_account_code', label: 'Account Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save (CLT11001)' },
         { name: 'account_name', label: 'Account Name', type: 'text' },
-        { name: 'primary_agent_id', label: 'Primary Agent', type: 'select', options: [{ value: '', label: '' }, ...masterAgentOptions] },
+        { name: 'primary_agency_id', label: 'Primary Agency', type: 'select', options: [{ value: '', label: '' }, ...masterAgencyOptions] },
         { name: 'business_type', label: 'Business Type', type: 'select', options: ['', ...masterBusinessTypeOptions] },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
         { name: 'channel_type', label: 'Channel', type: 'select', options: ['', 'Direct', 'Reseller', 'Partner', 'Online', 'Franchise', 'Internal'] },
@@ -3043,7 +3314,7 @@
         { name: 'country', label: 'Country', type: 'text', placeholder: 'USA', colClass: 'col-12 col-md-6 col-lg-3' },
       ],
       tabs: [
-        { id: 'overview', label: 'Overview', summary: 'Core identity, classification, and lifecycle status.', fields: ['c_account_code', 'account_name', 'primary_agent_id', 'business_type', 'status', 'channel_type'] },
+        { id: 'overview', label: 'Overview', summary: 'Core identity, classification, and lifecycle status.', fields: ['c_account_code', 'account_name', 'primary_agency_id', 'business_type', 'status', 'channel_type'] },
         { id: 'contact', label: 'Contact', summary: 'Primary contact details for day-to-day communication.', fields: ['first_name', 'last_name', 'email', 'phone', 'memo'] },
         { id: 'address', label: 'Address', summary: 'Structured mailing address with US ZIP code support.', fields: ['zip', 'city', 'state', 'country', 'address_line1', 'address_line2'] },
         { id: 'stores', label: 'Stores', summary: 'Manage stores that belong to this account.', fields: [] },
@@ -3051,28 +3322,28 @@
     },
     // Legacy compatibility
     client: null,  // Will be mapped to 'account' at runtime
-    agent: {
-      endpoint: 'agent',
-      headers: ['Code', 'Agent Type', 'Company', 'Contact Name', 'Phone', 'Commission', 'Status'],
+    agency: {
+      endpoint: 'agency',
+      headers: ['Code', 'Agency Type', 'Company', 'Contact Name', 'Phone', 'Commission', 'Status'],
       statusIndex: 6,
       fields: [
-        { name: 'agent_code', label: 'Agent Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save' },
-        { name: 'agent_type_id', label: 'Agent Type', type: 'select', options: [{ value: '', label: '' }, ...masterAgentTypeOptions] },
-        { name: 'company_name', label: 'Company Name', type: 'text', colClass: 'col-12' },
-        { name: 'contact_name', label: 'Contact Name', type: 'text', colClass: 'col-12 col-md-6' },
-        { name: 'phone', label: 'Phone', type: 'text', colClass: 'col-12 col-md-6' },
-        { name: 'email', label: 'Email', type: 'email', colClass: 'col-12 col-md-6' },
-        { name: 'commission_rate', label: 'Commission Rate', type: 'number', colClass: 'col-12 col-md-6' },
-        { type: 'section', label: 'Address', colClass: 'col-12' },
-        { name: 'zip', label: 'Zip Code', type: 'text', placeholder: '12345 or 12345-6789', pattern: '^\\d{5}(-\\d{4})?$', title: 'Use US ZIP format: 12345 or 12345-6789', colClass: 'col-12 col-md-6 col-lg-3' },
-        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
-        { name: 'state', label: 'State', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
-        { name: 'country', label: 'Country', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
-        { name: 'address_line1', label: 'Address Line 1', type: 'text', colClass: 'col-12' },
-        { name: 'address_line2', label: 'Address Line 2', type: 'text', colClass: 'col-12' },
-        { name: 'memo', label: 'Memo', type: 'textarea', rows: 6, colClass: 'col-12' },
-        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
-        { name: 'created_at', label: 'Created At', type: 'text', readonly: true, colClass: 'col-12' },
+        { type: 'section', label: 'Agency Information', colClass: 'col-12' },
+        { name: 'agency_type_id', label: 'Agency Type', type: 'select', required: true, icon: 'tag', colClass: 'col-12 col-md-6', options: [{ value: '', label: 'Select Agency Type' }, ...masterAgencyTypeOptions] },
+        { name: 'company_name', label: 'Company Name', type: 'text', required: true, icon: 'building', placeholder: 'Enter company name', colClass: 'col-12 col-md-6' },
+        { name: 'agency_code', label: 'Agency Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Generated automatically', help: 'Generated automatically when the agency is created.', colClass: 'col-12 col-md-6' },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, help: 'Save new Agencies as Inactive, add a Primary Contact, then save as Active to create the Agency Admin.', colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+        { name: 'commission_rate', label: 'Commission Rate (%)', type: 'number', icon: 'percent', placeholder: '0 - 100', colClass: 'col-12 col-md-6' },
+        { type: 'section', label: 'Primary Contact', colClass: 'col-12' },
+        { type: 'section', label: 'Business Address', colClass: 'col-12' },
+        { name: 'zip', label: 'ZIP Code', type: 'text', icon: 'pin', placeholder: '12345 or 12345-6789', colClass: 'col-12 col-md-6' },
+        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-6' },
+        { name: 'state', label: 'State', type: 'text', placeholder: 'GA', colClass: 'col-12 col-md-6' },
+        { name: 'address_line1', label: 'Address Line 1', type: 'text', placeholder: 'Street address', colClass: 'col-12' },
+        { name: 'address_line2', label: 'Address Line 2', type: 'text', placeholder: 'Suite, unit, building (optional)', colClass: 'col-12' },
+        { name: 'country', label: 'Country', type: 'text', placeholder: 'United States', default: 'United States', colClass: 'col-12 col-md-6' },
+        { type: 'section', label: 'Additional Information', colClass: 'col-12' },
+        { name: 'memo', label: 'Memo', type: 'textarea', rows: 4, placeholder: 'Internal notes (optional)', colClass: 'col-12' },
+        { name: 'created_at', label: 'Created At', type: 'text', readonly: true, colClass: 'col-12 col-md-6 agency-created-field' },
       ],
     },
     license: {
@@ -3085,14 +3356,14 @@
         { name: 'license_type', label: 'License Type', type: 'select', options: ['', 'monthly', 'yearly', 'trial', 'enterprise'] },
         { name: 'store_id', label: 'Store', type: 'select', options: [{ value: '', label: '' }, ...masterStoreOptions] },
         { name: 'account_id', label: 'Account', type: 'select', options: [{ value: '', label: '' }, ...masterAccountOptions] },
-        { name: 'agent_id', label: 'Agent', type: 'select', options: [{ value: '', label: '' }, ...masterAgentOptions] },
+        { name: 'agency_id', label: 'Agency', type: 'select', options: [{ value: '', label: '' }, ...masterAgencyOptions] },
         { name: 'max_devices', label: 'Max Devices', type: 'number' },
         { name: 'max_users', label: 'Max Users', type: 'number' },
         { name: 'start_date', label: 'Start Date', type: 'date' },
         { name: 'end_date', label: 'End Date', type: 'date' },
-        { name: 'monthly_fee', label: 'Monthly Fee', type: 'number' },
-        { name: 'agent_commission', label: 'Agent Commission', type: 'number' },
-        { name: 'platform_fee', label: 'Platform Fee', type: 'number' },
+        { name: 'monthly_fee', label: 'Monthly Fee', type: 'money' },
+        { name: 'agency_commission', label: 'Agency Commission', type: 'money' },
+        { name: 'platform_fee', label: 'Platform Fee', type: 'money' },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive', 'suspended', 'trial', 'expired'] },
       ],
     },
@@ -3104,7 +3375,7 @@
         { name: 'account_id', label: 'Account', type: 'select', options: [{ value: '', label: '' }, ...masterAccountOptions], colClass: 'col-12 col-md-6' },
         { name: 'store_id', label: 'Store', type: 'select', options: [{ value: '', label: '' }, ...masterStoreOptions], colClass: 'col-12 col-md-6' },
         { name: 'plan_id', label: 'Pricing Plan', type: 'select', options: [{ value: '', label: '' }, ...masterPricingPlanOptions], colClass: 'col-12 col-md-6' },
-        { name: 'monthly_fee', label: 'Subscription Fee Snapshot', type: 'text', readonly: true, colClass: 'col-12 col-md-6' },
+        { name: 'monthly_fee', label: 'Subscription Fee Snapshot', type: 'money', readonly: true, colClass: 'col-12 col-md-6' },
         { name: 'contract_id', label: 'Connected Contract ID', type: 'text', readonly: true, colClass: 'col-12 col-md-6' },
         { name: 'contract_status', label: 'Connected Contract Status', type: 'text', readonly: true, colClass: 'col-12 col-md-6' },
         { name: 'start_date', label: 'Start Date', type: 'date', colClass: 'col-12 col-md-6' },
@@ -3131,14 +3402,14 @@
         { name: 'contract_start_date', label: 'Contract Start Date', type: 'date', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'contract_end_date', label: 'Contract End Date', type: 'date', colClass: 'col-12 col-md-3' },
         { name: 'contract_term_month', label: 'Term (Month)', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'setup_fee', label: 'Setup Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'monthly_base_fee', label: 'Monthly Base Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'monthly_device_fee', label: 'Monthly Device Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'monthly_user_fee', label: 'Monthly User Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'monthly_total_fee', label: 'Monthly Total Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'setup_fee', label: 'Setup Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'monthly_base_fee', label: 'Monthly Base Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'monthly_device_fee', label: 'Monthly Device Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'monthly_user_fee', label: 'Monthly User Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'monthly_total_fee', label: 'Monthly Total Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'tax_rate', label: 'Tax Rate (%)', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'tax_amount', label: 'Tax Amount', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'total_monthly_fee', label: 'Total Monthly Fee', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'tax_amount', label: 'Tax Amount', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'total_monthly_fee', label: 'Total Monthly Fee', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'terminated', 'expired'], colClass: 'col-12 col-md-3' },
         { name: 'contract_pdf_path', label: 'Contract PDF Path', type: 'text', readonly: true, colClass: 'col-12' },
         { name: 'created_at', label: 'Created At', type: 'text', readonly: true, colClass: 'col-12 col-md-6' },
@@ -3159,13 +3430,13 @@
         { name: 'included_mobile_order_count', label: 'Included Mobile Order Count', type: 'number', min: '0', colClass: 'col-12 col-md-3' },
         { name: 'included_user_count', label: 'Included User Count', type: 'number', min: '0', colClass: 'col-12 col-md-3' },
         { type: 'section', label: 'Fee Settings', colClass: 'col-12' },
-        { name: 'store_base_fee', label: 'Store Base Fee (Monthly)', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'pos_fee', label: 'POS Fee (Over Included)', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'kiosk_fee', label: 'Kiosk Fee (Over Included)', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'mobile_order_fee', label: 'Mobile Order Fee (Over Included)', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'extra_user_fee', label: 'Extra User Fee', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'setup_fee', label: 'Setup Fee', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
-        { name: 'extra_device_fee', label: 'Extra Device Fee (Other Devices)', type: 'number', step: '0.01', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'store_base_fee', label: 'Store Base Fee (Monthly)', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'pos_fee', label: 'POS Fee (Over Included)', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'kiosk_fee', label: 'Kiosk Fee (Over Included)', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'mobile_order_fee', label: 'Mobile Order Fee (Over Included)', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'extra_user_fee', label: 'Extra User Fee', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'setup_fee', label: 'Setup Fee', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
+        { name: 'extra_device_fee', label: 'Extra Device Fee (Other Devices)', type: 'money', min: '0', colClass: 'col-12 col-md-4' },
         { name: 'transaction_fee_rate', label: 'Transaction Fee Rate (%)', type: 'number', step: '0.0001', min: '0', colClass: 'col-12 col-md-4' },
         { name: 'contract_term_month', label: 'Contract Term Month', type: 'number', min: '1', colClass: 'col-12 col-md-4' },
         { name: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', colClass: 'col-12 col-md-6' },
@@ -3200,48 +3471,99 @@
         { name: 'store_id', label: 'Store ID', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'invoice_date', label: 'Invoice Date', type: 'date', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'due_date', label: 'Due Date', type: 'date', colClass: 'col-12 col-md-3' },
-        { name: 'subtotal', label: 'Subtotal', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'tax', label: 'Tax', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
-        { name: 'total', label: 'Total', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'subtotal', label: 'Subtotal', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'tax', label: 'Tax', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
+        { name: 'total', label: 'Total', type: 'money', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'currency', label: 'Currency', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'line_count', label: 'Line Count', type: 'text', readonly: true, colClass: 'col-12 col-md-3' },
         { name: 'status', label: 'Status', type: 'select', options: ['issued', 'paid', 'void'], colClass: 'col-12 col-md-3' },
         { name: 'memo', label: 'Memo', type: 'textarea', rows: 3, colClass: 'col-12' },
       ],
     },
-    store: {
-      endpoint: 'store',
-      headers: ['ID', 'Store Code', 'Name', 'Status'],
+    merchant: {
+      endpoint: 'merchant',
+      headers: ['Merchant ID', 'Merchant Code', 'Merchant Name', 'Primary Agency', 'Business Type', 'Status', 'Created Date'],
+      statusIndex: 5,
       fields: [
-        { name: 'store_code', label: 'Store Code', type: 'text', readonly: true, placeholder: 'Auto-generated on save' },
-        { name: 'store_name', label: 'Store Name', type: 'text' },
-        { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
-        { name: 'business_type', label: 'Business Type', type: 'select', options: ['', ...masterBusinessTypeOptions] },
-        { name: 'operation_type', label: 'Operation Type', type: 'select', options: ['', 'Single Store', 'Branch', 'Franchise', 'HQ', 'Warehouse', 'Online Only', 'Other'] },
-        { name: 'contact_name', label: 'Contact Name', type: 'text', colClass: 'col-12' },
-        { name: 'email', label: 'Contact Email', type: 'email', colClass: 'col-12 col-md-6' },
-        { name: 'phone', label: 'Contact Phone', type: 'text', colClass: 'col-12 col-md-6' },
-        { name: 'zip', label: 'ZIP Code', type: 'text', colClass: 'col-12 col-md-6 col-lg-3' },
-        { name: 'address_line1', label: 'Address Line 1', type: 'text', colClass: 'col-12' },
-        { name: 'address_line2', label: 'Address Line 2', type: 'text', colClass: 'col-12' },
-        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-4' },
-        { name: 'state', label: 'State', type: 'text', colClass: 'col-12 col-md-4' },
-        { name: 'country', label: 'Country', type: 'text', colClass: 'col-12 col-md-4' },
-        { name: 'default_tax_rate', label: 'Sales Tax Rate (%)', type: 'text', placeholder: '0.0000', colClass: 'col-12 col-md-4' },
-        { name: 'timezone', label: 'Time Zone', type: 'text', readonly: true, placeholder: 'America/New_York', colClass: 'col-12 col-md-4' },
+        { name: 'id', label: 'Merchant ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'col-12 col-md-6' },
+        { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
+        { name: 'merchant_name', label: 'Merchant Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter merchant name', colClass: 'col-12 col-md-6' },
+        { name: 'primary_agency_id', label: 'Primary Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
+        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions.map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
+        { name: 'website', label: 'Website', type: 'text', icon: 'globe', placeholder: 'e.g. abcmarket.com', colClass: 'col-12 col-md-6' },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+        { name: 'first_name', label: 'Contact First Name', type: 'text', icon: 'user', placeholder: 'Enter first name', colClass: 'col-12 col-md-6' },
+        { name: 'last_name', label: 'Contact Last Name', type: 'text', icon: 'user', placeholder: 'Enter last name', colClass: 'col-12 col-md-6' },
+        { name: 'email', label: 'Contact Email', type: 'email', icon: 'mail', placeholder: 'Enter contact email', colClass: 'col-12 col-md-6' },
+        { name: 'phone', label: 'Contact Phone', type: 'text', icon: 'phone', placeholder: 'Enter contact phone', colClass: 'col-12 col-md-6' },
+        { name: 'zip', label: 'ZIP Code', type: 'text', icon: 'pin', placeholder: '12345 or 12345-6789', colClass: 'col-12 col-md-6' },
+        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-6' },
+        { name: 'state', label: 'State', type: 'text', placeholder: 'GA', colClass: 'col-12 col-md-6' },
+        { name: 'address_line1', label: 'Address Line 1', type: 'text', placeholder: 'Street address', colClass: 'col-12' },
+        { name: 'address_line2', label: 'Address Line 2', type: 'text', placeholder: 'Suite, unit, building (optional)', colClass: 'col-12' },
+        { name: 'country', label: 'Country', type: 'text', placeholder: 'United States', default: 'United States', colClass: 'col-12 col-md-6' },
+        { name: 'timezone', label: 'Time Zone', type: 'text', placeholder: 'America/New_York', colClass: 'col-12 col-md-6' },
+        { name: 'notes', label: 'Notes', type: 'textarea', rows: 9, placeholder: 'Enter internal notes about this merchant...', help: 'These notes are for internal AWSUM Platform use.', colClass: 'col-12' },
+      ],
+      tabs: [
+        { id: 'overview', label: 'Overview', title: 'Merchant Information', summary: 'Core merchant identity, primary agency and classification.', fields: ['id', 'merchant_code', 'merchant_name', 'primary_agency_id', 'business_type', 'status', 'website'] },
+        { id: 'contact', label: 'Contact', title: 'Primary Contact', summary: 'Merchant contact person and communication details.', fields: [] },
+        { id: 'address', label: 'Address', title: 'Business Address', summary: 'Merchant business address. Enter a US ZIP Code to fill City and State.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone'] },
+                { id: 'notes', label: 'Notes', title: 'Merchant Notes', summary: 'Internal notes and additional information for this merchant.', fields: ['notes'] },
+              ],
+            },
+            store: {
+      endpoint: 'store',
+      headers: ['Agency', 'Merchant Name', 'Store Name', 'Business Type', 'Status', 'Registered At'],
+      statusIndex: 4,
+      fields: [
+        { name: 'id', label: 'Store ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'col-12 col-md-6' },
+        { name: 'store_code', label: 'Store Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
+        { name: 'store_name', label: 'Store Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter store name', colClass: 'col-12 col-md-6' },
+        { name: 'client_id', label: 'Merchant', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Merchant' }, ...(masterSeedData.storeMerchants || [])], colClass: 'col-12 col-md-6' },
+        { name: 'installed_by_agency_id', label: 'Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
+        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions.map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
+        { name: 'operation_type', label: 'Operation Type', type: 'select', icon: 'building', options: [{ value: '', label: 'Select Operation Type' }, ...['Single Store', 'Branch', 'Franchise', 'HQ', 'Warehouse', 'Online Only', 'Other'].map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+        { name: 'email', label: 'Contact Email', type: 'email', icon: 'mail', placeholder: 'Enter contact email', colClass: 'col-12 col-md-6' },
+        { name: 'phone', label: 'Contact Phone', type: 'text', icon: 'phone', placeholder: 'Enter contact phone', colClass: 'col-12 col-md-6' },
+        { name: 'zip', label: 'ZIP Code', type: 'text', icon: 'pin', placeholder: '12345 or 12345-6789', colClass: 'col-12 col-md-6' },
+        { name: 'city', label: 'City', type: 'text', colClass: 'col-12 col-md-6' },
+        { name: 'state', label: 'State', type: 'text', placeholder: 'GA', colClass: 'col-12 col-md-6' },
+        { name: 'address_line1', label: 'Address Line 1', type: 'text', placeholder: 'Street address', colClass: 'col-12' },
+        { name: 'address_line2', label: 'Address Line 2', type: 'text', placeholder: 'Suite, unit, building (optional)', colClass: 'col-12' },
+        { name: 'country', label: 'Country', type: 'text', placeholder: 'United States', default: 'United States', colClass: 'col-12 col-md-6' },
+        { name: 'default_tax_rate', label: 'Sales Tax Rate (%)', type: 'text', placeholder: '0.0000', colClass: 'col-12 col-md-6' },
+        { name: 'timezone', label: 'Time Zone', type: 'text', placeholder: 'America/New_York', colClass: 'col-12 col-md-6' },
         { name: 'tax_source', label: 'Tax Source', type: 'text', readonly: true, placeholder: 'auto', colClass: 'col-12 col-md-4' },
         { name: 'receipt_store_name', label: 'Receipt Store Name', type: 'text', colClass: 'col-12' },
         { name: 'receipt_phone', label: 'Receipt Phone', type: 'text', colClass: 'col-12 col-md-6' },
         { name: 'receipt_email', label: 'Receipt Email', type: 'email', colClass: 'col-12 col-md-6' },
         { name: 'receipt_website_url', label: 'Receipt Website URL', type: 'text', colClass: 'col-12' },
         { name: 'receipt_message', label: 'Receipt Message', type: 'textarea', rows: 3, colClass: 'col-12' },
+        { name: 'notes', label: 'Notes', type: 'textarea', rows: 9, placeholder: 'Enter internal notes about this store...', help: 'These notes are for internal AWSUM Platform use.', colClass: 'col-12' },
+        { name: 'store_license_key', label: 'Store License Key', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
+        { name: 'store_license_status', label: 'License Status', type: 'select', icon: 'check', default: 'ACTIVE', options: [{ value: 'ACTIVE', label: 'Active' }, { value: 'SUSPENDED', label: 'Suspended' }, { value: 'EXPIRED', label: 'Expired' }, { value: 'CANCELLED', label: 'Cancelled' }], colClass: 'col-12 col-md-6' },
+        { name: 'store_license_start_date', label: 'Start Date', type: 'date', colClass: 'col-12 col-md-6' },
+        { name: 'license_expire_date', label: 'End Date', type: 'date', colClass: 'col-12 col-md-6' },
+        { name: 'license_count', label: 'Device License Quantity', type: 'number', min: '0', step: '1', default: '0', placeholder: '0', help: 'Generic Device Licenses. Device role (Store Server / POS / Tablet / Kiosk) is set after activation.', colClass: 'col-12 col-md-6' },
+        { name: 'opt_customer', label: 'Customer Management', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'customer_scope', label: 'Customer Scope', type: 'select', options: [{ value: '', label: '-' }, { value: 'STORE', label: 'Store' }, { value: 'MERCHANT', label: 'Merchant' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_loyalty', label: 'Loyalty / Points', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'loyalty_scope', label: 'Loyalty Scope', type: 'select', options: [{ value: '', label: '-' }, { value: 'STORE', label: 'Store' }, { value: 'MERCHANT', label: 'Merchant' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_time_attendance', label: 'Time & Attendance', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_inventory', label: 'Inventory Management', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_accounting', label: 'Accounting', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
       ],
       tabs: [
-        { id: 'basic', label: 'Overview', summary: 'Core store identity and operating profile.', fields: ['store_code', 'store_name', 'status', 'business_type', 'operation_type'] },
-        { id: 'contact', label: 'Contact', summary: 'Store contact person and communication details.', fields: ['contact_name', 'email', 'phone'] },
-        { id: 'address', label: 'Address', summary: 'Store location details. Auto-filled from address. You can adjust if needed.', fields: ['zip', 'address_line1', 'address_line2', 'city', 'state', 'country', 'default_tax_rate', 'timezone'] },
-        { id: 'receipt', label: 'Receipt Info', summary: 'Receipt header and footer information for printed output.', fields: ['receipt_store_name', 'receipt_phone', 'receipt_email', 'receipt_website_url', 'receipt_message'] },
-      ],
+        { id: 'basic', label: 'Overview', title: 'Store Information', summary: 'Core store identity and operating profile.', fields: ['id', 'store_code', 'store_name', 'client_id', 'installed_by_agency_id', 'business_type', 'operation_type', 'status'] },
+        { id: 'contact', label: 'Contact', title: 'Primary Contact', summary: 'Store contact person and communication details.', fields: [] },
+        { id: 'address', label: 'Address', title: 'Store Address', summary: 'Store location details. Enter a US ZIP Code to fill City and State. You can adjust if needed.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone', 'default_tax_rate'] },
+        { id: 'receipt', label: 'Receipt Info', title: 'Receipt Information', summary: 'Receipt header and footer information for printed output.', fields: ['receipt_store_name', 'receipt_phone', 'receipt_email', 'receipt_website_url', 'receipt_message'] },
+        { id: 'license', label: 'License', title: 'Store License', summary: 'Store License and generic Device License Quantity (managed by Central).', fields: ['store_license_key', 'store_license_status', 'store_license_start_date', 'license_expire_date', 'license_count'] },
+        { id: 'options', label: 'Options', title: 'Store Options', summary: 'Optional store features. Scope applies only while the option is On.', fields: ['opt_customer', 'customer_scope', 'opt_loyalty', 'loyalty_scope', 'opt_time_attendance', 'opt_inventory', 'opt_accounting'] },
+                { id: 'notes', label: 'Notes', title: 'Store Notes', summary: 'Internal notes and additional information for this store.', fields: ['notes'] },
+              ],
     },
     user: {
       endpoint: 'user',
@@ -3299,7 +3621,7 @@
         { name: 'device_type_name', label: 'Device Type Name', type: 'text', placeholder: 'e.g., Counter POS', colClass: 'col-12 col-md-8' },
         { name: 'device_category_id', label: 'Device Category', type: 'select', options: [{ value: '', label: '' }, ...masterDeviceCategoryOptions], colClass: 'col-12 col-md-6' },
         { name: 'billable_yn', label: 'Billable', type: 'select', options: [{ value: 'yes', label: 'Yes (Billable)' }, { value: 'no', label: 'No (Non-billable)' }], colClass: 'col-12 col-md-6' },
-        { name: 'default_monthly_fee', label: 'Default Monthly Fee (USD)', type: 'number', min: '0', placeholder: '0.00', colClass: 'col-12 col-md-4' },
+        { name: 'default_monthly_fee', label: 'Default Monthly Fee (USD)', type: 'money', min: '0', placeholder: '0.00', colClass: 'col-12 col-md-4' },
         { name: 'description', label: 'Description', type: 'text', colClass: 'col-12' },
         { name: 'sort_order', label: 'Sort Order', type: 'number', min: '0', colClass: 'col-12 col-md-4' },
         { name: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'], colClass: 'col-12 col-md-4' },
@@ -3309,17 +3631,14 @@
 
   const config = masterConfig[activeModule] || masterConfig.role;
   const isListCentricModule = true;
-  const reportMeta = {
-    companyName: "{{ APP_NAME }}",
-    printedBy: "{{ user.c_first_name }} {{ user.c_last_name }}",
-  };
   const moduleLabels = {
     role: { list: 'Roles', singular: 'Role' },
     'business-type': { list: 'Business Types', singular: 'Business Type' },
-    'agent-type': { list: 'Agent Types', singular: 'Agent Type' },
+    'agency-type': { list: 'Agency Types', singular: 'Agency Type' },
     account: { list: 'Accounts', singular: 'Account' },
+    merchant: { list: 'Merchants', singular: 'Merchant' },
     client: { list: 'Clients', singular: 'Client' },
-    agent: { list: 'Agents', singular: 'Agent' },
+    agency: { list: 'Agencies', singular: 'Agency' },
     license: { list: 'Licenses', singular: 'License' },
     subscription: { list: 'Subscriptions', singular: 'Subscription' },
     contract: { list: 'Contracts', singular: 'Contract' },
@@ -3400,7 +3719,8 @@
     config.fields.forEach(field => {
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
-      snap[field.name] = String(input.value ?? "").trim();
+      snap[field.name] = field.type === 'money' && AwsumMoneyInput.validate(input)
+        ? AwsumMoneyInput.normalize(input.value) : String(input.value ?? "").trim();
     });
     return snap;
   }
@@ -3422,7 +3742,7 @@
       btnSaveRecord.disabled = false;
       if (btnModalSave) {
         btnModalSave.disabled = false;
-        btnModalSave.textContent = dirty ? 'Save' : 'Close';
+        if (!usesPremiumModal()) btnModalSave.textContent = dirty ? 'Save' : 'Close';
       }
     } else {
       btnSaveRecord.disabled = !dirty;
@@ -3445,6 +3765,68 @@
     return bootstrap.Modal.getOrCreateInstance(masterEditModalElement);
   }
 
+  const AGENCY_PLUS_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v6"/><path d="M8 7h3M8 11h3M8 15h3M3 21h9"/><path d="M18 14v6M15 17h6"/></svg>';
+  const AGENCY_CHECK_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  let agencyModalMode = 'create';
+
+  function showMasterModalError(message) {
+    const box = document.getElementById('masterModalError');
+    if (!box) { alert(message); return; }
+    box.textContent = message || '';
+    box.classList.toggle('d-none', !message);
+    if (message) box.scrollIntoView({ block: 'nearest' });
+  }
+
+  function usesPremiumModal() {
+    return activeModule === 'agency' || activeModule === 'agency-type' || activeModule === 'business-type' || activeModule === 'store' || activeModule === 'merchant';
+  }
+
+  function applyAgencyModalState(mode) {
+    if (!usesPremiumModal() || !masterEditModalElement) return;
+    agencyModalMode = mode;
+    const isCreate = mode === 'create';
+    const isBiz = activeModule === 'business-type';
+    const isStore = activeModule === 'store';
+    const isMerchant = activeModule === 'merchant';
+    const isType = activeModule === 'agency-type';
+    masterEditModalElement.classList.add('agency-modal');
+    masterEditModalElement.classList.toggle('agency-type-modal', isType || isBiz);
+    masterEditModalElement.classList.toggle('business-type-modal', isBiz);
+    masterEditModalElement.classList.toggle('store-modal', isStore || isMerchant);
+    masterEditModalElement.classList.toggle('merchant-modal', isMerchant);
+    masterEditModalElement.classList.toggle('is-create', isCreate);
+    const noun = isMerchant ? 'Merchant' : (isStore ? 'Store' : (isBiz ? 'Business Type' : (isType ? 'Agency Type' : 'Agency')));
+    const sub = document.getElementById('masterEditModalSub');
+    if (sub) {
+      if (isMerchant) sub.textContent = isCreate ? 'Create a new merchant for AWSUM Platform.' : 'Update merchant information and settings.';
+      else if (isStore) sub.textContent = isCreate ? 'Create a new store for AWSUM Platform.' : 'Update store information and settings.';
+      else if (isBiz) sub.textContent = isCreate ? 'Create a new business classification for AWSUM Platform.' : 'Update business classification information.';
+      else if (isType) sub.textContent = isCreate ? 'Create a new agency classification.' : 'Update agency type information and status.';
+      else sub.textContent = isCreate ? 'Create a new agency and configure its business information.' : 'Update agency information and business settings.';
+    }
+    const infoTitle = document.querySelector('#agencyInfoBox .agency-info-title');
+    if (infoTitle) infoTitle.textContent = isBiz ? 'Business Type Information' : (isType ? 'Agency Type Information' : 'Agency Information');
+    const info = document.getElementById('agencyInfoText');
+    if (info) {
+      if (isBiz) {
+        info.textContent = 'Business Types classify the type of business operated by a Merchant or Store. Examples: Restaurant, Liquor Store, Supermarket, Deli.';
+      } else if (isType) {
+        info.textContent = 'Agency types are used to classify agencies such as Dealer or Installer.'
+          + (isCreate ? ' The ID is assigned automatically.' : ` ID: ${selectedMasterId.value || '-'}. Use Status to deactivate a type instead of deleting it.`);
+      } else {
+        info.textContent = isCreate
+          ? 'The agency code will be generated automatically when this agency is created. Agency details can be updated later.'
+          : 'The agency code is fixed and cannot be changed. Use Status to deactivate an agency.';
+      }
+    }
+    const hdrIcon = document.querySelector('#masterEditModal .agency-hdr-icon svg');
+    if (hdrIcon) hdrIcon.innerHTML = isMerchant ? FIELD_ICONS.building : (isStore ? FIELD_ICONS.store : (isBiz ? FIELD_ICONS.briefcase : (isType ? FIELD_ICONS.tag : FIELD_ICONS.building)));
+    if (btnModalCancel) btnModalCancel.textContent = 'Cancel';
+    if (btnModalSave) btnModalSave.innerHTML = (isCreate ? AGENCY_PLUS_ICON : AGENCY_CHECK_ICON) + (isCreate ? `Create ${noun}` : 'Save Changes');
+    showMasterModalError('');
+    masterFormModal && masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  }
+
   function openMasterEditModal(mode = 'edit') {
     if (!isListCentricModule) return;
     const modal = getMasterEditModalInstance();
@@ -3453,6 +3835,11 @@
       masterEditModalTitle.textContent = mode === 'create'
         ? `Add ${activeLabel.singular}`
         : `Edit ${activeLabel.singular}`;
+    }
+    applyAgencyModalState(mode);
+    if (activeModule === 'merchant' || activeModule === 'store') {
+      const firstTab = masterFormModal && masterFormModal.querySelector('.client-tab-btn');
+      if (firstTab && !firstTab.classList.contains('active')) firstTab.click();
     }
     modal.show();
   }
@@ -3477,7 +3864,31 @@
     if (!masterListCol || !masterEditorCol) return;
     if (isListCentricModule) {
       masterListCol.classList.remove('col-xl-3');
-      masterListCol.classList.add('col-xl-12');
+      if (activeModule === 'store') {
+        masterListCol.classList.remove('col-xl-12');
+        const roleView = document.getElementById('masterRoleView');
+        if (roleView) roleView.classList.add('store-split');
+        const tools = document.getElementById('storeToolsArea');
+        if (tools && !tools.dataset.built) {
+          const statusSel = document.getElementById('masterStatusFilter');
+          const filterBar = document.getElementById('storeFilterBar');
+          const sortSel = document.getElementById('storeSortSelect');
+          if (statusSel && filterBar && sortSel) filterBar.insertBefore(statusSel, sortSel);
+          ['masterListHead', 'masterSearchWrap', 'storeFilterBar', 'masterListToolbar'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) tools.appendChild(el);
+          });
+          tools.dataset.built = '1';
+        }
+        if (tools) tools.classList.remove('d-none');
+        ['storeSplitter', 'storeDevicesCol'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove('d-none');
+        });
+        if (window.AwsumStoreDevices) window.AwsumStoreDevices.init();
+      } else {
+        masterListCol.classList.add('col-xl-12');
+      }
       masterEditorCol.classList.add('d-none');
       if (masterListToolbar) masterListToolbar.classList.remove('d-none');
       return;
@@ -3545,7 +3956,7 @@
         btnListDownload.classList.add('d-none');
       }
     }
-    if (btnModalSave) btnModalSave.textContent = 'Save';
+    if (btnModalSave && !usesPremiumModal()) btnModalSave.textContent = 'Save';
     if (btnModalDelete) btnModalDelete.textContent = config.deleteLabel || 'Delete';
     if (masterEditModalTitle) masterEditModalTitle.textContent = `Edit ${activeLabel.singular}`;
   }
@@ -3568,14 +3979,17 @@
       input.addEventListener(eventName, updateActionButtonsState);
     });
 
-    if (activeModule === 'account') {
+    if (activeModule === 'account' || activeModule === 'agency') {
       bindZipAutoFill('field_zip', 'field_city', 'field_state', 'field_country');
+    }
+    if (activeModule === 'merchant') {
+      bindZipAutoFill('field_zip', 'field_city', 'field_state', 'field_country', null, 'field_timezone');
     }
     if (activeModule === 'store') {
       bindZipAutoFill('field_zip', 'field_city', 'field_state', 'field_country', 'field_default_tax_rate', 'field_timezone', 'field_tax_source');
       bindTaxSourceManualOverride('field_default_tax_rate', 'field_tax_source');
     }
-    if (activeModule === 'agent-type') {
+    if (activeModule === 'agency-type') {
       bindAgentTypeCodeValidation();
     }
   }
@@ -3594,7 +4008,7 @@
 
     const currentId = String(selectedMasterId.value || '').trim();
     return (currentItems || []).some((item) => {
-      const rowCode = normalizeAgentTypeCode(item?.agent_type_code || item?.code || '');
+      const rowCode = normalizeAgentTypeCode(item?.agency_type_code || item?.code || '');
       const rowId = String(item?.id ?? item?.store_id ?? item?.i_store_id ?? '').trim();
       if (!rowCode) return false;
       if (currentId && rowId === currentId) return false;
@@ -3603,8 +4017,8 @@
   }
 
   function applyAgentTypeCodeValidation() {
-    if (activeModule !== 'agent-type') return true;
-    const codeInput = document.getElementById('field_agent_type_code');
+    if (activeModule !== 'agency-type') return true;
+    const codeInput = document.getElementById('field_agency_type_code');
     if (!codeInput) return true;
 
     const normalized = normalizeAgentTypeCode(codeInput.value);
@@ -3613,12 +4027,12 @@
     }
 
     if (!normalized) {
-      codeInput.setCustomValidity('Agent Type Code is required.');
+      codeInput.setCustomValidity('Agency Type Code is required.');
       return false;
     }
 
     if (isDuplicateAgentTypeCode(normalized)) {
-      codeInput.setCustomValidity('Agent Type Code already exists.');
+      codeInput.setCustomValidity('Agency Type Code already exists.');
       return false;
     }
 
@@ -3627,7 +4041,7 @@
   }
 
   function bindAgentTypeCodeValidation() {
-    const codeInput = document.getElementById('field_agent_type_code');
+    const codeInput = document.getElementById('field_agency_type_code');
     if (!codeInput || codeInput.dataset.boundAgentTypeValidation === '1') return;
     codeInput.dataset.boundAgentTypeValidation = '1';
 
@@ -3638,7 +4052,10 @@
 
     codeInput.addEventListener('blur', () => {
       const ok = applyAgentTypeCodeValidation();
-      if (!ok) codeInput.reportValidity();
+      if (!ok && normalizeAgentTypeCode(codeInput.value)) {
+        showMasterModalError('Agency Type Code already exists.');
+        codeInput.classList.add('is-invalid');
+      }
     });
   }
 
@@ -3678,7 +4095,7 @@
 
     const country = String(countryInput.value || '').trim().toUpperCase();
     const state = String(stateInput.value || '').trim().toUpperCase();
-    if (!state || (country && country !== 'USA' && country !== 'US')) return;
+    if (!state || (country && !isUsCountry(country))) return;
     if (String(taxSourceInput.value || '').toLowerCase() === 'manual') return;
 
     const defaultTax = STATE_DEFAULT_TAX_RATE[state];
@@ -3688,7 +4105,7 @@
     taxRateInput.dataset.autoUpdating = '1';
     taxRateInput.value = defaultTax;
     taxRateInput.dataset.autoUpdating = '0';
-    timezoneInput.value = timezone;
+    if (!timezoneInput.value) timezoneInput.value = timezone;
     taxSourceInput.value = 'auto';
     if (hintEl) {
       hintEl.textContent = 'Auto-filled from address. You can adjust if needed.';
@@ -3708,11 +4125,28 @@
     });
   }
 
+  // Common Address helpers shared by Agency / Merchant / Store (and the legacy Account forms).
+  const US_COUNTRY_NAME = 'United States';
+  function isUsCountry(value) {
+    return ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(String(value || '').trim().toUpperCase());
+  }
+
+  async function lookupZipCode(zip) {
+    const rawZip = String(zip || '').trim();
+    if (!/^\d{5}(-\d{4})?$/.test(rawZip)) return { found: false, reason: 'invalid' };
+    const res = await fetch(`/platform/zip-lookup/${encodeURIComponent(rawZip)}`, { credentials: 'same-origin' });
+    return res.ok ? res.json() : { found: false, reason: 'unavailable' };
+  }
+
   function bindZipAutoFill(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId) {
     const zipInput = document.getElementById(zipId);
     if (!zipInput || zipInput.dataset.zipAutofillBound === '1') return;
     zipInput.dataset.zipAutofillBound = '1';
       const handleZipLookup = () => autoFillLocationFromZip(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
+      zipInput.addEventListener('focus', () => {
+        zipInput.dataset.zipOnFocus = String(zipInput.value || '').trim();
+        zipInput.dataset.lastLookupZip = '';
+      });
       zipInput.addEventListener('blur', handleZipLookup);
       zipInput.addEventListener('change', handleZipLookup);
       zipInput.addEventListener('keydown', event => {
@@ -3745,36 +4179,54 @@
       if (!zipInput || !cityInput || !stateInput) return;
 
     const rawZip = String(zipInput.value || '').trim();
-    if (!rawZip) return;
+
+    let statusEl = zipInput.parentElement.querySelector('.zip-lookup-status');
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.className = 'zip-lookup-status small mt-1';
+      statusEl.style.minHeight = '0';
+      zipInput.insertAdjacentElement('afterend', statusEl);
+    }
+    const setStatus = (text, cls) => {
+      statusEl.textContent = text;
+      statusEl.className = `zip-lookup-status small mt-1 ${cls || ''}`;
+    };
+    setStatus('');
+    // An unchanged ZIP is skipped only when City/State are already filled (legacy records may have a ZIP without City/State).
+    const locationFilled = String(cityInput.value || '').trim() && String(stateInput.value || '').trim();
+    if (!rawZip || rawZip === zipInput.dataset.lastLookupZip || (rawZip === zipInput.dataset.zipOnFocus && locationFilled)) return;
 
     if (!/^\d{5}(-\d{4})?$/.test(rawZip)) {
-      alert('Invalid ZIP code. Use US format: 12345 or 12345-6789.');
+      setStatus('Enter a US ZIP code (12345 or 12345-6789), or fill the address manually.', 'text-muted');
       return;
     }
 
-    const lookupZip = rawZip.slice(0, 5);
+    zipInput.dataset.lastLookupZip = rawZip;
+    setStatus('Looking up...', 'text-muted');
 
     try {
-      const res = await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(lookupZip)}`);
-      if (!res.ok) {
-        alert('ZIP code not found. Please check and try again.');
+      const data = await lookupZipCode(rawZip);
+      if (String(zipInput.value || '').trim() !== rawZip) return;
+      if (!data.found) {
+        zipInput.dataset.lastLookupZip = '';
+        setStatus('ZIP code could not be found. Please enter the address manually.', 'text-warning');
         return;
       }
 
-      const data = await res.json();
-      const place = data?.places?.[0];
-      if (!place) {
-        alert('ZIP code lookup failed. Please enter City/State manually.');
-        return;
-      }
-
-      cityInput.value = place['place name'] || '';
-      stateInput.value = place['state abbreviation'] || '';
-      if (countryInput) countryInput.value = 'USA';
+      cityInput.value = data.city || '';
+      stateInput.value = String(data.state || '').toUpperCase();
+      if (countryInput) countryInput.value = data.country || US_COUNTRY_NAME;
       applyAddressDerivedDefaults(stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
+      const timezoneInput = timezoneId ? document.getElementById(timezoneId) : null;
+      if (timezoneInput) timezoneInput.value = data.timezone || '';
+      setStatus('');
+      [cityInput, stateInput, countryInput, timezoneInput].forEach(el => {
+        if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
       updateActionButtonsState();
     } catch (err) {
-      alert('Unable to fetch ZIP code information right now. Please try again.');
+      zipInput.dataset.lastLookupZip = '';
+      setStatus('ZIP code could not be found. Please enter the address manually.', 'text-warning');
     }
   }
 
@@ -3789,7 +4241,16 @@
   }
 
   function updateSectionTitles(mode) {
-    masterListTitle.textContent = activeLabel.list;
+    masterListTitle.textContent = activeModule === 'store' ? 'Stores' : activeLabel.list;
+    if (activeModule === 'agency-type') {
+      masterListTitle.insertAdjacentHTML('beforeend', '<div class="small text-muted fw-normal mt-1">Manage agency classifications</div>');
+    }
+    if (activeModule === 'merchant') {
+      masterListTitle.insertAdjacentHTML('beforeend', '<div class="small text-muted fw-normal mt-1">Manage AWSUM Platform merchant accounts</div>');
+    }
+    if (activeModule === 'business-type') {
+      masterListTitle.insertAdjacentHTML('beforeend', '<div class="small text-muted fw-normal mt-1">Manage business classifications</div>');
+    }
     masterEditorTitle.textContent = mode === 'create' ? `Create ${activeLabel.singular}` : `Edit ${activeLabel.singular}`;
     masterEditorSubtitle.textContent = mode === 'create'
       ? `Add a new ${activeLabel.singular.toLowerCase()} record.`
@@ -3828,11 +4289,10 @@
     const statusClass = statusValue === 'active' ? 'active' : (statusValue === 'inactive' ? 'inactive' : 'pending');
 
     if (clientDetailCode) {
-      clientDetailCode.textContent = item?.c_client_code || item?.client_code || 'CLT_----';
+      clientDetailCode.textContent = item?.c_client_code || item?.client_code || 'CLT----';
     }
     if (clientDetailLogo) {
-      const logoUrl = buildClientLogoUrl(item?.c_client_code || item?.client_code || '');
-      clientDetailLogo.src = `${logoUrl}?t=${Date.now()}`;
+      loadBrandLogo(clientDetailLogo, item?.c_client_code || item?.client_code || '');
     }
     if (clientDetailName) {
       clientDetailName.textContent = item?.client_name || 'New Client';
@@ -3853,7 +4313,7 @@
     const statusClass = statusValue === 'active' ? 'active' : (statusValue === 'inactive' ? 'inactive' : 'pending');
 
     if (storeDetailCode) {
-      storeDetailCode.textContent = item?.store_code || 'STR_----';
+      storeDetailCode.textContent = item?.store_code || 'STR----';
     }
     if (storeDetailName) {
       storeDetailName.textContent = item?.store_name || 'New Store';
@@ -3879,8 +4339,8 @@
     const metaByModule = {
       role: item?.name || 'Role',
       'business-type': item?.code || 'Business Type',
-      'agent-type': item?.agent_type_code || 'Agent Type',
-      agent: item?.company_name || 'Agent Partner',
+      'agency-type': item?.agency_type_code || 'Agency Type',
+      agency: item?.company_name || 'Agency Partner',
       license: item?.license_type || 'License',
       'payment-method': item?.payment_type || 'Payment Method',
       user: 'User Account',
@@ -3894,8 +4354,8 @@
     const codeByModule = {
       role: `ROLE_${pad(numericId)}`,
       'business-type': `BTYPE_${pad(numericId)}`,
-      'agent-type': item?.agent_type_code || `ATYPE_${pad(numericId)}`,
-      agent: item?.agent_code || `AGT_${pad(numericId)}`,
+      'agency-type': item?.agency_type_code || `ATYPE_${pad(numericId)}`,
+      agency: item?.agency_code || `AGT${pad(numericId)}`,
       license: item?.license_key || `LIC_${pad(numericId)}`,
       'payment-method': `PAY_${pad(numericId)}`,
       user: `USER_${pad(numericId)}`,
@@ -3905,8 +4365,8 @@
     const nameByModule = {
       role: item?.name || 'New Role',
       'business-type': item?.name || 'New Business Type',
-      'agent-type': item?.agent_type_name || 'New Agent Type',
-      agent: item?.contact_name || 'New Agent Contact',
+      'agency-type': item?.agency_type_name || 'New Agency Type',
+      agency: item?.contact_name || item?.company_name || 'New Agency',
       license: item?.plan_name || item?.license_key || 'New License',
       'payment-method': item?.client_name || 'New Payment Method',
       user: (`${item?.first_name || ''} ${item?.last_name || ''}`.trim() || item?.email || 'New User'),
@@ -3941,19 +4401,31 @@
     if (activeModule === 'business-type') {
       return [resolvedId, item.name || '', item.code || '', item.status || ''];
     }
-    if (activeModule === 'agent-type') {
-      return [resolvedId, item.agent_type_code || '', item.agent_type_name || '', item.status || ''];
+    if (activeModule === 'agency-type') {
+      return [resolvedId, item.agency_type_code || '', item.agency_type_name || '', item.status || ''];
+    }
+    if (activeModule === 'merchant') {
+      const idNum = Number.parseInt(String(resolvedId || '0'), 10);
+      return [
+        Number.isFinite(idNum) ? `#${String(idNum).padStart(3, '0')}` : '',
+        item.merchant_code || '',
+        item.merchant_name || '',
+        item.primary_agency_name || '',
+        item.business_type || '',
+        item.status || '',
+        item.created_date || '',
+      ];
     }
     if (activeModule === 'account') {
-      return [resolvedId, item.c_client_code || item.client_code || '', item.client_name || '', item.primary_agent_name || '', item.status || ''];
+      return [resolvedId, item.c_client_code || item.client_code || '', item.client_name || '', item.primary_agency_name || '', item.status || ''];
     }
-    if (activeModule === 'agent') {
+    if (activeModule === 'agency') {
       const commissionText = item.commission_rate === null || item.commission_rate === undefined || item.commission_rate === ''
         ? ''
         : `${item.commission_rate}%`;
       return [
-        item.agent_code || '',
-        item.agent_type_name || '',
+        item.agency_code || '',
+        item.agency_type_name || '',
         item.company_name || '',
         item.contact_name || '',
         item.phone || '',
@@ -3969,16 +4441,16 @@
         resolvedId,
         item.plan_code || '',
         item.plan_name || '',
-        item.store_base_fee ?? '',
+        AwsumMoneyInput.format(item.store_base_fee),
         item.included_pos_count ?? '',
-        item.pos_fee ?? '',
+        AwsumMoneyInput.format(item.pos_fee),
         item.included_kiosk_count ?? '',
-        item.kiosk_fee ?? '',
+        AwsumMoneyInput.format(item.kiosk_fee),
         item.included_mobile_order_count ?? '',
-        item.mobile_order_fee ?? '',
+        AwsumMoneyInput.format(item.mobile_order_fee),
         item.included_user_count ?? '',
-        item.extra_user_fee ?? '',
-        item.setup_fee ?? '',
+        AwsumMoneyInput.format(item.extra_user_fee),
+        AwsumMoneyInput.format(item.setup_fee),
         item.contract_term_month ?? '',
         item.transaction_fee_rate ?? '',
         item.currency || '',
@@ -3991,8 +4463,8 @@
         item.account_name || item.account_id || '',
         item.store_name || item.store_id || '',
         item.plan_name || item.plan_code || '',
-        item.monthly_fee != null ? `$${Number(item.monthly_fee).toFixed(2)}` : '',
-        item.contract_monthly_total_fee != null ? `$${Number(item.contract_monthly_total_fee).toFixed(2)}` : '-',
+        item.monthly_fee != null ? `$${AwsumMoneyInput.format(item.monthly_fee)}` : '',
+        item.contract_monthly_total_fee != null ? `$${AwsumMoneyInput.format(item.contract_monthly_total_fee)}` : '-',
         item.contract_status || '-',
         item.start_date || '',
         item.end_date || '',
@@ -4008,9 +4480,9 @@
         item.pricing_plan_id ?? '',
         item.contract_start_date || '',
         item.contract_end_date || '',
-        item.monthly_total_fee != null ? Number(item.monthly_total_fee).toFixed(2) : '',
-        item.tax_amount != null ? Number(item.tax_amount).toFixed(2) : '',
-        item.total_monthly_fee != null ? Number(item.total_monthly_fee).toFixed(2) : '',
+        AwsumMoneyInput.format(item.monthly_total_fee),
+        AwsumMoneyInput.format(item.tax_amount),
+        AwsumMoneyInput.format(item.total_monthly_fee),
         item.status || '',
       ];
     }
@@ -4026,16 +4498,24 @@
         item.store_id ?? '',
         item.invoice_date || '',
         item.due_date || '',
-        item.subtotal != null ? Number(item.subtotal).toFixed(2) : '',
-        item.tax != null ? Number(item.tax).toFixed(2) : '',
-        item.total != null ? Number(item.total).toFixed(2) : '',
+        AwsumMoneyInput.format(item.subtotal),
+        AwsumMoneyInput.format(item.tax),
+        AwsumMoneyInput.format(item.total),
         item.currency || '',
         item.status || '',
         item.line_count ?? '',
       ];
     }
     if (activeModule === 'store') {
-      return [resolvedId, item.store_code || '', item.store_name || '', item.status || ''];
+      const registeredAt = String(item.created_at || '').trim();
+      return [
+        item.installed_by_agency_name || '—',
+        item.client_name || '—',
+        item.store_name || '',
+        item.business_type || '—',
+        item.status || '',
+        registeredAt ? registeredAt.replace('T', ' ').slice(0, 16) : '—',
+      ];
     }
     if (activeModule === 'user') {
       const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.email || '';
@@ -4050,7 +4530,7 @@
     }
     if (activeModule === 'device-type') {
       const typeId = item.device_type_id ?? item.id ?? '';
-      return [typeId, item.category_name || item.category_code || '', item.device_type_code || '', item.device_type_name || '', item.billable_yn || '', item.default_monthly_fee != null ? Number(item.default_monthly_fee).toFixed(2) : '', item.sort_order ?? '', item.status || ''];
+      return [typeId, item.category_name || item.category_code || '', item.device_type_code || '', item.device_type_name || '', item.billable_yn || '', AwsumMoneyInput.format(item.default_monthly_fee), item.sort_order ?? '', item.status || ''];
     }
     return [resolvedId, name, description, item.status || ''];
   }
@@ -4058,7 +4538,7 @@
   function getReportRowValues(item) {
     const resolvedId = item.device_category_id ?? item.device_type_id ?? item.id ?? item.store_id ?? item.i_store_id ?? '';
     const name = item.name || item.contact_name || item.agent_name || item.client_name || item.store_name || item.email || item.user_email || `${item.first_name || ''} ${item.last_name || ''}`.trim() || '';
-    const description = item.description || item.license_key || item.payment_type || item.agent_code || item.code || item.role || item.business_type || item.operation_type || item.channel_type || '';
+    const description = item.description || item.license_key || item.payment_type || item.agency_code || item.code || item.role || item.business_type || item.operation_type || item.channel_type || '';
     return [resolvedId, name, description, item.status || ''];
   }
 
@@ -4067,8 +4547,9 @@
     const text = String(raw).trim();
     if (!text) return { type: 'empty', value: '' };
 
-    const asNumber = Number(text);
-    if (!Number.isNaN(asNumber) && /^-?\d+(\.\d+)?$/.test(text)) {
+    const numericText = text.replace(/^\$/, '').replace(/,/g, '');
+    const asNumber = Number(numericText);
+    if (!Number.isNaN(asNumber) && /^-?\d+(\.\d+)?$/.test(numericText)) {
       return { type: 'number', value: asNumber };
     }
 
@@ -4097,6 +4578,8 @@
   }
 
   function getSortedMasterItems(items) {
+    // Store list is sorted by the server (full result set), never by the current page.
+    if (activeModule === 'store') return [...(items || [])];
     const directionMultiplier = masterSortState.direction === 'asc' ? 1 : -1;
     const columnIndex = masterSortState.columnIndex;
     const firstHeader = String((config.headers || [])[0] || '').trim().toLowerCase();
@@ -4120,6 +4603,7 @@
   }
 
   function updateMasterSortIndicators() {
+    if (activeModule === 'store') return;
     const headers = masterListHeader.querySelectorAll('th');
     headers.forEach((th, idx) => {
       const indicator = th.querySelector('.sort-indicator');
@@ -4140,6 +4624,7 @@
   }
 
   function toggleMasterSort(columnIndex) {
+    if (activeModule === 'store') return;
     if (masterSortState.columnIndex === columnIndex) {
       masterSortState.direction = masterSortState.direction === 'asc' ? 'desc' : 'asc';
     } else {
@@ -4162,6 +4647,15 @@
   function renderListHeader() {
     masterListHeader.innerHTML = '';
     const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
+    if (activeModule === 'store') {
+      ['Merchant / Store', 'Agency', 'Business Type', 'Status'].forEach((label, i) => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        if (i === 3) th.classList.add('status-col', 'store-col-status');
+        masterListHeader.appendChild(th);
+      });
+      return;
+    }
     config.headers.forEach((col, idx) => {
       const th = document.createElement('th');
       th.classList.add('sortable-col');
@@ -4199,12 +4693,24 @@
     updateMasterSortIndicators();
   }
 
-  function buildQuery() {
+  const storeGrid = { page: 1, pageSize: 20, total: 0, totalPages: 1, sort: 'merchant_asc', agencyId: '', merchantId: '' };
+
+  function buildQuery(options = {}) {
     const params = new URLSearchParams();
     if (masterSearch.value.trim()) params.set('q', masterSearch.value.trim());
     if (masterStatusFilter && masterStatusFilter.value) params.set('status', masterStatusFilter.value);
     if (activeModule === 'device-type' && masterCategoryFilter && masterCategoryFilter.value) {
       params.set('category_id', masterCategoryFilter.value);
+    }
+    if (activeModule === 'store') {
+      params.set('sort', storeGrid.sort);
+      if (storeGrid.agencyId) params.set('agency_id', storeGrid.agencyId);
+      if (storeGrid.merchantId) params.set('client_id', storeGrid.merchantId);
+      if (!options.all) {
+        params.set('page', String(storeGrid.page));
+        params.set('page_size', String(storeGrid.pageSize));
+        if (options.locateId) params.set('locate_id', String(options.locateId));
+      }
     }
     return params.toString();
   }
@@ -4216,6 +4722,9 @@
     if (activeModule === 'device-category' || activeModule === 'device-type') {
       const ep = config.endpoint;
       return query ? `/platform/${ep}?${query}` : `/platform/${ep}`;
+    }
+    if (activeModule === 'agency') {
+      return query ? `${apiBase}/agencies?${query}` : `${apiBase}/agencies`;
     }
     const base = `${apiBase}/${config.endpoint}`;
     const collectionBase = config.endpoint.endsWith('s') ? base : `${base}s`;
@@ -4235,7 +4744,9 @@
   let lastSavedId = null;
 
   async function loadList(highlightId = null) {
-    const query = buildQuery();
+    const locateId = (typeof highlightId === 'string' || typeof highlightId === 'number') ? highlightId : null;
+    if (!locateId) highlightId = null;
+    const query = buildQuery({ locateId });
     const url = getCollectionUrl(query);
     try {
       const res = await fetch(url, {
@@ -4253,19 +4764,157 @@
         throw new Error('Session expired or invalid response. Please sign in again.');
       }
 
-      const items = await res.json();
+      const payload = await res.json();
+      let items = payload;
+      if (activeModule === 'store' && payload && !Array.isArray(payload)) {
+        items = payload.items || [];
+        storeGrid.page = payload.page;
+        storeGrid.pageSize = payload.page_size;
+        storeGrid.total = payload.total;
+        storeGrid.totalPages = payload.total_pages;
+        updateStorePager();
+      }
       renderList(items, highlightId);
     } catch (error) {
       console.error('Failed to load master list:', error);
-      masterListBody.innerHTML = `<tr><td class="text-center text-danger py-4" colspan="${config.headers.length}">Failed to load data. Refresh or sign in again.</td></tr>`;
+      masterListBody.innerHTML = `<tr><td class="text-center text-danger py-4" colspan="${activeModule === 'store' ? 4 : config.headers.length}">Failed to load data. Refresh or sign in again.</td></tr>`;
     }
+  }
+
+  function updateStorePager() {
+    const info = document.getElementById('storePagerInfo');
+    const pageLabel = document.getElementById('storePagerPage');
+    const prev = document.getElementById('storePagerPrev');
+    const next = document.getElementById('storePagerNext');
+    if (!info || !pageLabel || !prev || !next) return;
+    info.textContent = `${storeGrid.total} store${storeGrid.total === 1 ? '' : 's'}`;
+    pageLabel.textContent = `Page ${storeGrid.page} / ${storeGrid.totalPages}`;
+    prev.disabled = storeGrid.page <= 1;
+    next.disabled = storeGrid.page >= storeGrid.totalPages;
+  }
+
+  function reloadStoreFromFirstPage() {
+    storeGrid.page = 1;
+    loadList();
+  }
+
+  function setupStoreGridControls() {
+    if (activeModule !== 'store') return;
+    document.getElementById('storeFilterBar')?.classList.remove('d-none');
+    document.getElementById('storeListPager')?.classList.remove('d-none');
+    masterSearch.placeholder = 'Search Agency, Merchant or Store name/code...';
+
+    const sortSelect = document.getElementById('storeSortSelect');
+    sortSelect.value = storeGrid.sort;
+    sortSelect.addEventListener('change', () => {
+      storeGrid.sort = sortSelect.value;
+      reloadStoreFromFirstPage();
+    });
+
+    const pageSize = document.getElementById('storePageSize');
+    pageSize.value = String(storeGrid.pageSize);
+    pageSize.addEventListener('change', () => {
+      storeGrid.pageSize = Number(pageSize.value) || 20;
+      reloadStoreFromFirstPage();
+    });
+
+    document.getElementById('storePagerPrev').addEventListener('click', () => {
+      if (storeGrid.page <= 1) return;
+      storeGrid.page -= 1;
+      loadList();
+    });
+    document.getElementById('storePagerNext').addEventListener('click', () => {
+      if (storeGrid.page >= storeGrid.totalPages) return;
+      storeGrid.page += 1;
+      loadList();
+    });
+
+    createFilterCombo('storeAgencyCombo', 'All Agencies', masterSeedData.merchantAgencies || [], (value) => {
+      storeGrid.agencyId = value;
+      reloadStoreFromFirstPage();
+    });
+    createFilterCombo('storeMerchantCombo', 'All Merchants', masterSeedData.storeMerchants || [], (value) => {
+      storeGrid.merchantId = value;
+      reloadStoreFromFirstPage();
+    });
+  }
+
+  // Type-to-search select; options are { value, label } where label is "CODE - Name".
+  function createFilterCombo(containerId, allLabel, options, onChange) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const input = container.querySelector('input');
+    const menu = container.querySelector('.filter-combo-menu');
+    let selectedValue = '';
+    let selectedLabel = '';
+
+    const closeMenu = () => {
+      menu.classList.add('d-none');
+      input.setAttribute('aria-expanded', 'false');
+    };
+
+    const renderMenu = (term) => {
+      const needle = String(term || '').trim().toLowerCase();
+      const matches = options.filter((opt) => !needle || String(opt.label).toLowerCase().includes(needle));
+      menu.innerHTML = '';
+      const addItem = (value, label, extraClass = '') => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.textContent = label;
+        if (extraClass) li.className = extraClass;
+        if (String(value) === selectedValue && !extraClass) li.classList.add('is-selected');
+        if (!extraClass) {
+          // mousedown fires before the input blur that closes the menu
+          li.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            choose(String(value), value === '' ? '' : label);
+          });
+        }
+        menu.appendChild(li);
+      };
+      if (!needle) addItem('', allLabel);
+      matches.forEach((opt) => addItem(opt.value, opt.label));
+      if (needle && !matches.length) addItem('', 'No matches', 'is-empty');
+      menu.classList.remove('d-none');
+      input.setAttribute('aria-expanded', 'true');
+    };
+
+    const choose = (value, label) => {
+      const changed = value !== selectedValue;
+      selectedValue = value;
+      selectedLabel = label;
+      input.value = label;
+      closeMenu();
+      if (changed) onChange(value);
+    };
+
+    input.addEventListener('focus', () => { input.select(); renderMenu(''); });
+    input.addEventListener('input', () => renderMenu(input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        input.value = selectedLabel;
+        closeMenu();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        const first = menu.querySelector('li:not(.is-empty)');
+        if (!String(input.value).trim()) {
+          choose('', '');
+        } else if (first) {
+          first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        }
+      }
+    });
+    input.addEventListener('blur', () => {
+      input.value = selectedLabel;
+      closeMenu();
+    });
   }
 
   function renderList(items, highlightId) {
     currentItems = items || [];
     masterListBody.innerHTML = '';
     if (!items || items.length === 0) {
-      masterListBody.innerHTML = `<tr><td class="text-center text-muted py-4" colspan="${config.headers.length}">No items found.</td></tr>`;
+      masterListBody.innerHTML = `<tr><td class="text-center text-muted py-4" colspan="${activeModule === 'store' ? 4 : config.headers.length}">No items found.</td></tr>`;
       return;
     }
 
@@ -4281,6 +4930,37 @@
       tr.classList.add('cursor-pointer');
 
       const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
+      if (activeModule === 'store') {
+        const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        const [agency, merchant, storeName, bizType, statusValue, registered] = getRowValues(item);
+        const normalized = String(statusValue ?? '').toLowerCase() === 'active' ? 'active' : 'inactive';
+        tr.innerHTML = `
+          <td class="store-cell-main">
+            <div class="store-cell-merchant" title="${esc(merchant)}">${esc(merchant)}</div>
+            <div class="store-cell-store" title="${esc(storeName)}">${esc(storeName)}</div>
+          </td>
+          <td><span class="cell-ellipsis" title="${esc(agency)}">${esc(agency)}</span></td>
+          <td><span class="cell-ellipsis" title="${esc(bizType)}">${esc(bizType)}</span></td>
+          <td class="store-col-status">
+            <span class="store-status-badge ${normalized}">${normalized}</span>
+            <div class="store-cell-date" title="Registered At">${esc(registered)}</div>
+          </td>`;
+        tr.addEventListener('click', () => selectItem(item, tr));
+        tr.addEventListener('dblclick', () => {
+          selectItem(item, tr);
+          openSelectedMasterEditFromList();
+        });
+        masterListBody.appendChild(tr);
+        if (targetHighlightId && String(resolvedId) === String(targetHighlightId)) {
+          selectItem(item, tr);
+          if (highlightId) {
+            tr.classList.add('deep-link-focus');
+            tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            setTimeout(() => tr.classList.remove('deep-link-focus'), 1200);
+          }
+        }
+        return;
+      }
       const cells = getRowValues(item).map((value, idx) => {
         if (idx === 0 && isIdFirstColumn) {
           const n = Number.parseInt(String(resolvedId || "0"), 10);
@@ -4295,15 +4975,24 @@
           }
           return `<td class="role-col-id"><span class="role-row-id">${roleIdLabel}</span></td>`;
         }
+        if (activeModule === 'store' && idx === 0) {
+          return `<td><span class="cell-ellipsis">${value ?? ''}</span></td>`;
+        }
         if (activeModule === 'store' && idx === 1) {
-          return `<td><span class="store-row-code">${value ?? ''}</span></td>`;
+          return `<td><span class="cell-ellipsis">${value ?? ''}</span></td>`;
         }
         if (activeModule === 'store' && idx === 2) {
           return `<td><span class="store-row-name">${value ?? ''}</span></td>`;
         }
         if (activeModule === 'store' && idx === 3) {
+          return `<td><span class="cell-ellipsis">${value ?? ''}</span></td>`;
+        }
+        if (activeModule === 'store' && idx === 4) {
           const normalized = String(value ?? '').toLowerCase() === 'active' ? 'active' : 'inactive';
           return `<td class="store-col-status"><span class="store-status-badge ${normalized}">${normalized}</span></td>`;
+        }
+        if (activeModule === 'store' && idx === 5) {
+          return `<td class="text-nowrap">${value ?? ''}</td>`;
         }
         if (activeModule === 'account' && idx === 1) {
           return `<td><span class="client-row-code">${value ?? ''}</span></td>`;
@@ -4363,6 +5052,21 @@
     });
   }
 
+  const FIELD_ICONS = {
+    tag: '<path d="M20 12 12 20 4 12V4h8z"/><circle cx="8" cy="8" r="1"/>',
+    building: '<path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M8 7h3M8 11h3M8 15h3M3 21h18"/>',
+    briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
+    store: '<path d="M4 9 5.5 4h13L20 9"/><path d="M4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0A2.7 2.7 0 0 0 20 9"/><path d="M5 12v8h14v-8M10 20v-5h4v5"/>',
+    hash: '<path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+    percent: '<path d="M19 5 5 19"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/>',
+    pin: '<path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  };
+
   function createField(field) {
     const wrapper = document.createElement('div');
     wrapper.className = field.colClass || 'col-12 col-md-6';
@@ -4377,7 +5081,16 @@
 
     const label = document.createElement('label');
     label.className = 'form-label';
-    label.textContent = field.label;
+    if (field.icon && FIELD_ICONS[field.icon]) {
+      label.innerHTML = `<svg class="agency-lbl-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${FIELD_ICONS[field.icon]}</svg>`;
+    }
+    label.appendChild(document.createTextNode(field.label));
+    if (field.required) {
+      const star = document.createElement('span');
+      star.className = 'agency-required';
+      star.textContent = ' *';
+      label.appendChild(star);
+    }
 
     const isUsDateField = field.type === 'date';
 
@@ -4411,7 +5124,7 @@
       }
     } else {
       input = document.createElement('input');
-      input.type = isUsDateField ? 'text' : field.type;
+      input.type = isUsDateField || field.type === 'money' ? 'text' : field.type;
       input.className = 'form-control';
       if (field.type === 'number') {
         input.classList.add('text-end');
@@ -4441,6 +5154,12 @@
       }
     }
     input.id = `field_${field.name}`;
+    if (field.type === 'money') {
+      input.required = Boolean(field.required);
+      if (field.min !== undefined) input.dataset.moneyMin = field.min;
+      if (field.max !== undefined) input.dataset.moneyMax = field.max;
+      AwsumMoneyInput.bind(input);
+    }
 
     wrapper.appendChild(label);
     if (isUsDateField) {
@@ -4457,11 +5176,22 @@
       inputGroup.appendChild(input);
       inputGroup.appendChild(trigger);
       wrapper.appendChild(inputGroup);
+    } else if (field.statusDot) {
+      const dotWrap = document.createElement('div');
+      dotWrap.className = 'agency-status-wrap';
+      dotWrap.appendChild(input);
+      wrapper.appendChild(dotWrap);
     } else {
       wrapper.appendChild(input);
     }
+    if (field.help) {
+      const help = document.createElement('small');
+      help.className = 'agency-field-help';
+      help.textContent = field.help;
+      wrapper.appendChild(help);
+    }
     if (field.readonlyOnEdit) {
-      const hint = document.createElement('small');
+      const hint =  document.createElement('small');
       hint.className = 'master-readonly-hint';
       hint.innerHTML = '<span class="hint-lock" aria-hidden="true">&#128274;</span><span>Editable on create only. Locked after save.</span>';
       wrapper.appendChild(hint);
@@ -4841,7 +5571,7 @@
       return;
     }
     const cur = plan.currency || 'USD';
-    const fmt = (v) => `${cur} ${Number(v || 0).toFixed(2)}`;
+    const fmt = (v) => `${cur} ${AwsumMoneyInput.format(v ?? 0)}`;
     preview.innerHTML = `
       <div class="card card-body bg-light py-2 px-3 small mt-1 mb-1">
         <div class="fw-semibold text-muted mb-1">${plan.label} — Fee Breakdown</div>
@@ -5041,7 +5771,7 @@
     }
 
     const cur = pricing.currency || 'USD';
-    const fmt = (v) => `${cur} ${Number(v || 0).toFixed(2)}`;
+    const fmt = (v) => `${cur} ${AwsumMoneyInput.format(v ?? 0)}`;
 
     const storeId = String(document.getElementById('field_store_id')?.value || '').trim();
     const store = masterStoreLookup[storeId] || null;
@@ -5072,7 +5802,7 @@
 
     const monthlyFeeInput = document.getElementById('field_monthly_fee');
     if (monthlyFeeInput) {
-      monthlyFeeInput.value = Number(totalMonthlyFee).toFixed(2);
+      AwsumMoneyInput.setValue(monthlyFeeInput, totalMonthlyFee);
     }
 
     result.textContent = 'This amount is used as the baseline for Contract and Invoice.';
@@ -5091,7 +5821,7 @@
 
   function pricingPlanNumberValue(fieldName, fallback = 0) {
     const input = document.getElementById(`field_${fieldName}`);
-    const raw = String(input?.value ?? '').trim();
+    const raw = input?.hasAttribute('data-awsum-money') ? AwsumMoneyInput.getValue(input) : String(input?.value ?? '').trim();
     if (!raw) return fallback;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -5100,6 +5830,10 @@
   function updatePricingPlanSummaryPreview() {
     const preview = document.getElementById('pricing-plan-summary-preview');
     if (!preview || activeModule !== 'pricing-plan') return;
+    if (config.fields.some(field => field.type === 'money' && !AwsumMoneyInput.validate(document.getElementById(`field_${field.name}`)))) {
+      preview.textContent = 'Enter valid monetary amounts to view the plan summary.';
+      return;
+    }
 
     const currency = String(document.getElementById('field_currency')?.value || 'USD').trim().toUpperCase() || 'USD';
     const includedPos = pricingPlanNumberValue('included_pos_count', 0);
@@ -5115,8 +5849,8 @@
     const term = pricingPlanNumberValue('contract_term_month', 1);
 
     const sentence = `This plan includes POS ${includedPos}, Kiosk ${includedKiosk}, Mobile Order ${includedMobile}, and Users ${includedUser}. `
-      + `Overage: POS ${currency} ${posFee.toFixed(2)}, Kiosk ${currency} ${kioskFee.toFixed(2)}, Mobile ${currency} ${mobileFee.toFixed(2)}, User ${currency} ${userFee.toFixed(2)} per month. `
-      + `Setup ${currency} ${setupFee.toFixed(2)}, Contract ${term} month(s), Transaction fee ${transactionRate.toFixed(4)}%.`;
+      + `Overage: POS ${currency} ${AwsumMoneyInput.format(posFee)}, Kiosk ${currency} ${AwsumMoneyInput.format(kioskFee)}, Mobile ${currency} ${AwsumMoneyInput.format(mobileFee)}, User ${currency} ${AwsumMoneyInput.format(userFee)} per month. `
+      + `Setup ${currency} ${AwsumMoneyInput.format(setupFee)}, Contract ${term} month(s), Transaction fee ${transactionRate.toFixed(4)}%.`;
 
     preview.textContent = sentence;
   }
@@ -5200,24 +5934,45 @@
     return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   }
 
-  function buildClientLogoUrl(clientCode) {
-    const normalizedClientCode = normalizeBrandCode(clientCode);
-    if (!normalizedClientCode) return '/static/images/platform/icon.png';
-    return `/static/images/brands/clients/${encodeURIComponent(normalizedClientCode)}/logo.png`;
-  }
-
-  function buildStoreLogoUrl(clientCode, storeCode) {
-    const normalizedClientCode = normalizeBrandCode(clientCode);
-    const normalizedStoreCode = normalizeBrandCode(storeCode);
-    if (!normalizedClientCode || !normalizedStoreCode) return '/static/images/platform/icon.png';
-    return `/static/images/brands/clients/${encodeURIComponent(normalizedClientCode)}/stores/${encodeURIComponent(normalizedStoreCode)}/logo.png`;
+  async function loadBrandLogo(imageEl, accessCode, hint = null, contextType = 'MERCHANT', ownerId = null) {
+    if (!imageEl) return;
+    const revision = String(Number(imageEl.dataset.logoRevision || 0) + 1);
+    imageEl.dataset.logoRevision = revision;
+    const defaultLogo = {{ (brand_icon_path or '')|tojson }};
+    if (!accessCode && !ownerId) {
+      if (defaultLogo) swapLogoWithFade(imageEl, defaultLogo);
+      if (hint) hint.textContent = 'Save this organization first to configure its logo.';
+      return;
+    }
+    try {
+      const lookup = ownerId
+        ? 'owner_id=' + encodeURIComponent(ownerId)
+        : 'access_code=' + encodeURIComponent(accessCode);
+      const response = await fetch('/api/images/branding?' + lookup
+        + '&context_type=' + encodeURIComponent(contextType));
+      if (!response.ok) throw new Error('Logo context could not be resolved (' + response.status + ').');
+      const branding = await response.json();
+      if (imageEl.dataset.logoRevision !== revision) return;
+      if (branding.logo_url) swapLogoWithFade(imageEl, branding.logo_url);
+      else imageEl.removeAttribute('src');
+      if (hint) hint.textContent = branding.logo_url
+        ? 'Resolved image: ' + branding.logo_url.split('?')[0]
+        : 'No logo configured.';
+    } catch (error) {
+      if (imageEl.dataset.logoRevision !== revision) return;
+      console.error('Logo preview failed:', error);
+      if (defaultLogo) swapLogoWithFade(imageEl, defaultLogo);
+      if (hint) hint.textContent = error.message;
+    }
   }
 
   function swapLogoWithFade(imageEl, baseUrl) {
     if (!imageEl || !baseUrl) return;
-    const nextSrc = `${baseUrl}?t=${Date.now()}`;
+    const nextSrc = baseUrl;
+    const revision = imageEl.dataset.logoRevision;
     imageEl.classList.add('logo-fade-out');
     window.setTimeout(() => {
+      if (imageEl.dataset.logoRevision !== revision) return;
       imageEl.src = nextSrc;
       imageEl.classList.remove('logo-fade-out');
     }, 110);
@@ -5235,7 +5990,7 @@
             <span class="text-muted small">PNG/JPG/WebP</span>
           </div>
           <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-            <img id="clientLogoPreview" class="brand-logo-preview" src="/static/images/platform/icon.png" alt="Client logo preview">
+            <img id="clientLogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="Client logo preview">
             <div class="w-100">
               <div class="brand-file-picker mb-2">
                 <input id="clientLogoFile" type="file" class="d-none" accept="image/*">
@@ -5246,7 +6001,7 @@
                 <button type="button" id="btnUploadClientLogo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload Client Logo</button>
                 <button type="button" id="btnResetClientLogo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
               </div>
-              <div id="clientLogoPathHint" class="brand-logo-hint mt-2">Path: /static/images/brands/clients/CLT_XXXXX/logo.png</div>
+              <div id="clientLogoPathHint" class="brand-logo-hint mt-2">Organization logo resolved by the server.</div>
             </div>
           </div>
         </div>
@@ -5254,25 +6009,26 @@
       return col;
     }
 
+    const orgTitle = { store: 'Store', agency: 'Agency', merchant: 'Merchant' }[kind] || 'Store';
     col.innerHTML = `
       <div class="brand-logo-upload-card">
         <div class="brand-logo-upload-head">
-          <h6 class="brand-logo-upload-title">Store Logo (Dashboard)</h6>
+          <h6 class="brand-logo-upload-title">${orgTitle} Logo (Dashboard)</h6>
           <span class="text-muted small">PNG/JPG/WebP</span>
         </div>
         <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-          <img id="storeLogoPreview" class="brand-logo-preview" src="/static/images/platform/icon.png" alt="Store logo preview">
+          <img id="${kind}LogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="${orgTitle} logo preview">
           <div class="w-100">
             <div class="brand-file-picker mb-2">
-              <input id="storeLogoFile" type="file" class="d-none" accept="image/*">
-              <button type="button" id="btnBrowseStoreLogoFile" class="btn btn-sm btn-outline-secondary role-action-btn">Choose File</button>
-              <span id="storeLogoFileName" class="brand-file-name">No file selected</span>
+              <input id="${kind}LogoFile" type="file" class="d-none" accept="image/*">
+              <button type="button" id="btnBrowse${orgTitle}LogoFile" class="btn btn-sm btn-outline-secondary role-action-btn">Choose File</button>
+              <span id="${kind}LogoFileName" class="brand-file-name">No file selected</span>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-              <button type="button" id="btnUploadStoreLogo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload Store Logo</button>
-              <button type="button" id="btnResetStoreLogo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
+              <button type="button" id="btnUpload${orgTitle}Logo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload ${orgTitle} Logo</button>
+              <button type="button" id="btnReset${orgTitle}Logo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
             </div>
-            <div id="storeLogoPathHint" class="brand-logo-hint mt-2">Path: /static/images/brands/clients/CLT_XXXXX/stores/STR_XXXXX/logo.png</div>
+            <div id="${kind}LogoPathHint" class="brand-logo-hint mt-2">Organization logo resolved by the server.</div>
           </div>
         </div>
       </div>
@@ -5280,37 +6036,316 @@
     return col;
   }
 
+  // Agency / Merchant / Store editors share one logo panel; the server resolves storage from the saved DB ID.
+  const ORG_LOGO_KINDS = {
+    agency: { title: 'Agency', context: 'AGENCY', endpoint: 'agency' },
+    merchant: { title: 'Merchant', context: 'MERCHANT', endpoint: 'client' },
+    store: { title: 'Store', context: 'STORE', endpoint: 'store' },
+  };
+
+  function refreshOrgLogoPreview() {
+    const kind = activeModule;
+    const meta = ORG_LOGO_KINDS[kind];
+    if (!meta) return;
+    const fileInput = document.getElementById(`${kind}LogoFile`);
+    fileInput?.awsumImage?.reset();
+    const preview = document.getElementById(`${kind}LogoPreview`);
+    const hint = document.getElementById(`${kind}LogoPathHint`);
+    if (!preview || !hint) return;
+    const ownerId = String(selectedMasterId.value || '').trim();
+    loadBrandLogo(preview, '', hint, meta.context, ownerId || null);
+    const fileName = document.getElementById(`${kind}LogoFileName`);
+    if (fileName && !ownerId) fileName.textContent = 'No file selected';
+    if (fileInput) fileInput.disabled = !ownerId;
+    ['btnBrowse', 'btnUpload', 'btnReset'].forEach((prefix) => {
+      const btn = document.getElementById(prefix === 'btnBrowse' ? `${prefix}${meta.title}LogoFile` : `${prefix}${meta.title}Logo`);
+      if (btn) btn.disabled = !ownerId;
+    });
+  }
+
+  function bindOrgLogoHandlers(kind) {
+    const meta = ORG_LOGO_KINDS[kind];
+    bindEnglishFilePicker(`${kind}LogoFile`, `btnBrowse${meta.title}LogoFile`, `${kind}LogoFileName`);
+    const sendLogoRequest = async (method) => {
+      const ownerId = String(selectedMasterId.value || '').trim();
+      const action = method === 'POST' ? 'upload' : 'reset';
+      if (!ownerId) {
+        alert(`Please save the ${meta.title} first to ${action} a logo.`);
+        return;
+      }
+      const fileInput = document.getElementById(`${kind}LogoFile`);
+      const options = { method, credentials: 'same-origin' };
+      if (method === 'POST') {
+        const file = fileInput?.awsumImage?.pending();
+        if (!file) {
+          alert('Choose an image file first.');
+          return;
+        }
+        options.body = new FormData();
+        options.body.append('file', file);
+      } else if (!(await showCenteredConfirm(`Reset the ${meta.title} logo to the default image?`, 'Reset Logo', { variant: 'warning', okText: 'Reset', cancelText: 'No' }))) {
+        return;
+      }
+      const res = await fetch(`${apiBase}/${meta.endpoint}/${encodeURIComponent(ownerId)}/logo`, options);
+      if (res.status === 401) {
+        alert('Session expired. Please refresh the page and login again.');
+        return;
+      }
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Unable to ${action} the ${meta.title} logo: ` + text);
+        return;
+      }
+      if (fileInput) fileInput.value = '';
+      refreshOrgLogoPreview();
+      const result = await res.json();
+      alert(result.image_warning || `${meta.title} logo ${action === 'upload' ? 'uploaded' : 'reset'} successfully.`);
+    };
+    [['btnUpload', 'POST'], ['btnReset', 'DELETE']].forEach(([prefix, method]) => {
+      const btn = document.getElementById(`${prefix}${meta.title}Logo`);
+      if (!btn || btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => sendLogoRequest(method));
+    });
+  }
+
   function refreshClientLogoPreview() {
+    document.getElementById('clientLogoFile')?.awsumImage?.reset();
     const preview = document.getElementById('clientLogoPreview');
     const hint = document.getElementById('clientLogoPathHint');
     if (!preview || !hint) return;
     const clientCode = normalizeBrandCode((document.getElementById('field_c_account_code') || document.getElementById('field_c_client_code'))?.value || '');
-    const baseUrl = buildClientLogoUrl(clientCode);
-    swapLogoWithFade(preview, baseUrl);
+    loadBrandLogo(preview, clientCode, hint);
     if (clientDetailLogo) {
-      swapLogoWithFade(clientDetailLogo, baseUrl);
+      loadBrandLogo(clientDetailLogo, clientCode);
     }
-    hint.textContent = clientCode
-      ? `Path: /static/images/brands/clients/${clientCode}/logo.png`
-      : 'Save Client first to generate code (CLT_XXXXX)';
   }
 
-  function refreshStoreLogoPreview(item = null) {
-    const preview = document.getElementById('storeLogoPreview');
-    const hint = document.getElementById('storeLogoPathHint');
-    if (!preview || !hint) return;
+  function refreshStoreLogoPreview() {
+    refreshOrgLogoPreview();
+  }
 
-    const source = item || selectedOriginalRecord || {};
-    const clientCode = normalizeBrandCode(source.client_code || source.c_client_code || '');
-    const storeCode = normalizeBrandCode(document.getElementById('field_store_code')?.value || source.store_code || '');
-    const baseUrl = buildStoreLogoUrl(clientCode, storeCode);
-    swapLogoWithFade(preview, baseUrl);
-    hint.textContent = (clientCode && storeCode)
-      ? `Path: /static/images/brands/clients/${clientCode}/stores/${storeCode}/logo.png`
-      : 'Select a saved Store linked to Client to enable logo path.';
+  // Common Business Contact Manager: Agency / Merchant / Store differ only by owner_type + owner_id.
+  const CONTACT_OWNER_TYPES = { agency: 'AGENCY', merchant: 'MERCHANT', store: 'STORE' };
+  const CONTACT_ROLE_OPTIONS = [
+    ['PRIMARY', 'Primary Contact'], ['OPERATIONS', 'Operations'], ['BILLING', 'Billing'],
+    ['TECHNICAL', 'Technical'], ['OTHER', 'Other'],
+  ];
+  const CONTACT_EDITOR_FIELDS = ['title', 'first_name', 'last_name', 'email', 'phone'];
+  let businessContacts = [];
+  let businessContactRevision = 0;
+
+  function createContactManagerPanel() {
+    const col = document.createElement('div');
+    col.className = 'col-12';
+    col.innerHTML = `
+      <div id="businessContactManager" class="brand-logo-upload-card">
+        <div class="brand-logo-upload-head">
+          <h6 class="brand-logo-upload-title">Contacts</h6>
+          <button type="button" id="btnAddBusinessContact" class="btn btn-sm btn-outline-secondary role-action-btn">+ Add Contact</button>
+        </div>
+        <div id="businessContactHint" class="brand-logo-hint mb-2"></div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-2">
+            <thead><tr><th>Role</th><th>Title</th><th>Name</th><th>Email</th><th>Phone</th><th>Primary</th><th class="text-end">Actions</th></tr></thead>
+            <tbody id="businessContactList"></tbody>
+          </table>
+        </div>
+        <div id="businessContactEditor" class="row g-2 d-none">
+          <input type="hidden" id="bc_contact_id">
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_contact_role">Role</label>
+            <select id="bc_contact_role" class="form-select form-select-sm">${CONTACT_ROLE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_title">Title</label>
+            <input id="bc_title" type="text" class="form-control form-control-sm" maxlength="120" placeholder="e.g. Owner, Accountant"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_first_name">First Name</label>
+            <input id="bc_first_name" type="text" class="form-control form-control-sm" maxlength="120"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_last_name">Last Name</label>
+            <input id="bc_last_name" type="text" class="form-control form-control-sm" maxlength="120"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_email">Email</label>
+            <input id="bc_email" type="email" class="form-control form-control-sm" maxlength="255"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="bc_phone">Phone</label>
+            <input id="bc_phone" type="text" class="form-control form-control-sm" maxlength="50"></div>
+          <div class="col-12 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="form-check mb-0">
+              <input id="bc_is_primary" type="checkbox" class="form-check-input">
+              <label class="form-check-label" for="bc_is_primary">Primary contact for this organization</label>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" id="btnSaveBusinessContact" class="btn btn-sm btn-primary role-action-btn">Save Contact</button>
+              <button type="button" id="btnCancelBusinessContact" class="btn btn-sm btn-outline-secondary role-action-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    col.querySelector('#btnAddBusinessContact').addEventListener('click', () => openContactEditor(null));
+    col.querySelector('#btnCancelBusinessContact').addEventListener('click', closeContactEditor);
+    col.querySelector('#btnSaveBusinessContact').addEventListener('click', saveBusinessContact);
+    col.querySelector('#businessContactEditor').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+        event.preventDefault();
+        saveBusinessContact();
+      }
+    });
+    return col;
+  }
+
+  function contactOwner() {
+    const ownerType = CONTACT_OWNER_TYPES[activeModule];
+    const ownerId = String(selectedMasterId.value || '').trim();
+    return ownerType && ownerId ? { ownerType, ownerId } : null;
+  }
+
+  async function contactRequest(url, method = 'GET', body = null) {
+    const options = { method, credentials: 'same-origin', headers: {} };
+    if (body !== null) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join(', ') : data.detail;
+      throw new Error(detail || `Request failed (${response.status})`);
+    }
+    return data;
+  }
+
+  function renderBusinessContacts() {
+    const list = document.getElementById('businessContactList');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!businessContacts.length) {
+      const row = list.insertRow();
+      const cell = row.insertCell();
+      cell.colSpan = 7;
+      cell.className = 'text-muted small';
+      cell.textContent = contactOwner() ? 'No contacts registered.' : 'Save this organization first to add contacts.';
+      return;
+    }
+    const roleLabels = Object.fromEntries(CONTACT_ROLE_OPTIONS);
+    businessContacts.forEach((contact, index) => {
+      const row = list.insertRow();
+      [
+        roleLabels[contact.contact_role] || contact.contact_role,
+        contact.title,
+        `${contact.first_name} ${contact.last_name}`.trim(),
+        contact.email,
+        contact.phone,
+      ].forEach((value) => { row.insertCell().textContent = value || ''; });
+      const primaryCell = row.insertCell();
+      if (contact.is_primary) primaryCell.innerHTML = '<span class="badge bg-primary">Primary</span>';
+      const actions = row.insertCell();
+      actions.className = 'text-end text-nowrap';
+      const addAction = (label, handler, disabled = false, cls = 'btn-outline-secondary') => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `btn btn-sm ${cls} ms-1 py-0 px-2`;
+        btn.textContent = label;
+        btn.disabled = disabled;
+        btn.addEventListener('click', handler);
+        actions.appendChild(btn);
+      };
+      addAction('\u2191', () => moveBusinessContact(index, -1), index === 0);
+      addAction('\u2193', () => moveBusinessContact(index, 1), index === businessContacts.length - 1);
+      if (!contact.is_primary) addAction('Set Primary', () => setPrimaryBusinessContact(contact.contact_id));
+      addAction('Edit', () => openContactEditor(contact));
+      addAction('Delete', () => deleteBusinessContact(contact), false, 'btn-outline-danger');
+    });
+  }
+
+  async function refreshContactManager() {
+    if (!document.getElementById('businessContactManager')) return;
+    const revision = ++businessContactRevision;
+    closeContactEditor();
+    businessContacts = [];
+    const owner = contactOwner();
+    const hint = document.getElementById('businessContactHint');
+    const addBtn = document.getElementById('btnAddBusinessContact');
+    if (addBtn) addBtn.disabled = !owner;
+    if (hint) hint.textContent = owner ? '' : 'Save this organization first to add contacts.';
+    renderBusinessContacts();
+    if (!owner) return;
+    try {
+      const rows = await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
+      if (revision !== businessContactRevision) return;
+      businessContacts = Array.isArray(rows) ? rows : [];
+      renderBusinessContacts();
+    } catch (error) {
+      if (revision !== businessContactRevision) return;
+      if (hint) hint.textContent = error.message;
+    }
+  }
+
+  function openContactEditor(contact) {
+    if (!contactOwner()) return;
+    const editor = document.getElementById('businessContactEditor');
+    if (!editor) return;
+    document.getElementById('bc_contact_id').value = contact?.contact_id || '';
+    document.getElementById('bc_contact_role').value = contact?.contact_role || (businessContacts.length ? 'OTHER' : 'PRIMARY');
+    CONTACT_EDITOR_FIELDS.forEach((name) => { document.getElementById(`bc_${name}`).value = contact?.[name] || ''; });
+    document.getElementById('bc_is_primary').checked = contact ? !!contact.is_primary : !businessContacts.length;
+    editor.classList.remove('d-none');
+    document.getElementById('bc_first_name').focus();
+  }
+
+  function closeContactEditor() {
+    document.getElementById('businessContactEditor')?.classList.add('d-none');
+  }
+
+  async function runContactAction(action) {
+    const hint = document.getElementById('businessContactHint');
+    try {
+      await action();
+      if (hint) hint.textContent = '';
+      await refreshContactManager();
+      return true;
+    } catch (error) {
+      alert(error.message);
+      return false;
+    }
+  }
+
+  async function saveBusinessContact() {
+    const owner = contactOwner();
+    if (!owner) return;
+    const payload = { contact_role: document.getElementById('bc_contact_role').value, is_primary: document.getElementById('bc_is_primary').checked };
+    CONTACT_EDITOR_FIELDS.forEach((name) => { payload[name] = document.getElementById(`bc_${name}`).value.trim(); });
+    if (!payload.first_name && !payload.last_name) {
+      alert('First Name or Last Name is required.');
+      return;
+    }
+    if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(payload.email)) {
+      alert('Please enter a valid contact email address.');
+      return;
+    }
+    const contactId = document.getElementById('bc_contact_id').value;
+    await runContactAction(() => contactId
+      ? contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
+      : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload));
+  }
+
+  function setPrimaryBusinessContact(contactId) {
+    return runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'));
+  }
+
+  async function deleteBusinessContact(contact) {
+    const name = `${contact.first_name} ${contact.last_name}`.trim() || 'this contact';
+    if (!(await showCenteredConfirm(`Delete ${name}?`, 'Delete Contact'))) return;
+    await runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'));
+  }
+
+  function moveBusinessContact(index, offset) {
+    const owner = contactOwner();
+    const target = index + offset;
+    if (!owner || target < 0 || target >= businessContacts.length) return;
+    const ids = businessContacts.map((c) => c.contact_id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    return runContactAction(() => contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}/order`, 'PUT', { contact_ids: ids }));
   }
 
   function refreshClientStoreModalLogoPreview(item = null) {
+    document.getElementById('clientStoreLogoFile')?.awsumImage?.reset();
     const preview = document.getElementById('clientStoreLogoPreview');
     const hint = document.getElementById('clientStoreLogoPathHint');
     const fileInput = document.getElementById('clientStoreLogoFile');
@@ -5328,10 +6363,7 @@
     const storeCode = normalizeBrandCode(document.getElementById('field_client_store_code')?.value || currentItem.store_code || '');
     const hasSavedStore = Boolean(String(selectedClientStoreId || '').trim() && normalizedClientCode && storeCode);
 
-    swapLogoWithFade(preview, buildStoreLogoUrl(normalizedClientCode, storeCode));
-    hint.textContent = hasSavedStore
-      ? `Path: /static/images/brands/clients/${normalizedClientCode}/stores/${storeCode}/logo.png`
-      : 'Save Store first to enable logo path.';
+    loadBrandLogo(preview, hasSavedStore ? storeCode : '', hint, 'STORE');
 
     if (fileInput) {
       fileInput.disabled = !hasSavedStore;
@@ -5365,7 +6397,11 @@
 
     if (fileInput.dataset.boundName !== '1') {
       fileInput.dataset.boundName = '1';
-      fileInput.addEventListener('change', syncName);
+      fileInput.awsumImage = AwsumImages.bindImageInput(fileInput, message => alert(message),
+        document.getElementById(fileInputId.replace('File', 'Preview')));
+      fileInput.addEventListener('awsumimageapply', event => {
+        fileName.textContent = event.detail.name;
+      });
     }
 
     syncName();
@@ -5373,8 +6409,8 @@
 
   function bindBrandLogoUploadHandlers() {
     bindEnglishFilePicker('clientLogoFile', 'btnBrowseClientLogoFile', 'clientLogoFileName');
-    bindEnglishFilePicker('storeLogoFile', 'btnBrowseStoreLogoFile', 'storeLogoFileName');
     bindEnglishFilePicker('clientStoreLogoFile', 'btnBrowseClientStoreLogoFile', 'clientStoreLogoFileName');
+    if (ORG_LOGO_KINDS[activeModule]) bindOrgLogoHandlers(activeModule);
 
     const clientBtn = document.getElementById('btnUploadClientLogo');
     if (clientBtn && clientBtn.dataset.bound !== '1') {
@@ -5386,7 +6422,7 @@
           return;
         }
         const fileInput = document.getElementById('clientLogoFile');
-        const file = fileInput?.files?.[0];
+        const file = fileInput?.awsumImage?.pending();
         if (!file) {
           alert('Choose an image file first.');
           return;
@@ -5409,8 +6445,10 @@
           return;
         }
         fileInput.value = '';
+        fileInput.awsumImage.reset();
         refreshClientLogoPreview();
-        alert('Client logo uploaded successfully.');
+        const result = await res.json();
+        alert(result.image_warning || 'Client logo uploaded successfully.');
       });
     }
 
@@ -5438,73 +6476,8 @@
           return;
         }
         refreshClientLogoPreview();
-        alert('Client logo reset successfully.');
-      });
-    }
-
-    const storeBtn = document.getElementById('btnUploadStoreLogo');
-    if (storeBtn && storeBtn.dataset.bound !== '1') {
-      storeBtn.dataset.bound = '1';
-      storeBtn.addEventListener('click', async () => {
-        const storeId = String(selectedMasterId.value || '').trim();
-        if (!storeId) {
-          alert('Please select and save the Store first to upload a logo.');
-          return;
-        }
-        const fileInput = document.getElementById('storeLogoFile');
-        const file = fileInput?.files?.[0];
-        if (!file) {
-          alert('Choose an image file first.');
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}/logo`, {
-          method: 'POST',
-          body: formData,
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Unable to upload the Store logo: ' + text);
-          return;
-        }
-        fileInput.value = '';
-        refreshStoreLogoPreview();
-        alert('Store logo uploaded successfully.');
-      });
-    }
-
-    const resetStoreBtn = document.getElementById('btnResetStoreLogo');
-    if (resetStoreBtn && resetStoreBtn.dataset.bound !== '1') {
-      resetStoreBtn.dataset.bound = '1';
-      resetStoreBtn.addEventListener('click', async () => {
-        const storeId = String(selectedMasterId.value || '').trim();
-        if (!storeId) {
-          alert('Please select and save the Store first to reset the logo.');
-          return;
-        }
-        if (!(await showCenteredConfirm('Reset the Store logo to the default image?', 'Reset Logo', { variant: 'warning', okText: 'Reset', cancelText: 'No' }))) return;
-        const res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}/logo`, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Unable to reset the Store logo: ' + text);
-          return;
-        }
-        refreshStoreLogoPreview();
-        alert('Store logo reset successfully.');
+        const result = await res.json();
+        alert(result.image_warning || 'Client logo reset successfully.');
       });
     }
   }
@@ -5521,7 +6494,7 @@
         }
 
         const fileInput = document.getElementById('clientStoreLogoFile');
-        const file = fileInput?.files?.[0];
+        const file = fileInput?.awsumImage?.pending();
         if (!file) {
           alert('Choose an image file first.');
           return;
@@ -5545,8 +6518,10 @@
         }
 
         fileInput.value = '';
+        fileInput.awsumImage.reset();
         refreshClientStoreModalLogoPreview();
-        alert('Store logo uploaded successfully.');
+        const result = await res.json();
+        alert(result.image_warning || 'Store logo uploaded successfully.');
       });
     }
 
@@ -5576,7 +6551,8 @@
         }
 
         refreshClientStoreModalLogoPreview();
-        alert('Store logo reset successfully.');
+        const result = await res.json();
+        alert(result.image_warning || 'Store logo reset successfully.');
       });
     }
   }
@@ -5772,7 +6748,7 @@
       receipt_website_url: document.getElementById('field_client_store_receipt_website_url'),
       receipt_message: document.getElementById('field_client_store_receipt_message'),
       memo: document.getElementById('field_client_store_memo'),
-      installed_by_agent_id: document.getElementById('field_client_store_installed_by_agent_id'),
+      installed_by_agency_id: document.getElementById('field_client_store_installed_by_agency_id'),
     };
     if (fields.id) fields.id.value = '';
     if (fields.code) fields.code.value = '';
@@ -5798,7 +6774,7 @@
     if (fields.receipt_website_url) fields.receipt_website_url.value = '';
     if (fields.receipt_message) fields.receipt_message.value = '';
     if (fields.memo) fields.memo.value = '';
-    if (fields.installed_by_agent_id) fields.installed_by_agent_id.value = '';
+    if (fields.installed_by_agency_id) fields.installed_by_agency_id.value = '';
     resetClientStoreDeviceEditor();
     refreshClientStoreModalLogoPreview();
   }
@@ -5816,7 +6792,7 @@
     const serialInput = document.getElementById('field_client_store_device_serial');
     const installedAtInput = document.getElementById('field_client_store_device_installed_at');
     const statusInput = document.getElementById('field_client_store_device_status');
-    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agency_id');
     const noteInput = document.getElementById('field_client_store_device_note');
     const hintEl = document.getElementById('clientStoreDevicesHint');
     const listEl = document.getElementById('clientStoreDeviceList');
@@ -5893,7 +6869,7 @@
     const serialInput = document.getElementById('field_client_store_device_serial');
     const installedAtInput = document.getElementById('field_client_store_device_installed_at');
     const statusInput = document.getElementById('field_client_store_device_status');
-    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+    const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agency_id');
     const noteInput = document.getElementById('field_client_store_device_note');
     const saveBtn = document.getElementById('btnClientStoreDeviceSave');
     const deleteBtn = document.getElementById('btnClientStoreDeviceDelete');
@@ -5905,7 +6881,7 @@
     if (serialInput) serialInput.value = device?.serial_no || '';
     if (installedAtInput) installedAtInput.value = device?.installed_at ? String(device.installed_at).substring(0, 10) : '';
     if (statusInput) statusInput.value = String(device?.status || 'active').toLowerCase();
-    if (installedByAgentInput) installedByAgentInput.value = device?.installed_by_agent_id ? String(device.installed_by_agent_id) : '';
+    if (installedByAgentInput) installedByAgentInput.value = device?.installed_by_agency_id ? String(device.installed_by_agency_id) : '';
     if (noteInput) noteInput.value = device?.memo || device?.note || '';
     if (saveBtn) saveBtn.disabled = !selectedClientStoreId;
     if (deleteBtn) deleteBtn.disabled = !selectedClientStoreDeviceId;
@@ -5938,8 +6914,8 @@
       </div>
       <div class="store-device-detail-fields">
         <div class="store-device-detail-item">
-          <div class="store-device-detail-label">Installed By Agent</div>
-          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.installed_by_agent_name || '-')}</div>
+          <div class="store-device-detail-label">Installed By Agency</div>
+          <div class="store-device-detail-value">${escapeClientStoreDeviceHtml(device.installed_by_agency_name || '-')}</div>
         </div>
         <div class="store-device-detail-item">
           <div class="store-device-detail-label">Activation Code</div>
@@ -6250,7 +7226,7 @@
       serial_no: document.getElementById('field_client_store_device_serial')?.value || '',
       installed_at: installedAt || null,
       status: document.getElementById('field_client_store_device_status')?.value || 'active',
-      installed_by_agent_id: document.getElementById('field_client_store_device_installed_by_agent_id')?.value || '',
+      installed_by_agency_id: document.getElementById('field_client_store_device_installed_by_agency_id')?.value || '',
       memo: document.getElementById('field_client_store_device_note')?.value || '',
     };
   }
@@ -6350,7 +7326,7 @@
     const receiptWebsiteInput = document.getElementById('field_client_store_receipt_website_url');
     const receiptMessageInput = document.getElementById('field_client_store_receipt_message');
     const memoInput = document.getElementById('field_client_store_memo');
-    const installedByAgentInput = document.getElementById('field_client_store_installed_by_agent_id');
+    const installedByAgentInput = document.getElementById('field_client_store_installed_by_agency_id');
 
     if (idInput) idInput.value = String(store.store_id || '');
   if (codeInput) codeInput.value = store.store_code || '';
@@ -6376,7 +7352,7 @@
     if (receiptWebsiteInput) receiptWebsiteInput.value = store.receipt_website_url || '';
     if (receiptMessageInput) receiptMessageInput.value = store.receipt_message || '';
     if (memoInput) memoInput.value = store.memo || '';
-    if (installedByAgentInput) installedByAgentInput.value = store.installed_by_agent_id ? String(store.installed_by_agent_id) : '';
+    if (installedByAgentInput) installedByAgentInput.value = store.installed_by_agency_id ? String(store.installed_by_agency_id) : '';
     if (saveBtn) saveBtn.disabled = false;
     if (deleteBtn) deleteBtn.disabled = false;
     refreshClientStoreModalLogoPreview(store);
@@ -6494,7 +7470,7 @@
     const defaultTax = STATE_DEFAULT_TAX_RATE[normalizedState] || '';
 
     if (!normalizedTax) return 'auto';
-    if (normalizedCountry && normalizedCountry !== 'USA' && normalizedCountry !== 'US') return 'manual';
+    if (normalizedCountry && !isUsCountry(normalizedCountry)) return 'manual';
     if (!defaultTax) return 'manual';
     if (normalizedTax !== defaultTax) return 'manual';
     return String(currentTaxSource || 'auto').toLowerCase() === 'manual' ? 'manual' : 'auto';
@@ -6531,7 +7507,7 @@
       receipt_website_url: document.getElementById('field_client_store_receipt_website_url')?.value || '',
       receipt_message: document.getElementById('field_client_store_receipt_message')?.value || '',
       memo: document.getElementById('field_client_store_memo')?.value || '',
-      installed_by_agent_id: document.getElementById('field_client_store_installed_by_agent_id')?.value || null,
+      installed_by_agency_id: document.getElementById('field_client_store_installed_by_agency_id')?.value || null,
       client_id: getSelectedClientId(),
     };
   }
@@ -6621,20 +7597,13 @@
       return;
     }
 
-    let savedStoreId = storeId;
-    if (!savedStoreId) {
-      try {
-        const created = await res.json();
-        savedStoreId = created?.store_id || null;
-      } catch (error) {
-        savedStoreId = null;
-      }
-    }
+    const savedStore = await res.json();
 
     suppressClientStoreRowClickUntil = Date.now() + 700;
     resetClientStoreEditor();
     setClientStoreFormVisible(false);
     await loadClientStoresForSelectedClient();
+    notifyStorageWarning(savedStore);
 
   }
 
@@ -6732,7 +7701,7 @@
         const serialInput = document.getElementById('field_client_store_device_serial');
         const installedAtInput = document.getElementById('field_client_store_device_installed_at');
         const statusInput = document.getElementById('field_client_store_device_status');
-        const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agent_id');
+        const installedByAgentInput = document.getElementById('field_client_store_device_installed_by_agency_id');
         const noteInput = document.getElementById('field_client_store_device_note');
         const saveDeviceBtn = document.getElementById('btnClientStoreDeviceSave');
         const deleteDeviceBtn = document.getElementById('btnClientStoreDeviceDelete');
@@ -6828,21 +7797,32 @@
       const panelRow = document.createElement('div');
       panelRow.className = 'row g-3';
 
+      if ((activeModule === 'store' || activeModule === 'merchant') && tab.title) {
+        const heading = document.createElement('div');
+        heading.className = 'col-12 store-section-heading';
+        heading.innerHTML = '<div class="master-form-section-title"></div>';
+        heading.firstChild.textContent = tab.title;
+        panelRow.appendChild(heading);
+      }
+
       if (activeModule === 'account' && tab.id === 'stores') {
         const fullCol = document.createElement('div');
         fullCol.className = 'col-12';
         fullCol.appendChild(createClientStoresPanel());
         panelRow.appendChild(fullCol);
       } else {
+        if ((activeModule === 'store' || activeModule === 'merchant') && tab === config.tabs[0]) {
+          panelRow.appendChild(createBrandLogoUploadPanel(activeModule));
+        }
         (tab.fields || []).forEach((fieldName) => {
           const field = fieldMap[fieldName];
           if (field) panelRow.appendChild(createField(field));
         });
+        if (CONTACT_OWNER_TYPES[activeModule] && tab.id === 'contact') {
+          panelRow.appendChild(createContactManagerPanel());
+        }
         if (activeModule === 'account' && tab.id === 'overview') {
           panelRow.appendChild(createBrandLogoUploadPanel('client'));
-        }
-        if (activeModule === 'store' && tab.id === 'basic') {
-          panelRow.appendChild(createBrandLogoUploadPanel('store'));
         }
       }
 
@@ -6884,16 +7864,41 @@
       bindBrandLogoUploadHandlers();
       refreshClientLogoPreview();
       refreshStoreLogoPreview();
+      refreshContactManager();
       if (activeModule === 'account') {
         initClientStorePanelHandlers();
         loadClientStoresForSelectedClient();
       }
       return;
     }
+    if (activeModule === 'agency') {
+      targetForm.appendChild(createBrandLogoUploadPanel('agency'));
+    }
     config.fields.forEach(field => {
       targetForm.appendChild(createField(field));
+      if (activeModule === 'agency' && field.type === 'section' && field.label === 'Primary Contact') {
+        targetForm.appendChild(createContactManagerPanel());
+      }
     });
     bindUsDatePickers();
+    if (activeModule === 'agency') {
+      document.getElementById('btnAgencyRegistrationEmail').onclick = async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        const agencyId = selectedMasterId.value;
+        try {
+          await openAgencyRegistrationEmail(agencyId);
+        } catch (error) {
+          alert('Unable to open Registration Email: ' + error.message);
+        } finally {
+          button.disabled = false;
+        }
+      };
+      syncAgencyEmailButton();
+      bindBrandLogoUploadHandlers();
+      refreshOrgLogoPreview();
+      refreshContactManager();
+    }
     bindScopedStoreSelect();
     if (activeModule === 'subscription') {
       injectPlanFeePreview();
@@ -6914,7 +7919,7 @@
       if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
-      let value = input.value;
+      let value = field.type === 'money' ? AwsumMoneyInput.getValue(input) : input.value;
       if (field.type === 'date') {
         value = parseDisplayDate(value);
       }
@@ -6938,6 +7943,16 @@
 
       // Store code is always server-generated and immutable from this UI.
       delete data.store_code;
+      delete data.id;
+      // Legacy stores may have no Merchant/Agency; an empty selection leaves them unchanged.
+      ['client_id', 'installed_by_agency_id'].forEach((key) => { if (!String(data[key] || '').trim()) delete data[key]; });
+    }
+
+    if (activeModule === 'merchant') {
+      // ID and code are display-only; the server generates the code and never accepts one.
+      delete data.id;
+      delete data.merchant_code;
+      data.merchant_name = String(data.merchant_name || '').trim();
     }
 
     if (activeModule === 'account') {
@@ -6949,13 +7964,20 @@
       delete data.client_code;
     }
 
-    if (activeModule === 'agent') {
-      delete data.agent_code;
+    if (activeModule === 'agency') {
+      delete data.agency_code;
       delete data.created_at;
     }
 
-    if (activeModule === 'agent-type') {
-      data.agent_type_code = normalizeAgentTypeCode(data.agent_type_code);
+    if (activeModule === 'agency-type') {
+      data.agency_type_code = normalizeAgentTypeCode(data.agency_type_code);
+    }
+
+    if (activeModule === 'business-type') {
+      // Type ID is display-only; the API contract stays name/code/status.
+      delete data.id;
+      data.name = String(data.name || '').trim();
+      data.code = String(data.code || '').trim();
     }
 
     if (activeModule === 'subscription') {
@@ -7009,7 +8031,11 @@
       if (field.type === 'date') {
         value = formatDateForDisplay(value);
       }
-      input.value = value;
+      if (field.name === 'country' && (activeModule === 'store' || activeModule === 'merchant' || activeModule === 'agency') && !String(value).trim()) {
+        value = US_COUNTRY_NAME;
+      }
+      if (field.type === 'money') AwsumMoneyInput.setValue(input, value);
+      else input.value = value;
     });
     syncScopedStoreOptions(item.store_id ?? item.i_store_id ?? '');
     if (activeModule === 'subscription') {
@@ -7029,7 +8055,12 @@
     applyEditFieldRules(true);
     refreshClientLogoPreview();
     refreshStoreLogoPreview(item);
+    refreshContactManager();
+    if (activeModule === 'agency') {
+      syncAgencyEmailButton();
+    }
     updateListCentricActionButtons();
+    syncStoreOptionScopes();
     setBaselineSnapshot();
   }
 
@@ -7042,13 +8073,16 @@
       if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
-      if ((activeModule === 'store' || activeModule === 'user' || activeModule === 'account' || activeModule === 'agent' || activeModule === 'agent-type' || activeModule === 'license' || activeModule === 'pricing-plan' || activeModule === 'payment-method' || activeModule === 'role' || activeModule === 'business-type' || activeModule === 'device-category' || activeModule === 'device-type') && field.name === 'status') {
-        input.value = 'active';
+      if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'user' || activeModule === 'account' || activeModule === 'agency' || activeModule === 'agency-type' || activeModule === 'license' || activeModule === 'pricing-plan' || activeModule === 'payment-method' || activeModule === 'role' || activeModule === 'business-type' || activeModule === 'device-category' || activeModule === 'device-type') && field.name === 'status') {
+        input.value = activeModule === 'agency' ? 'inactive' : 'active';
       } else if (activeModule === 'session' && field.name === 'status') {
         input.value = 'active';
+      } else if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'agency') && field.default !== undefined) {
+        input.value = field.default;
       } else {
         input.value = '';
       }
+      if (field.type === 'money') AwsumMoneyInput.setValue(input, input.value);
     });
     syncScopedStoreOptions('');
     if (activeModule === 'subscription') {
@@ -7069,9 +8103,33 @@
     applyEditFieldRules(false);
     refreshClientLogoPreview();
     refreshStoreLogoPreview();
+    refreshContactManager();
+    if (activeModule === 'agency') {
+      syncAgencyEmailButton();
+    }
     updateListCentricActionButtons();
+    syncStoreOptionScopes();
     setBaselineSnapshot();
+    if (activeModule === 'store' && window.AwsumStoreDevices) window.AwsumStoreDevices.clear();
   }
+
+  // Store Options: a scope is only meaningful while its option is On.
+  function syncStoreOptionScopes() {
+    if (activeModule !== 'store') return;
+    [['opt_customer', 'customer_scope'], ['opt_loyalty', 'loyalty_scope']].forEach(([optionName, scopeName]) => {
+      const option = document.getElementById(`field_${optionName}`);
+      const scope = document.getElementById(`field_${scopeName}`);
+      if (!option || !scope) return;
+      const enabled = option.value === 'on';
+      scope.disabled = !enabled;
+      if (!enabled) scope.value = '';
+      else if (!scope.value) scope.value = 'STORE';
+    });
+  }
+
+  document.addEventListener('change', (event) => {
+    if (event.target && (event.target.id === 'field_opt_customer' || event.target.id === 'field_opt_loyalty')) syncStoreOptionScopes();
+  });
 
   function selectItem(item, row) {
     // Highlight selected row
@@ -7082,6 +8140,7 @@
     updateSectionTitles('edit');
     updateListCentricActionButtons();
     setBaselineSnapshot();
+    if (activeModule === 'store' && window.AwsumStoreDevices) window.AwsumStoreDevices.show(item);
   }
 
   function safeFilePart(value) {
@@ -7132,7 +8191,7 @@
 
     const tableHtml = `
       <html>
-        <head><meta charset="UTF-8"></head>
+        <head><meta charset="UTF-8">${AwsumReports.spreadsheetStyle()}</head>
         <body>
           <table border="1">
             <thead><tr>${headerRow}</tr></thead>
@@ -7147,130 +8206,41 @@
   }
 
   function exportPdf() {
-    const popup = window.open('', '_blank', 'width=1024,height=768');
-    if (!popup) {
-      alert('Please allow pop-ups to export PDF.');
-      return;
-    }
-
-    const printDate = new Date().toLocaleString();
-    const reportTitle = `${activeLabel.list} Report`;
-    const reportHeaders = ['ID', 'Name', 'Description', 'Status'];
-    const headerRow = reportHeaders.map(col => `<th>${col}</th>`).join('');
-    const bodyRows = currentItems.map(item => {
-      const tds = getReportRowValues(item).map(value => `<td>${value ?? ''}</td>`).join('');
-      return `<tr>${tds}</tr>`;
-    }).join('');
-
-    popup.document.write(`
-      <html>
-        <head>
-          <title>${reportTitle}</title>
-          <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
-          <style>
-            @page {
-              margin: 10mm 12mm;
-            }
-            body {
-              font-family: Arial, sans-serif;
-              font-size: 10pt;
-              line-height: 1.25;
-              background: #fff;
-              color: #0f172a;
-              margin: 0;
-            }
-            .report-wrap {
-              max-width: 100%;
-              margin: 0 auto;
-              font-size: 10pt;
-            }
-            .report-title {
-              text-align: center;
-              font-size: 14pt;
-              font-weight: 700;
-              margin-bottom: 8px;
-              letter-spacing: 0.02em;
-            }
-            .report-meta {
-              border: 1px solid #dee2e6;
-              border-radius: 0;
-              padding: 6px 8px;
-              margin-bottom: 8px;
-              background: #f8fafc;
-              font-size: 10pt;
-            }
-            .report-meta .row {
-              row-gap: 3px !important;
-            }
-            .table-report {
-              width: 100%;
-              border-collapse: collapse !important;
-              border-top: 2px solid #0f172a;
-              margin-bottom: 0;
-              font-size: 10pt;
-            }
-            .table-report th,
-            .table-report td {
-              vertical-align: middle;
-              padding: 4px 6px !important;
-              border: 1px solid #d1d5db !important;
-            }
-            .table-report thead th {
-              font-weight: 700;
-            }
-            .report-footer {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-top: 6px;
-              color: #475569;
-              font-size: 9pt;
-            }
-            @media print {
-              .no-print {
-                display: none !important;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="report-wrap py-1">
-            <div class="report-title">${reportTitle}</div>
-
-            <div class="report-meta">
-              <div class="row g-1">
-                <div class="col-6"><strong>Company Name:</strong> ${reportMeta.companyName}</div>
-                <div class="col-6 text-end"><strong>Print Date:</strong> ${printDate}</div>
-                <div class="col-6"><strong>Report Title:</strong> ${reportTitle}</div>
-                <div class="col-6 text-end"><strong>Printed By:</strong> ${reportMeta.printedBy}</div>
-              </div>
-            </div>
-
-            <table class="table table-sm table-bordered table-report">
-              <thead class="table-light">
-                <tr>${headerRow}</tr>
-              </thead>
-              <tbody>${bodyRows}</tbody>
-            </table>
-
-            <div class="report-footer">
-              <div><strong>Total Records:</strong> ${currentItems.length}</div>
-              <div><strong>Page:</strong> 1 / 1</div>
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          <\/script>
-        </body>
-      </html>
-    `);
-    popup.document.close();
+    AwsumReports.printTable(
+      `${activeLabel.list} Report`,
+      ['ID', 'Name', 'Description', 'Status'],
+      currentItems.map(getReportRowValues),
+    );
   }
 
-  function handleExport(format) {
+  async function handleExport(format) {
+    if (activeModule === 'store') {
+      // Export the full filtered/sorted result set, not just the visible page.
+      try {
+        const res = await fetch(getCollectionUrl(buildQuery({ all: true })), {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const allItems = await res.json();
+        const pageItems = currentItems;
+        currentItems = Array.isArray(allItems) ? allItems : [];
+        try {
+          runExport(format);
+        } finally {
+          currentItems = pageItems;
+        }
+      } catch (error) {
+        console.error('Failed to export store list:', error);
+        alert('Unable to export. Refresh or sign in again.');
+      }
+      return;
+    }
+    runExport(format);
+  }
+
+  function runExport(format) {
     if (!currentItems.length) {
       alert('No data to export.');
       return;
@@ -7321,22 +8291,151 @@
       return;
     }
 
-    const html = await res.text();
-    const popup = window.open('', '_blank', 'width=1100,height=780');
-    if (!popup) {
-      alert('Please allow pop-ups to download invoice.');
-      return;
+    AwsumReports.printHtml(await res.text());
+  }
+
+  function parseApiError(text) {
+    try {
+      const j = JSON.parse(text);
+      if (typeof j.detail === 'string') return j.detail;
+      if (Array.isArray(j.detail)) return j.detail.map(d => d.msg).join(' ');
+    } catch (e) { /* not JSON */ }
+    return 'Something went wrong. Please try again.';
+  }
+
+  function validateAgencyForm(data) {
+    const errors = [];
+    const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
+    masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    [['agency_type_id', 'Agency Type'], ['company_name', 'Company Name']].forEach(([n, l]) => {
+      if (!String(data[n] ?? '').trim()) { errors.push(`${l} is required.`); mark(n); }
+    });
+    const email = String(data.email || '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { errors.push('Please enter a valid email address.'); mark('email'); }
+    const rate = String(data.commission_rate ?? '').trim();
+    if (rate !== '' && (isNaN(Number(rate)) || Number(rate) < 0 || Number(rate) > 100)) { errors.push('Commission Rate must be a number between 0 and 100.'); mark('commission_rate'); }
+    const zip = String(data.zip || '').trim();
+    if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) { errors.push('ZIP code must use US format: 12345 or 12345-6789.'); mark('zip'); }
+    return errors;
+  }
+
+  function validateAgencyTypeForm(data) {
+    const errors = [];
+    const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
+    masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    const code = normalizeAgentTypeCode(data.agency_type_code);
+    if (!code) { errors.push('Agency Type Code is required.'); mark('agency_type_code'); }
+    else if (code.length > 30) { errors.push('Agency Type Code must be 30 characters or fewer.'); mark('agency_type_code'); }
+    else if (isDuplicateAgentTypeCode(code)) { errors.push('Agency Type Code already exists.'); mark('agency_type_code'); }
+    const name = String(data.agency_type_name || '').trim();
+    if (!name) { errors.push('Agency Type Name is required.'); mark('agency_type_name'); }
+    else if (name.length > 120) { errors.push('Agency Type Name must be 120 characters or fewer.'); mark('agency_type_name'); }
+    if (!['active', 'inactive'].includes(String(data.status || '').toLowerCase())) { errors.push('Status must be Active or Inactive.'); mark('status'); }
+    return errors;
+  }
+
+  function validateBusinessTypeForm(data) {
+    const errors = [];
+    const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
+    masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    const currentId = String(selectedMasterId.value || '').trim();
+    const others = (currentItems || []).filter((item) => String(item.id ?? '') !== currentId);
+    const code = String(data.code || '').trim();
+    const name = String(data.name || '').trim();
+    if (!name) { errors.push('Business Type Name is required.'); mark('name'); }
+    else if (others.some((i) => String(i.name || '').trim().toLowerCase() === name.toLowerCase())) { errors.push('Business Type Name already exists.'); mark('name'); }
+    if (!code) { errors.push('Business Type Code is required.'); mark('code'); }
+    else if (others.some((i) => String(i.code || '').trim().toLowerCase() === code.toLowerCase())) { errors.push('Business Type Code already exists.'); mark('code'); }
+    if (!['active', 'inactive'].includes(String(data.status || '').toLowerCase())) { errors.push('Status must be Active or Inactive.'); mark('status'); }
+    return errors;
+  }
+
+  function validateStoreForm(data) {
+    const errors = [];
+    const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
+    masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    if (!String(data.store_name || '').trim()) { errors.push('Store Name is required.'); mark('store_name'); }
+    if (agencyModalMode === 'create' && !String(data.client_id || '').trim()) { errors.push('Merchant is required.'); mark('client_id'); }
+    if (agencyModalMode === 'create' && !String(data.installed_by_agency_id || '').trim()) { errors.push('Agency is required.'); mark('installed_by_agency_id'); }
+    if (agencyModalMode === 'create' && !String(data.business_type || '').trim()) { errors.push('Business Type is required.'); mark('business_type'); }
+    const email = String(data.email || '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { errors.push('Please enter a valid contact email address.'); mark('email'); }
+    const rEmail = String(data.receipt_email || '').trim();
+    if (rEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rEmail)) { errors.push('Please enter a valid receipt email address.'); mark('receipt_email'); }
+    return errors;
+  }
+
+  function validateMerchantForm(data) {
+    const errors = [];
+    const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
+    masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    if (!String(data.merchant_name || '').trim()) { errors.push('Merchant Name is required.'); mark('merchant_name'); }
+    if (!String(data.primary_agency_id || '').trim()) { errors.push('Primary Agency is required.'); mark('primary_agency_id'); }
+    if (!String(data.business_type || '').trim()) { errors.push('Business Type is required.'); mark('business_type'); }
+    const email = String(data.email || '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { errors.push('Please enter a valid contact email address.'); mark('email'); }
+    return errors;
+  }
+
+  function jumpToStoreErrorTab() {
+    const bad = masterFormModal.querySelector('.is-invalid');
+    const panel = bad && bad.closest('.client-tab-panel');
+    if (!panel) return;
+    const btn = masterFormModal.querySelector(`.client-tab-btn[data-tab-target="${panel.dataset.tabPanel}"]`);
+    if (btn) btn.click();
+  }
+
+  function notifyStorageWarning(result) {
+    if (result.storage_warning) alert(result.storage_warning);
+  }
+
+  const agencyRegistrationPasswords = new Map();
+
+  function syncAgencyEmailButton() {
+    const button = document.getElementById('btnAgencyRegistrationEmail');
+    if (!button) return;
+    button.classList.toggle('d-none', !selectedMasterId.value || !selectedOriginalRecord?.has_agency_admin);
+  }
+
+  async function openAgencyRegistrationEmail(agencyId) {
+    const endpoint = `${apiBase}/agency/${encodeURIComponent(agencyId)}/registration-email`;
+    const requestEmail = async (path, payload) => {
+      const response = await fetch(path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, temporary_password: agencyRegistrationPasswords.get(String(agencyId)) || '' }),
+      });
+      if (!response.ok) {
+        const message = parseApiError(await response.text());
+        if (message.startsWith('The temporary password is no longer valid.')) {
+          agencyRegistrationPasswords.delete(String(agencyId));
+        }
+        throw new Error(message);
+      }
+      return response.json();
+    };
+    const preview = await requestEmail(endpoint + '/preview', {});
+    if (masterEditModalElement?.classList.contains('show')) {
+      await new Promise(resolve => {
+        masterEditModalElement.addEventListener('hidden.bs.modal', resolve, { once: true });
+        closeMasterEditModal();
+      });
     }
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-    popup.focus();
-    popup.print();
+    window.AwsumEmailPreview.open({
+      title: 'Send Registration Email',
+      subtitle: 'Agency saved. Review To Email and first-login information before sending.',
+      recipient: preview.recipient,
+      recipientNote: 'To Email applies only to this send. Primary Contact Email and Agency User Login Email are never changed.',
+      subject: preview.subject, message: preview.message, readOnlyContent: true,
+      note: 'Password change is optional. Mail-server acceptance is not recipient delivery.',
+      preview: (payload) => requestEmail(endpoint + '/preview', payload),
+      send: (payload) => requestEmail(endpoint, payload),
+      onAccepted: () => agencyRegistrationPasswords.delete(String(agencyId)),
+    });
   }
 
   async function saveItem() {
     const dirty = isFormDirty();
-    if (!dirty) {
+    if (!dirty && !(usesPremiumModal() && agencyModalMode === 'create')) {
       if (isListCentricModule) {
         closeMasterEditModal();
       }
@@ -7344,10 +8443,59 @@
     }
 
     const id = selectedMasterId.value;
-    const data = getFormData();
+    let data;
+    try {
+      data = getFormData();
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      showMasterModalError(error.message);
+      return false;
+    }
 
-    if (activeModule === 'agent-type') {
-      const codeInput = document.getElementById('field_agent_type_code');
+    if (activeModule === 'agency-type') {
+      const errors = validateAgencyTypeForm(data);
+      if (errors.length) {
+        showMasterModalError(errors.join(' '));
+        return false;
+      }
+      showMasterModalError('');
+    }
+    if (activeModule === 'store') {
+      const errors = validateStoreForm(data);
+      if (errors.length) {
+        showMasterModalError(errors.join(' '));
+        jumpToStoreErrorTab();
+        return false;
+      }
+      showMasterModalError('');
+    }
+    if (activeModule === 'merchant') {
+      const errors = validateMerchantForm(data);
+      if (errors.length) {
+        showMasterModalError(errors.join(' '));
+        jumpToStoreErrorTab();
+        return false;
+      }
+      showMasterModalError('');
+    }
+    if (activeModule === 'business-type') {
+      const errors = validateBusinessTypeForm(data);
+      if (errors.length) {
+        showMasterModalError(errors.join(' '));
+        return false;
+      }
+      showMasterModalError('');
+    }
+    if (activeModule === 'agency') {
+      const errors = validateAgencyForm(data);
+      if (errors.length) {
+        showMasterModalError(errors.join(' '));
+        return false;
+      }
+      showMasterModalError('');
+    }
+    if (activeModule === 'agency-type') {
+      const codeInput = document.getElementById('field_agency_type_code');
       const codeIsValid = applyAgentTypeCodeValidation();
       if (!codeIsValid) {
         if (codeInput) codeInput.reportValidity();
@@ -7379,7 +8527,13 @@
 
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to save: ' + text);
+      if (usesPremiumModal()) {
+        showMasterModalError(activeModule === 'business-type' && res.status >= 500
+          ? 'Unable to save. The Business Type Code or Name may already exist.'
+          : parseApiError(text));
+      } else {
+        alert('Unable to save: ' + text);
+      }
       return false;
     }
 
@@ -7390,10 +8544,17 @@
       lastSavedId = savedId;
       selectedMasterId.value = savedId;
     }
+    if (activeModule === 'agency' && json.agency_user_created) {
+      agencyRegistrationPasswords.set(String(savedId), json.temporary_password);
+    }
 
     await loadList(lastSavedId);
     setBaselineSnapshot();
     updateListCentricActionButtons();
+    notifyStorageWarning(json);
+    if (activeModule === 'agency' && json.agency_user_created) {
+      alert('Agency Admin User created.');
+    }
     return true;
   }
 
@@ -7462,9 +8623,16 @@
       handleExport(item.dataset.exportFormat);
     });
   });
-  masterSearch.addEventListener('keyup', (e) => { if (e.key === 'Enter') loadList(); });
+  masterSearch.addEventListener('keyup', (e) => {
+    if (e.key !== 'Enter') return;
+    if (activeModule === 'store') reloadStoreFromFirstPage();
+    else loadList();
+  });
   if (masterStatusFilter) {
-    masterStatusFilter.addEventListener('change', () => loadList());
+    masterStatusFilter.addEventListener('change', () => {
+      if (activeModule === 'store') reloadStoreFromFirstPage();
+      else loadList();
+    });
   }
   if (masterCategoryFilter) {
     masterCategoryFilter.addEventListener('change', () => loadList());
@@ -7478,6 +8646,7 @@
   configureMasterStatusFilter();
   configureMasterCategoryFilter();
   applyListCentricLabels();
+  setupStoreGridControls();
   renderListHeader();
   renderForm();
   attachFormChangeWatchers();
@@ -7510,4 +8679,3 @@
 </script>
 
 {% endblock %}
-

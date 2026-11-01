@@ -1,0 +1,12 @@
+{
+  "width": 512,
+  "height": 512,
+  "format": "webp",
+  "quality": 0.88,
+  "background": "#ffffff",
+  "minZoom": 0.25,
+  "maxCoverZoom": 4,
+  "maxInputBytes": 5242880,
+  "maxInputPixels": 20000000,
+  "inputMimeTypes": ["image/jpeg", "image/png", "image/webp"]
+}

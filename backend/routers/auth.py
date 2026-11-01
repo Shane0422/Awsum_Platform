@@ -7,19 +7,26 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 import bcrypt
 import re
+import logging
+import html
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.database.pg_platform import PlatformSessionLocal
-from backend.models_admin.platform_user import PlatformUser
+from backend.models_admin.platform_user import PlatformUser, AGENCY_ADMIN_ROLE_NAME
+from backend.models_admin.agency import Agency
+from backend.models_admin.role import Role
 from backend.models_admin.store import Store   # ✅ Store model import required
-from backend.utils.jwt_handler import create_access_token
 from backend.config.templates import templates
+from backend.services import web_sessions
+from fastapi import HTTPException
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
+PLATFORM_ADMIN_ACCESS_CODE = "ADMIN"
+PLATFORM_ADMIN_ROLE_NAME = "superadmin"
 CLIENT_CODE_PATTERNS = (
-    re.compile(r"^STR_(\d{5})$", re.IGNORECASE),   # Current store code format
-    re.compile(r"^CLT_(\d{5})$", re.IGNORECASE),   # Legacy store code format
-    re.compile(r"^CUST_(\d{5})$", re.IGNORECASE),  # Legacy support
+    re.compile(r"^(?:STR|CLT)_?(\d{5})$", re.IGNORECASE),
+    re.compile(r"^CUST_?(\d{5})$", re.IGNORECASE),
 )
 
 DASHBOARD_TYPE_TO_URL = {
@@ -32,6 +39,7 @@ DASHBOARD_TYPE_TO_URL = {
 
 # bcrypt max password length is 72 bytes; validate early for a clear error response
 MAX_BCRYPT_PASSWORD_BYTES = 72
+logger = logging.getLogger(__name__)
 
 
 def _login_error(message: str, status_code: int = 401) -> JSONResponse:
@@ -47,6 +55,32 @@ def validate_bcrypt_password(password: str, field_name: str = "password") -> boo
 def normalize_email(email: str) -> str:
     """Normalises the email address to lowercase with leading/trailing whitespace stripped."""
     return (email or "").strip().lower()
+
+def password_matches(user: PlatformUser, password: str) -> bool:
+    if not validate_bcrypt_password(password):
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), user.c_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        logger.warning("Unable to verify password for user %s", user.i_platform_user_id)
+        return False
+
+
+def _finish_login(db: Session, user: PlatformUser, request: Request, claims: dict, target: str):
+    try:
+        token = web_sessions.create_session(db, user, request, claims)
+    except web_sessions.ActiveSessionExists as exc:
+        return _login_error(str(exc), status_code=409)
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Unable to create web login session")
+        return _login_error("An error occurred. Please try again later.", status_code=500)
+    response = RedirectResponse(url="/change-password" if user.i_must_change_password == 1 else target, status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    response.set_cookie(key="access_token", value=token, httponly=True, secure=False, samesite="lax")
+    if not request.cookies.get("awsum_web_client"):
+        response.set_cookie("awsum_web_client", request.state.web_client_id, httponly=True, samesite="lax", max_age=31536000)
+    return response
 
 
 def _normalize_dashboard_type(raw_value: str | None) -> str:
@@ -125,6 +159,7 @@ def _resolve_post_login_redirect(db: Session, user: Any, store_id: int) -> str:
     return "/"
 
 router = APIRouter()
+platform_admin_router = APIRouter(tags=["Platform Admin"])
 
 # ==========================
 # DB Helpers
@@ -138,44 +173,173 @@ def get_db():
 
 
 def _get_authenticated_user(request: Request, db: Session):
+    try:
+        return web_sessions.authenticate(request, db, allow_password_change=True)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return None
+        raise
+
+
+def get_platform_admin_session(request: Request, db: Session) -> tuple[str, PlatformUser | None]:
     token = request.cookies.get("access_token")
     if not token:
-        return None
+        return "anonymous", None
 
     from jose import JWTError, jwt
     from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        uid = payload.get("uid")
-        principal_type = payload.get("principal_type", "platform_user")
-        if uid is None:
-            return None
     except JWTError:
-        return None
+        return "anonymous", None
 
-    if principal_type == "platform_user":
-        return db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == uid).first()
+    if payload.get("principal_type") != "platform_user":
+        return "forbidden", None
+    if payload.get("scope_type") != "platform":
+        return "forbidden", None
+    if (payload.get("access_code") or "").strip().casefold() != PLATFORM_ADMIN_ACCESS_CODE.casefold():
+        return "forbidden", None
 
-    return None
+    try:
+        token_role_id = int(payload.get("role_id"))
+    except (TypeError, ValueError):
+        return "anonymous", None
+
+    try:
+        user = web_sessions.authenticate(request, db, allow_password_change=True)
+    except HTTPException:
+        return "anonymous", None
+    if not user:
+        return "anonymous", None
+    if (user.c_status or "").strip().lower() != "active":
+        return "forbidden", None
+    if user.i_agency_id is not None:
+        return "forbidden", None
+
+    try:
+        if int(user.i_store_id) != ADMIN_STORE_ID:
+            return "forbidden", None
+    except (TypeError, ValueError):
+        return "forbidden", None
+
+    role = db.query(Role).filter(Role.i_role_id == user.i_role_id).first()
+    if not role or (role.c_status or "").strip().lower() != "active":
+        return "forbidden", None
+    if token_role_id != user.i_role_id:
+        return "forbidden", None
+    if (role.c_name or "").strip().casefold() != PLATFORM_ADMIN_ROLE_NAME:
+        return "forbidden", None
+
+    return "authorized", user
+
+
+def _platform_admin_login_page(request: Request, db: Session):
+    from backend.services.branding import resolve_branding
+    request.state.login_branding = resolve_branding(db, "PLATFORM")
+    return templates.TemplateResponse(
+        request,
+        "platform/platform_home.html",
+        {"request": request, "login_mode": "platform_admin"},
+    )
+
+
+@platform_admin_router.get("/platform-admin", response_class=HTMLResponse)
+def platform_admin_login_page(request: Request, db: Session = Depends(get_db)):
+    resp = _platform_admin_login_page(request, db)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@platform_admin_router.post("/platform-admin/login", response_class=HTMLResponse)
+def platform_admin_login(
+    request: Request,
+    access_code: str = Form(...),
+    login_mode: str = Form("platform_admin"),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if login_mode != "platform_admin":
+        return _login_error("Invalid login mode.", status_code=400)
+    if (access_code or "").strip().casefold() != PLATFORM_ADMIN_ACCESS_CODE.casefold():
+        return _login_error("Invalid credentials.", status_code=401)
+
+    email_norm = normalize_email(email)
+    try:
+        user = (
+            db.query(PlatformUser)
+            .filter(func.lower(PlatformUser.c_email) == email_norm,
+                    PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None))
+            .first()
+        )
+        role = db.query(Role).filter(Role.i_role_id == user.i_role_id).first() if user else None
+    except Exception:
+        return _login_error("An error occurred. Please try again later.", status_code=500)
+
+    if not user or (user.c_status or "").strip().lower() != "active":
+        return _login_error("Invalid credentials.", status_code=401)
+    if not validate_bcrypt_password(password):
+        return _login_error(f"Password is too long (max {MAX_BCRYPT_PASSWORD_BYTES} bytes).", status_code=400)
+
+    if not password_matches(user, password):
+        return _login_error("Invalid credentials.", status_code=401)
+    if not role or (role.c_status or "").strip().lower() != "active":
+        return _login_error("This account does not have an active Platform administrator Role.", status_code=403)
+    if (role.c_name or "").strip().casefold() != PLATFORM_ADMIN_ROLE_NAME:
+        return _login_error("This account does not have Platform administrator permission.", status_code=403)
+
+    claims = {
+        "uid": user.i_platform_user_id,
+        "user_id": user.i_platform_user_id,
+        "sub": user.c_email,
+        "email": user.c_email,
+        "store": ADMIN_STORE_ID,
+        "role_id": user.i_role_id,
+        "role": role.c_name,
+        "scope_type": "platform",
+        "access_code": PLATFORM_ADMIN_ACCESS_CODE,
+        "principal_type": "platform_user",
+    }
+
+    return _finish_login(db, user, request, claims, "/platform/dashboard")
 
 # ==========================
 # 🔑 Login Page (GET)
 # ==========================
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    reason = (request.query_params.get("reason") or "").strip().lower()
-    notice_map = {
-        "session_expired": "Your session has expired. Please log in again.",
-        "platform_admin_required": "Platform admin access is required to open that page.",
-    }
-    login_notice = notice_map.get(reason)
+    suffix = "?reason=session_expired" if request.query_params.get("reason") == "session_expired" else ""
+    return RedirectResponse("/login" + suffix, status_code=303)
 
-    return templates.TemplateResponse("platform/login.html", {
-        "request": request,
-        "login_notice": login_notice,
-        "force_open_login_modal": bool(login_notice),
-    })
+
+@router.get("/branding")
+def login_branding(access_code: str, context_type: str | None = None, db: Session = Depends(get_db)):
+    from backend.services.branding import resolve_access_code
+    response = JSONResponse(resolve_access_code(db, access_code, context_type).public())
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@platform_admin_router.get("/login", response_class=HTMLResponse)
+@platform_admin_router.get("/login/{context_type}/{access_code}", response_class=HTMLResponse)
+def organization_login_page(
+    request: Request, context_type: str | None = None, access_code: str | None = None,
+    db: Session = Depends(get_db),
+):
+    from backend.services.branding import resolve_access_code, resolve_branding
+    brand = resolve_access_code(db, access_code, context_type) if access_code else resolve_branding(db)
+    if context_type and context_type.upper() not in {"AGENCY", "MERCHANT", "STORE"}:
+        raise HTTPException(404, "Login entry not found.")
+    request.state.login_branding = brand
+    response = templates.TemplateResponse(
+        request, "platform/platform_home.html",
+        {"request": request, "login_mode": "general", "login_entry_page": True,
+         "login_entry_fixed": bool(access_code)},
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 # ==========================
 # 🔑 Login (POST)
@@ -196,61 +360,30 @@ def login(
     if not store_identifier:
         return _login_error("Invalid credentials.", status_code=400)
 
-    # Normalise email for case-insensitive login
-    email_norm = normalize_email(email)
+    if store_identifier_norm in {"AWSUM", PLATFORM_ADMIN_ACCESS_CODE}:
+        return _login_error("Platform administrators must sign in at /platform-admin.", status_code=400)
 
-    # Admin login is fully isolated; never falls back to regular store logic
-    if store_identifier_norm == "ADMIN":
-        try:
-            user = (
-                db.query(PlatformUser)
-                .filter(func.lower(PlatformUser.c_email) == email_norm, PlatformUser.i_store_id == ADMIN_STORE_ID)
-                .first()
-            )
-        except Exception:
-            return _login_error("An error occurred. Please try again later.", status_code=500)
+    agency = db.query(Agency).filter(
+        func.upper(Agency.c_agency_code) == store_identifier_norm, Agency.c_status == "active"
+    ).first()
+    if agency:
+        user = db.query(PlatformUser).filter(
+            PlatformUser.i_agency_id == agency.i_agency_id,
+            func.lower(PlatformUser.c_email) == normalize_email(email),
+        ).first()
+        role = db.get(Role, user.i_role_id) if user else None
+        if (not user or user.c_status != "active" or not role or role.c_status != "active"
+                or role.c_name != AGENCY_ADMIN_ROLE_NAME or not password_matches(user, password)):
+            return _login_error("Invalid credentials.")
+        claims = {
+            "uid": user.i_platform_user_id, "sub": user.c_email, "email": user.c_email,
+            "store": user.i_store_id, "role_id": user.i_role_id, "role": role.c_name,
+            "scope_type": "agency", "agency_id": agency.i_agency_id,
+            "access_code": agency.c_agency_code, "principal_type": "platform_user",
+        }
+        return _finish_login(db, user, request, claims, "/auth/registration-completed")
 
-        # bcrypt 72-byte limit; validate before running the hash check
-        if not validate_bcrypt_password(password):
-            return _login_error(
-                f"Password is too long (max {MAX_BCRYPT_PASSWORD_BYTES} bytes). Please use a shorter password.",
-                status_code=400,
-            )
-
-        password_ok = False
-        if user:
-            try:
-                password_ok = bcrypt.checkpw(password.encode("utf-8"), user.c_password.encode("utf-8"))
-            except ValueError:
-                password_ok = False
-
-        if not user or not password_ok:
-            return _login_error("Invalid credentials.", status_code=401)
-
-        token = create_access_token({
-            "uid": user.i_platform_user_id,
-            "sub": user.c_email,
-            "store": ADMIN_STORE_ID,
-            "role": 1,
-            "principal_type": "platform_user",
-        })
-
-        if user.i_must_change_password == 1:
-            redirect_url = "/change-password"
-        else:
-            redirect_url = "/platform/dashboard"
-
-        resp = RedirectResponse(url=f"/auth/redirector?target={redirect_url}", status_code=303)
-        resp.set_cookie(
-            key="access_token",
-            value=token,
-            httponly=True,
-            secure=False,
-            samesite="lax"
-        )
-        return resp
-
-    # Non-admin login paths are intentionally blocked in this platform DB auth endpoint.
+    # Store operation-user authentication remains unchanged.
     return _login_error(
         "Platform DB does not manage Store users. Please use your Client/Store operation DB login path.",
         status_code=400,
@@ -261,9 +394,10 @@ def login(
 def change_password_page(request: Request, db: Session = Depends(get_db)):
     user = _get_authenticated_user(request, db)
     if not user:
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/platform-admin" if _is_platform_admin_logout(request) else "/", status_code=303)
 
     return templates.TemplateResponse(
+        request,
         "platform/change_password.html",
         {
             "request": request,
@@ -283,10 +417,11 @@ def change_password_submit(
 ):
     user = _get_authenticated_user(request, db)
     if not user:
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/platform-admin" if _is_platform_admin_logout(request) else "/", status_code=303)
 
     if new_password != confirm_password:
         return templates.TemplateResponse(
+            request,
             "platform/change_password.html",
             {
                 "request": request,
@@ -299,6 +434,7 @@ def change_password_submit(
 
     if not validate_bcrypt_password(new_password):
         return templates.TemplateResponse(
+            request,
             "platform/change_password.html",
             {
                 "request": request,
@@ -309,13 +445,9 @@ def change_password_submit(
             status_code=400,
         )
 
-    try:
-        current_ok = bcrypt.checkpw(current_password.encode("utf-8"), user.c_password.encode("utf-8"))
-    except Exception:
-        current_ok = False
-
-    if not current_ok:
+    if not password_matches(user, current_password):
         return templates.TemplateResponse(
+            request,
             "platform/change_password.html",
             {
                 "request": request,
@@ -324,6 +456,14 @@ def change_password_submit(
                 "error": "Current password is invalid.",
             },
             status_code=401,
+        )
+
+    if user.i_must_change_password == 1 and password_matches(user, new_password):
+        return templates.TemplateResponse(
+            request, "platform/change_password.html",
+            {"request": request, "user": user, "must_change": True,
+             "error": "Choose a password different from the temporary password."},
+            status_code=400,
         )
 
     user.c_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -335,10 +475,29 @@ def change_password_submit(
         user.i_updated_by = user.i_platform_user_id
     db.commit()
 
+    if user.i_agency_id is not None:
+        return RedirectResponse(url="/auth/registration-completed", status_code=303)
     if isinstance(user, PlatformUser):
         return RedirectResponse(url="/platform/dashboard", status_code=303)
 
     return RedirectResponse(url=_resolve_post_login_redirect(db, user, user.i_store_id), status_code=303)
+
+
+@router.get("/registration-completed", response_class=HTMLResponse)
+def registration_completed(request: Request, db: Session = Depends(get_db)):
+    user = web_sessions.authenticate(request, db, allow_password_change=True)
+    if user.i_agency_id is None:
+        raise HTTPException(403, "Agency login required.")
+    if user.i_must_change_password == 1:
+        return RedirectResponse("/change-password", status_code=303)
+    return HTMLResponse(
+        "<!DOCTYPE html><html><head><title>Registration completed</title></head><body>"
+        f"<h1>Registration completed</h1><p>{html.escape(user.c_email)}</p>"
+        "<p>You are signed in. Agency Dashboard is not available yet.</p>"
+        '<a href="/auth/change-password">Change Password</a> | '
+        '<a href="/auth/logout">Sign out</a></body></html>',
+        headers={"Cache-Control": "no-store"},
+    )
 
 # ==========================
 # 📝 Register (POST)
@@ -387,9 +546,36 @@ def redirector(request: Request, target: str):
 # ==========================
 # 🔑 Logout
 # ==========================
+def _is_platform_admin_logout(request: Request) -> bool:
+    """True when the session being closed belongs to the HQ admin (token, or Referer if the token already expired)."""
+    from urllib.parse import urlparse
+    from jose import JWTError, jwt
+    from backend.utils.jwt_handler import SECRET_KEY, ALGORITHM
+
+    token = request.cookies.get("access_token")
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            return (
+                payload.get("principal_type") == "platform_user"
+                and payload.get("scope_type") == "platform"
+                and (payload.get("access_code") or "").strip().casefold() == PLATFORM_ADMIN_ACCESS_CODE.casefold()
+            )
+        except JWTError:
+            pass
+    try:
+        path = urlparse(request.headers.get("referer") or "").path or ""
+    except ValueError:
+        return False
+    return path == "/platform" or path.startswith("/platform/") or path.startswith("/platform-admin")
+
+
 @router.get("/logout")
-def logout(response: Response):
-    resp = RedirectResponse(url="/", status_code=303)
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    from backend.services.web_session_http import session_login_path
+    target = session_login_path(request, db)
+    web_sessions.logout_session(request, db)
+    resp = RedirectResponse(url=target, status_code=303)
     resp.delete_cookie("access_token")
     resp.delete_cookie("platform_dashboard_first_logout_done")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

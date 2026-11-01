@@ -169,3 +169,6 @@ Data31234
 
 PostgreSQL Data 폴더는 하나
 DB 이름으로 거래처 분리
+
+cd D:\01_Development\Awsum_Projects\Awsum_Platform
+py -m uvicorn backend.main:app --reload

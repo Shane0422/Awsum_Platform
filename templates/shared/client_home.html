@@ -6,9 +6,10 @@
   <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/brand.css">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=2">
   <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
   <style>
+    :root { --platform-hero-image: url('{{ builtin_asset_url("background", "hero_platform.jpg") }}'); }
     .brand-icon {
       --aw-brand-icon-size: 28px;
     }
@@ -77,13 +78,13 @@
       <div id="collectionCarousel" class="carousel slide" data-bs-ride="carousel" data-bs-interval="5000" data-bs-pause="false">
         <div class="carousel-inner">
           <div class="carousel-item active">
-            <img src="/static/images/collection_black.jpg" class="d-block w-100 collection-img" alt="Classic Black">
+            <img src="{{ builtin_asset_url('ui', 'collection_black.jpg') }}" class="d-block w-100 collection-img" alt="Classic Black">
           </div>
           <div class="carousel-item">
-            <img src="/static/images/collection_navy.jpg" class="d-block w-100 collection-img" alt="Modern Navy">
+            <img src="{{ builtin_asset_url('ui', 'collection_navy.jpg') }}" class="d-block w-100 collection-img" alt="Modern Navy">
           </div>
           <div class="carousel-item">
-            <img src="/static/images/collection_white.jpg" class="d-block w-100 collection-img" alt="Elegant White">
+            <img src="{{ builtin_asset_url('ui', 'collection_white.jpg') }}" class="d-block w-100 collection-img" alt="Elegant White">
           </div>
         </div>
         <button class="carousel-control-prev" type="button" data-bs-target="#collectionCarousel" data-bs-slide="prev">

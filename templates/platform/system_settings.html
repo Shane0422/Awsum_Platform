@@ -1,0 +1,206 @@
+{% extends "platform/platform_base.html" %}
+
+{% block page_title %}System Settings{% endblock %}
+
+{% block content %}
+<style>
+  #sendTestEmailModal .send-test-email-dialog {
+    height: calc(90vh - 1rem);
+    height: calc(90dvh - 1rem);
+    max-height: calc(90vh - 1rem);
+    max-height: calc(90dvh - 1rem);
+  }
+
+  #sendTestEmailModal .send-test-email-content {
+    display: flex;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  #sendTestEmailModal #sendTestEmailForm {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  #sendTestEmailModal .modal-header,
+  #sendTestEmailModal .modal-footer {
+    flex: 0 0 auto;
+  }
+
+  #sendTestEmailModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  @media (max-width: 575.98px) {
+    #sendTestEmailModal .send-test-email-dialog {
+      height: calc(90vh - 1rem);
+      height: calc(90dvh - 1rem);
+      max-height: calc(90vh - 1rem);
+      max-height: calc(90dvh - 1rem);
+    }
+  }
+</style>
+<div class="container-fluid px-0 system-settings-page">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+    <div>
+      <h1 class="h4 mb-1">System Settings</h1>
+      <p class="text-muted mb-0">Manage company identity, data storage, email delivery and platform defaults.</p>
+    </div>
+    <span class="badge rounded-pill text-bg-light border">Super Admin only</span>
+  </div>
+
+  <div id="settingsGlobalMessage" class="alert d-none" role="status" aria-live="polite"></div>
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom-0 pt-3 px-3">
+      <ul class="nav nav-tabs card-header-tabs" id="settingsTabs" role="tablist">
+        <li class="nav-item" role="presentation"><button class="nav-link active" id="company-tab" data-bs-toggle="tab" data-bs-target="#company-pane" type="button" role="tab">Company</button></li>
+        <li class="nav-item" role="presentation"><button class="nav-link" id="storage-tab" data-bs-toggle="tab" data-bs-target="#storage-pane" type="button" role="tab">Storage</button></li>
+        <li class="nav-item" role="presentation"><button class="nav-link" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-pane" type="button" role="tab">Email</button></li>
+        <li class="nav-item" role="presentation"><button class="nav-link" id="general-tab" data-bs-toggle="tab" data-bs-target="#general-pane" type="button" role="tab">General</button></li>
+      </ul>
+    </div>
+    <div class="card-body p-3 p-lg-4">
+      <div id="settingsLoading" class="text-muted py-5 text-center">Loading settings…</div>
+      <div id="settingsContent" class="tab-content d-none">
+        <section class="tab-pane fade show active" id="company-pane" role="tabpanel" aria-labelledby="company-tab">
+          <form data-settings-section="company" novalidate>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label" for="company_name">Company Name</label><input class="form-control" id="company_name" maxlength="255" required></div>
+              <div class="col-md-6"><label class="form-label" for="display_name">Display Name</label><input class="form-control" id="display_name" maxlength="255" required></div>
+              <div class="col-md-6"><label class="form-label" for="website">Website</label><input class="form-control" id="website" type="text" inputmode="url" autocomplete="url" maxlength="1000" placeholder="awsumsolution.com or https://" aria-describedby="websiteError"><div class="invalid-feedback" id="websiteError" role="alert"></div></div>
+              <div class="col-md-6"><label class="form-label" for="contact_email">Contact Email</label><input class="form-control" id="contact_email" type="email" maxlength="254"></div>
+              <div class="col-md-6"><label class="form-label" for="phone">Phone</label><input class="form-control" id="phone" maxlength="80"></div>
+              <div class="col-12"><label class="form-label" for="address">Address</label><textarea class="form-control" id="address" rows="3" maxlength="2000"></textarea></div>
+              <div class="col-12">
+                <label class="form-label d-block">Company Logo</label>
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                  <img id="companyLogoPreview" src="{{ brand_logo_path or '' }}" alt="Company logo preview" style="max-width:220px;max-height:90px;object-fit:contain">
+                  <div><input class="form-control" id="companyLogoFile" type="file" accept="image/png,image/jpeg,image/webp"><div class="form-text">PNG, JPG, or WebP; maximum 5 MB. The selected image is uploaded when you save Company settings.</div></div>
+                </div>
+                <div id="companyLogoStatus" class="small text-muted mt-2">Saved logo</div>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-3 mt-4">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <span class="small text-muted" data-save-result="company"></span>
+            </div>
+          </form>
+        </section>
+
+        <section class="tab-pane fade" id="storage-pane" role="tabpanel" aria-labelledby="storage-tab">
+          <form data-settings-section="storage" novalidate>
+            <div class="mb-3"><label class="form-label" for="data_root_path">Data Root Path</label><div class="input-group"><input class="form-control font-monospace" id="data_root_path" maxlength="1000"><button type="button" class="btn btn-outline-secondary" id="copyStoragePath">Copy Path</button></div>
+              <div class="form-text">AWSUM_STORAGE_ROOT takes precedence and makes this setting read-only.</div></div>
+            <div class="border rounded p-3 mb-3 bg-light">
+              <div class="row g-2 small">
+                <div class="col-md-6"><strong>Effective path</strong><div id="effectiveStoragePath" class="font-monospace text-break"></div></div>
+                <div class="col-md-3"><strong>Source</strong><div id="storageSource"></div></div>
+                <div class="col-md-3"><strong>Path status</strong><div id="storageStatus"></div></div>
+              </div>
+            </div>
+            <div id="storageChangeWarning" class="alert alert-warning d-none" role="status"></div>
+            <div id="storageMigrationConfirmWrap" class="form-check mb-3 d-none"><input class="form-check-input" type="checkbox" id="confirm_existing_data_path_change"><label class="form-check-label" for="confirm_existing_data_path_change">I understand existing owner data, images (media), and image/path recovery maps will not be moved automatically and must be copied before switching roots.</label></div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <button type="button" class="btn btn-outline-primary" id="checkStoragePath">Check Path</button>
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <span class="small text-muted" data-save-result="storage"></span>
+            </div>
+            <p class="small text-muted mt-3 mb-0">Checking creates and removes only a temporary probe file when the selected directory already exists. PostgreSQL's own data directory cannot be changed here.</p>
+          </form>
+        </section>
+
+        <section class="tab-pane fade" id="email-pane" role="tabpanel" aria-labelledby="email-tab">
+          <form data-settings-section="email" novalidate>
+            <div id="smtpDeliveryStatus" class="alert alert-warning" role="status">Email delivery status will be checked from the saved settings.</div>
+            <div class="small text-muted mb-3">Defaults: SMTP Username and From Email info@awsumsolution.com, SMTP Host smtp.gmail.com, Port 465, SSL/TLS, and SMTP Authentication enabled. You can edit these values; saved valid values are retained.</div>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label" for="sender_name">Sender Name</label><input class="form-control smtp-setting" id="sender_name" maxlength="255"></div>
+              <div class="col-md-6"><label class="form-label" for="from_email">From Email</label><input class="form-control smtp-setting" id="from_email" type="email" maxlength="254"></div>
+              <div class="col-md-6"><label class="form-label" for="reply_to_email">Reply-To Email (optional)</label><input class="form-control smtp-setting" id="reply_to_email" type="email" maxlength="254"></div>
+              <div class="col-md-6"><label class="form-label" for="smtp_host">SMTP Host</label><input class="form-control smtp-setting" id="smtp_host" maxlength="255"></div>
+              <div class="col-md-3"><label class="form-label" for="smtp_port">SMTP Port</label><input class="form-control smtp-setting" id="smtp_port" type="number" min="1" max="65535"></div>
+              <div class="col-md-9"><label class="form-label" for="smtp_username">SMTP Username</label><input class="form-control smtp-setting" id="smtp_username" autocomplete="off" maxlength="255"></div>
+              <div class="col-md-6"><label class="form-label" for="smtp_password">SMTP Password</label><div class="input-group"><input class="form-control smtp-setting" id="smtp_password" type="password" autocomplete="new-password" maxlength="2000" value=""><button class="btn btn-outline-secondary" id="toggleSmtpPassword" type="button" aria-label="Show entered SMTP password" aria-pressed="false" aria-controls="smtp_password"><svg id="smtpPasswordEyeIcon" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg id="smtpPasswordEyeSlashIcon" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" hidden><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A11 11 0 0 1 12 5c6.4 0 10 7 10 7a14 14 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4-.8"></path></svg></button></div><div id="smtpPasswordSavedStatus" class="form-text">비밀번호가 설정되어 있지 않습니다.</div><div class="form-text">새 비밀번호를 입력하고 저장하세요. 입력란을 비워 저장하면 저장된 비밀번호를 유지합니다.</div></div>
+              <div class="col-md-6"><label class="form-label" for="encryption">Encryption</label><select class="form-select smtp-setting" id="encryption"><option value="STARTTLS">STARTTLS</option><option value="SSL-TLS">SSL-TLS</option></select></div>
+              <div class="col-md-6"><div class="form-check form-switch mt-4"><input class="form-check-input smtp-setting" type="checkbox" id="authentication"><label class="form-check-label" for="authentication">Use SMTP Authentication</label></div></div>
+              <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input smtp-setting" type="checkbox" id="clear_smtp_password"><label class="form-check-label text-danger" for="clear_smtp_password">Explicitly remove saved SMTP password</label></div></div>
+              <div class="col-md-6"><label class="form-label" for="test_recipient_email">Test Recipient Email</label><input class="form-control" id="test_recipient_email" type="email" maxlength="254"></div>
+            </div>
+            <div class="small text-muted mt-3">Credential status: <span id="smtpCredentialStatus">Not configured</span>. Encryption key: <span id="encryptionKeyStatus">Not configured</span>.</div>
+            <details class="small text-muted mt-2">
+              <summary>Encryption key help</summary>
+              <div class="mt-2">The SMTP password is encrypted with the server variable <code>AWSUM_SYSTEM_SETTINGS_ENCRYPTION_KEY</code>, read from the process environment or the server-only <code>.env</code> file (excluded from Git). Run <code>py tools\init_encryption_key.py</code> once on the server to create it; the key is never displayed and an existing key is never overwritten. No restart is needed. Back it up separately from the database: without it, saved passwords cannot be decrypted, and a new key must never replace the key of a database that already holds an encrypted password.</div>
+            </details>
+            <div id="emailTestResult" class="alert d-none mt-3" role="status" aria-live="polite"></div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mt-4">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="button" class="btn btn-outline-primary" id="testSmtpConnection">Test Connection</button>
+              <button type="button" class="btn btn-outline-secondary" id="sendSmtpTestEmail">Send Test Email</button>
+              <span class="small text-muted" data-save-result="email"></span>
+            </div>
+          </form>
+        </section>
+
+        <section class="tab-pane fade" id="general-pane" role="tabpanel" aria-labelledby="general-tab">
+          <form data-settings-section="general" novalidate>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label" for="default_timezone">Default Time Zone</label><select class="form-select" id="default_timezone"></select><div class="form-text">IANA time zone. Existing per-admin settings take precedence when available.</div></div>
+              <div class="col-md-3"><label class="form-label" for="date_format">Date Format</label><select class="form-select" id="date_format"><option value="YYYY-MM-DD">YYYY-MM-DD</option><option value="MM/DD/YYYY">MM/DD/YYYY</option><option value="DD/MM/YYYY">DD/MM/YYYY</option></select></div>
+              <div class="col-md-3"><label class="form-label" for="time_format">Time Format</label><select class="form-select" id="time_format"><option value="12h">12 hour</option><option value="24h">24 hour</option></select></div>
+            </div>
+            <div class="alert alert-light border mt-3 mb-0">Database timestamps remain stored in UTC. The selected time zone is the head-office default for display; existing administrator-specific preferences remain higher priority.</div>
+            <div class="d-flex align-items-center gap-3 mt-4">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <span class="small text-muted" data-save-result="general"></span>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="sendTestEmailModal" tabindex="-1" aria-labelledby="sendTestEmailModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg send-test-email-dialog">
+      <div class="modal-content send-test-email-content">
+        <form id="sendTestEmailForm" novalidate>
+          <div class="modal-header">
+            <h2 class="modal-title fs-5" id="sendTestEmailModalTitle">Send Test Email</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="sendTestEmailNotice" class="alert d-none" role="status" aria-live="polite"></div>
+            <div id="sendTestEmailResult" class="alert d-none" role="status" aria-live="polite"></div>
+            <div class="row g-3">
+              <div class="col-md-4"><label class="form-label" for="testEmailFrom">From</label><input class="form-control" id="testEmailFrom" readonly></div>
+              <div class="col-md-8"><label class="form-label" for="testEmailTo">To</label><input class="form-control" id="testEmailTo" type="email" maxlength="254" required></div>
+              <div class="col-12"><label class="form-label" for="testEmailSubject">Subject</label><input class="form-control" id="testEmailSubject" maxlength="255" required></div>
+              <div class="col-12"><label class="form-label" for="testEmailMessage">Message</label><textarea class="form-control" id="testEmailMessage" rows="3" maxlength="10000" required></textarea></div>
+            </div>
+            <div class="mt-4">
+              <h3 class="h6">Email preview</h3>
+              <div class="border rounded bg-light p-3 small">
+                <div><strong>From:</strong> <span id="testEmailPreviewFrom"></span></div>
+                <div><strong>To:</strong> <span id="testEmailPreviewTo"></span></div>
+                <div class="mb-3"><strong>Subject:</strong> <span id="testEmailPreviewSubject"></span></div>
+                <iframe id="testEmailPreviewBody" class="w-100 border rounded bg-white" title="Test email HTML body preview" sandbox="" style="height:240px"></iframe>
+                <div class="form-text mt-2">The email also includes a plain-text alternative.</div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="sendTestEmailConfirm">Send</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/js/system_settings.js?v=8"></script>
+{% endblock %}
