@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 import bcrypt
 import re
 import logging
-import html
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.database.pg_platform import PlatformSessionLocal
@@ -381,7 +380,7 @@ def login(
             "scope_type": "agency", "agency_id": agency.i_agency_id,
             "access_code": agency.c_agency_code, "principal_type": "platform_user",
         }
-        return _finish_login(db, user, request, claims, "/auth/registration-completed")
+        return _finish_login(db, user, request, claims, "/agency/dashboard")
 
     # Store operation-user authentication remains unchanged.
     return _login_error(
@@ -476,7 +475,7 @@ def change_password_submit(
     db.commit()
 
     if user.i_agency_id is not None:
-        return RedirectResponse(url="/auth/registration-completed", status_code=303)
+        return RedirectResponse(url="/agency/dashboard", status_code=303)
     if isinstance(user, PlatformUser):
         return RedirectResponse(url="/platform/dashboard", status_code=303)
 
@@ -490,14 +489,7 @@ def registration_completed(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(403, "Agency login required.")
     if user.i_must_change_password == 1:
         return RedirectResponse("/change-password", status_code=303)
-    return HTMLResponse(
-        "<!DOCTYPE html><html><head><title>Registration completed</title></head><body>"
-        f"<h1>Registration completed</h1><p>{html.escape(user.c_email)}</p>"
-        "<p>You are signed in. Agency Dashboard is not available yet.</p>"
-        '<a href="/auth/change-password">Change Password</a> | '
-        '<a href="/auth/logout">Sign out</a></body></html>',
-        headers={"Cache-Control": "no-store"},
-    )
+    return RedirectResponse("/agency/dashboard", status_code=303, headers={"Cache-Control": "no-store"})
 
 # ==========================
 # 📝 Register (POST)

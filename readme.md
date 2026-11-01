@@ -17,6 +17,30 @@ Frontend
   MD photos keep their MD-code filenames; User photos use immutable numeric IDs.
   See [the image/storage standard](docs/AWSUM_GLOBAL_PATH_STANDARD.md#user-photos-and-shared-form-components).
 
+Platform navigation
+- The shared Platform shell uses horizontal Dashboard, Master Group, Business,
+  Device & License, and Reports navigation instead of a left Sidebar.
+- Master Group also contains the existing Billing, Security, and permission-gated
+  System sections. Existing menu routes and disabled Coming soon items are retained.
+- Mega Menus highlight the current page and fit the viewport; Escape or clicking
+  outside closes them. Reports has no new route and remains Coming soon.
+- Focused checks: `.venv\Scripts\python.exe -m unittest tools.test_platform_navigation`.
+- Master Group lists share `static/css/awsum-list.css` through the existing
+  `master_group.html` template. Scope new list styles under `.awsum-list` rather
+  than duplicating them per entity; list behavior and edit-modal styles are unchanged.
+- List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
+- The same stylesheet is attached by `platform_base.html` for existing management,
+  Users, Sessions, Store Management, Accounts Tree, and System Settings pages.
+  `.awsum-admin` maps legacy cards, tables, controls, and tabs to the common palette;
+  page-specific layout, visibility, responsive scrolling, and validation remain intact.
+  Dashboard and authentication pages do not opt in.
+- Admin UI checks: `.venv\Scripts\python.exe -m unittest tools.test_platform_admin_ui`.
+- Management lists use shared `page_header` and `surface` macros from
+  `templates/platform/components/management_layout.html`: page-level actions,
+  a separate filter card, then the table card. Master Group uses the same components.
+  Store keeps its device panel and splitter below its filters. System Settings uses
+  the shared header and tab card followed by its existing settings forms.
+
 Database
 - AdminDB
 - StoreDB
@@ -156,10 +180,56 @@ Agency users sign in from `/` with Agency Code, Login Email and password, or
 from `/login/agency/{agency_code}`, through the existing `/auth/login` and web
 session service. New Agency users are not forced to change their password and
 may continue using it. The existing Change Password page is available from the
-registration-completed confirmation for voluntary changes. Previously existing
+Agency Portal Settings menu for voluntary changes. Previously existing
 users, passwords and Must Change Password flags are left unchanged by Save.
-No Agency Dashboard is implemented. Agency accounts cannot sign in as
+Agency sign-in opens `/agency/dashboard`; the old registration-completed URL
+redirects there. Agency accounts cannot sign in as
 Platform administrators. Inactive Agencies cannot sign in or keep using a session.
+
+### Agency Portal
+
+Platform Admin dashboard authorization reuses `get_platform_admin_session`, the
+same check as the existing Platform middleware/login, rather than requiring a
+fixed Role ID. `/platform/admin` is a protected compatibility redirect to
+`/platform/dashboard`; Agency sessions are forbidden on both Platform URLs.
+
+Menus: Dashboard, Merchants, Stores, Users, Reports, Settings.
+Agency UI reuses the Platform shell, common management layout/forms and list CSS.
+`awsum_header.html` renders the same logo (scale 1.5), header, navigation items,
+active state and profile area for Platform Admin and Agency. Only menu data and
+dashboard/settings targets differ; existing Platform permission-gated Mega Menus
+remain unchanged. Both use the same responsive CSS/JS without Agency overrides.
+Desktop header height is unchanged; narrow-screen navigation uses a single
+scrollable row so differing menu counts do not change header height.
+Image logos are width-limited on narrow screens.
+All requests use existing User/Auth/web sessions and server-enforced Agency scope.
+Merchants are restricted by `Account.i_agency_id`; Stores and device counts/details
+are restricted by **Store.i_installed_by_agency_id**, not the Merchant assignment.
+The technical Admin Store is always excluded.
+
+- `AgencyPortalPermissions` is the shared UI/API capability and record-scope service.
+  Merchant/Store/Device are read-only; Users have CRUD within their own Agency.
+  Every Agency route uses the common permission dependency; templates use the same policy.
+- Merchant/Store: read-only existing assigned records. No create/update/delete,
+  Agency reassignment, license, or entitlement changes.
+- Users: only this Agency's Agency Admin accounts; create with an entered password,
+  edit Name/Login Email/Phone and status. Reuses scoped email checks and bcrypt;
+  no plaintext password storage, role selection, password reset, or forced password change.
+  Self-deactivation is blocked. Deactivation terminates active sessions through the
+  existing common session helper, so reactivation does not revive an old token.
+  Delete follows the existing Platform User policy: deactivate without deleting
+  identity/password/history, and terminate active sessions. Self-delete is blocked.
+- Devices: read-only per assigned Store; Name/Type/OS/Last Seen/Status only.
+  Activation codes, hardware IDs, keys and License mutation APIs are not exposed.
+- Reports: assigned Merchant/Store/Device counts and CSV download, no sales reports.
+- Settings: own display Name/Phone; Login Email remains unchanged here;
+  voluntary password changes use the existing Change Password page.
+
+The Portal extends `platform_base.html` with Agency navigation, reuses
+`management_layout.html`, `awsum-list.css`, Bootstrap modals, and shared
+`management_form.html`/`management-form.js`. No separate UI theme or Auth/Session
+system and no DB migration are introduced.
+Focused tests: `.venv\Scripts\python.exe -m unittest tools.test_agency_portal tools.test_agency_portal_ui`.
 
 Focused validation: `py -m unittest tools.test_agency_activation tools.test_agency_activation_browser tools.test_license_email`.
 
@@ -305,9 +375,15 @@ delegate to this service. New protected modules must use `authenticate()` (or
 an existing common `get_current_user` dependency); never validate JWTs alone.
 
 After password and login-permission checks, login must call `create_session()`.
-It locks the user row, expires abandoned sessions, refuses another ACTIVE
-session with HTTP 409, and commits the session and login timestamp together.
-It never kicks out an existing active user. A PostgreSQL partial unique index
+It locks the user row and expires abandoned sessions. Platform Admin and Agency
+share the same policy: successful login from the same browser terminates its
+ACTIVE session and creates a replacement atomically; the old token is invalid.
+The existing persistent HttpOnly `awsum_web_client` cookie identifies the browser,
+not IP or User-Agent. It survives browser/PC restart without logout. If the cookie
+is cleared, a private window or another browser is treated as a different client.
+Only another client's unexpired ACTIVE session blocks login with HTTP 409.
+A wrong password never terminates an existing session. Session changes and
+login timestamp commit together. A PostgreSQL partial unique index
 also enforces one ACTIVE row per user across concurrent processes.
 
 Runtime configuration (positive integer minutes):

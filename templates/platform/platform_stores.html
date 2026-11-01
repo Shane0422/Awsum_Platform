@@ -1,13 +1,10 @@
 {% extends "platform/platform_base.html" %}
+{% from "platform/components/management_layout.html" import page_header, surface %}
 
 {% block page_title %}Store Management{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-column flex-md-row align-items-start justify-content-between mb-3 gap-3">
-  <div>
-    <h2 class="h5 mb-1">Store Management</h2>
-    <p class="text-muted mb-0">Unified store registry managed by Business Type and store-level operation/channel/device attributes.</p>
-  </div>
+{% call page_header('Store Management', 'Unified store registry managed by Business Type and store-level operation/channel/device attributes.') %}
   <div class="d-flex gap-2 flex-wrap align-items-center no-print">
     <button id="btnNew" class="btn btn-sm btn-primary btn-modern">New Store</button>
     <button id="btnSave" class="btn btn-sm btn-dark btn-modern">Save</button>
@@ -16,21 +13,17 @@
     <button id="btnPrint" class="btn btn-sm btn-outline-secondary btn-modern">Print</button>
     <button id="btnExport" class="btn btn-sm btn-outline-secondary btn-modern">Export</button>
   </div>
-</div>
+{% endcall %}
+{% call surface('filter') %}
+    <div class="awsum-filter-grid">
 
-<div class="row g-4">
-  <div class="col-12 col-xl-4">
-    <div class="card-modern p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start mb-3">
-        <h6 class="mb-0">Stores</h6>
-        <span class="badge bg-secondary">Filter</span>
-      </div>
-
-      <div class="mb-3">
+      <div>
+        <label for="searchInput" class="awsum-list-filter-label">Search</label>
         <input id="searchInput" class="form-control" type="search" placeholder="Search stores..." autocomplete="off">
       </div>
 
-      <div class="mb-3">
+      <div>
+        <label for="statusFilter" class="awsum-list-filter-label">Status</label>
         <select id="statusFilter" class="form-select">
           <option value="">All statuses</option>
           <option value="active" {% if filter.status == 'active' %}selected{% endif %}>Active</option>
@@ -38,7 +31,8 @@
         </select>
       </div>
 
-      <div class="mb-3">
+      <div>
+        <label for="businessTypeFilter" class="awsum-list-filter-label">Business Type</label>
         <select id="businessTypeFilter" class="form-select">
           <option value="">All business types</option>
           {% for bt in business_types %}
@@ -47,7 +41,8 @@
         </select>
       </div>
 
-      <div class="mb-3">
+      <div>
+        <label for="channelTypeFilter" class="awsum-list-filter-label">Channel Type</label>
         <select id="channelTypeFilter" class="form-select">
           <option value="">All channel types</option>
           <option value="POS" {% if filter.channel_type == 'POS' %}selected{% endif %}>POS</option>
@@ -57,7 +52,11 @@
           <option value="Other" {% if filter.channel_type == 'Other' %}selected{% endif %}>Other</option>
         </select>
       </div>
-
+    </div>
+{% endcall %}
+<div class="row g-4">
+  <div class="col-12 col-xl-4">
+    <div class="card-modern awsum-table-card h-100">
       <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
         <table class="table table-hover table-premium align-middle mb-0" id="storeListTable">
           <thead>

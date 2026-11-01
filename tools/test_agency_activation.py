@@ -9,7 +9,7 @@ import bcrypt
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,7 +23,7 @@ from backend.models_admin.role import Role
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
-from backend.routers import auth, platform_store
+from backend.routers import auth, platform_store, agency_portal
 from backend.services.business_contact import BusinessContactService
 from backend.services.mail_common import EmailConfigurationError, MailDeliveryError
 
@@ -62,6 +62,7 @@ class AgencyActivationTests(unittest.TestCase):
         app.include_router(auth.router, prefix="/auth")
         app.include_router(auth.platform_admin_router)
         app.include_router(platform_store.router)
+        app.include_router(agency_portal.router)
 
         def get_db():
             with self.factory() as db:
@@ -69,6 +70,7 @@ class AgencyActivationTests(unittest.TestCase):
 
         app.dependency_overrides[auth.get_db] = get_db
         app.dependency_overrides[platform_store.get_db] = get_db
+        app.dependency_overrides[agency_portal.get_db] = get_db
         self.app = app
         self.metadata = patch("backend.services.web_sessions.collect_session_metadata", return_value={})
         self.metadata.start()
@@ -271,6 +273,14 @@ class AgencyActivationTests(unittest.TestCase):
                 with self.factory() as db:
                     row = db.query(SessionTbl).filter_by(c_status="ACTIVE", i_agency_id=agency_id).one()
                     self.assertEqual(row.i_platform_user_id, expected_id)
+        with TestClient(self.app) as client:
+            response = self.login_agency(client, first["temporary_password"])
+            self.assertEqual(response.status_code, 303, response.text)
+            with self.factory() as db:
+                self.assertEqual(db.query(SessionTbl).filter_by(c_status="ACTIVE", i_agency_id=1).count(), 1)
+                self.assertEqual(db.query(SessionTbl).filter_by(c_status="TERMINATED", i_agency_id=1).count(), 1)
+                other = db.query(SessionTbl).filter_by(c_status="ACTIVE", i_agency_id=2).one()
+                self.assertEqual(other.i_platform_user_id, second_id)
         again = self.activate()
         self.assertFalse(again["agency_user_created"])
         with self.factory() as db:
@@ -364,15 +374,103 @@ class AgencyActivationTests(unittest.TestCase):
             "store_code": "agt00001", "email": "JANE@example.test", "password": password,
         }, follow_redirects=False)
 
+    def test_agency_relogin_replaces_session_and_revokes_old_token(self):
+        result = self.activate()
+        with TestClient(self.app) as first, TestClient(self.app) as second:
+            login = self.login_agency(first, result["temporary_password"])
+            self.assertEqual(login.status_code, 303, login.text)
+            self.assertEqual(first.get("/auth/registration-completed").status_code, 200)
+            original_token = first.cookies.get("access_token")
+            second.cookies.set("awsum_web_client", first.cookies.get("awsum_web_client"))
+            with self.factory() as db:
+                user = db.query(PlatformUser).filter_by(i_agency_id=1).one()
+                user_id, original_hash = user.i_platform_user_id, user.c_password
+                original_session_id = db.query(SessionTbl).filter_by(i_platform_user_id=user_id).one().i_session_id
+            replacement = self.login_agency(second, result["temporary_password"])
+            self.assertEqual(replacement.status_code, 303, replacement.text)
+            self.assertNotEqual(original_token, second.cookies.get("access_token"))
+            self.assertEqual(first.get("/auth/registration-completed").status_code, 401)
+            self.assertEqual(second.get("/auth/registration-completed").status_code, 200)
+            with self.factory() as db:
+                previous = db.get(SessionTbl, original_session_id)
+                self.assertEqual(previous.c_status, "TERMINATED")
+                self.assertIsNotNone(previous.dt_terminated)
+                self.assertEqual(previous.i_terminated_by, user_id)
+                active = db.query(SessionTbl).filter_by(i_platform_user_id=user_id, c_status="ACTIVE").one()
+                self.assertNotEqual(active.i_session_id, original_session_id)
+                self.assertEqual(active.i_agency_id, 1)
+                self.assertEqual(db.get(PlatformUser, user_id).c_password, original_hash)
+            # Repeat in the same browser, then log out with the stale browser's token.
+            latest = self.login_agency(second, result["temporary_password"])
+            self.assertEqual(latest.status_code, 303, latest.text)
+            first.get("/auth/logout", follow_redirects=False)
+            self.assertEqual(second.get("/auth/registration-completed").status_code, 200)
+            with self.factory() as db:
+                self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=user_id, c_status="ACTIVE").count(), 1)
+                self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=user_id, c_status="TERMINATED").count(), 2)
+
+    def test_wrong_agency_password_does_not_replace_active_session(self):
+        result = self.activate()
+        with TestClient(self.app) as first, TestClient(self.app) as second:
+            self.assertEqual(self.login_agency(first, result["temporary_password"]).status_code, 303)
+            with self.factory() as db:
+                user_id = db.query(PlatformUser).filter_by(i_agency_id=1).one().i_platform_user_id
+                session_key = db.query(SessionTbl).filter_by(i_platform_user_id=user_id).one().c_session_key
+            response = self.login_agency(second, "WrongPassword!42")
+            self.assertEqual(response.status_code, 401, response.text)
+            self.assertIsNone(second.cookies.get("access_token"))
+            self.assertEqual(first.get("/auth/registration-completed").status_code, 200)
+            with self.factory() as db:
+                row = db.query(SessionTbl).filter_by(i_platform_user_id=user_id).one()
+                self.assertEqual(row.c_status, "ACTIVE")
+                self.assertEqual(row.c_session_key, session_key)
+                self.assertIsNone(row.dt_terminated)
+
+    def test_platform_admin_relogin_still_rejects_without_revoking_session(self):
+        original_token = self.client.cookies.get("access_token")
+        with TestClient(self.app) as second:
+            response = second.post("/platform-admin/login", data={
+                "login_mode": "platform_admin", "access_code": "ADMIN",
+                "email": "admin@example.test", "password": self.password,
+            }, follow_redirects=False)
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertIsNone(second.cookies.get("access_token"))
+        self.assertEqual(self.client.cookies.get("access_token"), original_token)
+        self.assertEqual(self.client.get("/platform/users").status_code, 200)
+        with self.factory() as db:
+            self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=1, c_status="ACTIVE").count(), 1)
+            self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=1).count(), 1)
+
+    def test_failed_agency_session_replacement_preserves_original_session(self):
+        result = self.activate()
+        with TestClient(self.app) as first, TestClient(self.app) as second:
+            self.assertEqual(self.login_agency(first, result["temporary_password"]).status_code, 303)
+            second.cookies.set("awsum_web_client", first.cookies.get("awsum_web_client"))
+            with self.factory() as db:
+                user_id = db.query(PlatformUser).filter_by(i_agency_id=1).one().i_platform_user_id
+                original_key = db.query(SessionTbl).filter_by(i_platform_user_id=user_id).one().c_session_key
+            with patch("backend.services.web_sessions.collect_session_metadata",
+                       side_effect=SQLAlchemyError("Test replacement failure")):
+                with self.assertLogs("backend.routers.auth", level="ERROR"):
+                    response = self.login_agency(second, result["temporary_password"])
+            self.assertEqual(response.status_code, 500, response.text)
+            self.assertIsNone(second.cookies.get("access_token"))
+            self.assertEqual(first.get("/auth/registration-completed").status_code, 200)
+            with self.factory() as db:
+                row = db.query(SessionTbl).filter_by(i_platform_user_id=user_id).one()
+                self.assertEqual(row.c_session_key, original_key)
+                self.assertEqual(row.c_status, "ACTIVE")
+                self.assertIsNone(row.dt_terminated)
+
     def test_initial_password_can_be_reused_and_changed_voluntarily(self):
         result = self.activate()
         with TestClient(self.app) as client:
             login = self.login_agency(client, result["temporary_password"])
             self.assertEqual(login.status_code, 303, login.text)
-            self.assertEqual(login.headers["location"], "/auth/registration-completed")
+            self.assertEqual(login.headers["location"], "/agency/dashboard")
             completed = client.get("/auth/registration-completed")
             self.assertEqual(completed.status_code, 200)
-            self.assertIn('href="/auth/change-password"', completed.text)
+            self.assertIn('href="/auth/change-password"', client.get("/agency/settings").text)
             self.assertNotIn("Your password has been changed", completed.text)
             client.get("/auth/logout", follow_redirects=False)
             self.assertEqual(self.login_agency(client, result["temporary_password"]).status_code, 303)
@@ -389,7 +487,7 @@ class AgencyActivationTests(unittest.TestCase):
                 "confirm_password": new_password,
             }, follow_redirects=False)
             self.assertEqual(changed.status_code, 303, changed.text)
-            self.assertEqual(changed.headers["location"], "/auth/registration-completed")
+            self.assertEqual(changed.headers["location"], "/agency/dashboard")
             self.assertEqual(client.get(changed.headers["location"]).status_code, 200)
             stale = client.post("/platform/agency/1/registration-email", json={
                 "temporary_password": result["temporary_password"],
@@ -397,7 +495,7 @@ class AgencyActivationTests(unittest.TestCase):
             self.assertEqual(stale.status_code, 403)
             client.get("/auth/logout", follow_redirects=False)
             self.assertEqual(self.login_agency(client, result["temporary_password"]).status_code, 401)
-            self.assertEqual(self.login_agency(client, new_password).headers["location"], "/auth/registration-completed")
+            self.assertEqual(self.login_agency(client, new_password).headers["location"], "/agency/dashboard")
         stale_preview = self.client.post("/platform/agency/1/registration-email/preview", json={
             "temporary_password": result["temporary_password"],
         })

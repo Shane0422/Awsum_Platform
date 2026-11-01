@@ -1,4 +1,5 @@
 {% extends "platform/platform_base.html" %}
+{% from "platform/components/management_layout.html" import page_header, surface %}
 
 {% block page_title %}Master Management{% endblock %}
 
@@ -7,39 +8,6 @@
   body.page-master {
     font-size: 13px;
     background: #f6f8fb;
-  }
-
-  body.page-master .platform-topbar {
-    height: 52px;
-    border-bottom: 1px solid #d8dee8;
-    background: rgba(255, 255, 255, 0.96);
-  }
-
-  body.page-master .platform-topbar .brand-icon {
-    --aw-brand-icon-size: 20px;
-  }
-
-  body.page-master .platform-topbar .brand-text {
-    --aw-brand-text-size: 0.88rem;
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  body.page-master #userDropdown,
-  body.page-master #platformDateTime {
-    font-size: 0.78rem;
-    color: #64748b !important;
-  }
-
-  body.page-master #userDropdown {
-    border-color: #d2d8e2;
-    color: #3b4452;
-  }
-
-  body.page-master #userDropdown:hover,
-  body.page-master #userDropdown:focus {
-    background: #f4f7fb;
-    color: #1f2937;
   }
 
   body.page-master .platform-view {
@@ -2601,18 +2569,30 @@
   }
 </style>
 
-<div id="masterRoleView" class="row g-3">
+{% call page_header(active_module | replace('-', ' ') | title, 'Manage records, search and filter the list, or select a record to edit.', 'masterListTitle', 'masterListHead') %}
+  <button id="btnMasterRefresh" class="btn btn-outline-secondary role-action-btn">Refresh</button>
+  <div class="master-list-toolbar-right">
+    <button id="btnListAdd" class="btn btn-primary role-action-btn">Add</button>
+    <button id="btnListEdit" class="btn btn-outline-secondary role-action-btn" disabled>Edit</button>
+    <button id="btnListDelete" class="btn btn-outline-danger role-action-btn" disabled>Delete</button>
+    <button id="btnListDownload" class="btn btn-outline-secondary role-action-btn d-none" disabled>Download</button>
+    <div class="btn-group">
+      <button id="btnListExport" type="button" class="btn btn-outline-secondary role-action-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><button type="button" class="dropdown-item" data-export-format="excel">Export Excel</button></li>
+        <li><button type="button" class="dropdown-item" data-export-format="csv">Export CSV</button></li>
+        <li><button type="button" class="dropdown-item" data-export-format="pdf">Export PDF</button></li>
+      </ul>
+    </div>
+  </div>
+{% endcall %}
+<div id="masterRoleView" class="row g-3 awsum-management-layout">
   <div id="masterSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
   <div id="deviceSortLive" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
-  <div id="storeToolsArea" class="store-tools d-none"></div>
-  <div id="masterListCol" class="col-12 col-xl-3">
-    <div class="card-modern role-panel-left h-100">
-      <div id="masterListHead" class="d-flex justify-content-between align-items-start mb-3">
-        <h6 id="masterListTitle" class="role-section-title">{{ active_module | replace('-', ' ') | title }} List</h6>
-        <button id="btnMasterRefresh" class="btn btn-sm btn-outline-secondary role-action-btn">Refresh</button>
-      </div>
-
-      <div id="masterSearchWrap" class="mb-3">
+  {% call surface('filter', 'storeToolsArea', 'col-12 store-tools') %}
+    <div class="awsum-filter-grid">
+      <div id="masterSearchWrap">
+        <label for="masterSearch" class="awsum-list-filter-label">Search</label>
         <input id="masterSearch" class="form-control" type="search" placeholder="Search..." autocomplete="off">
       </div>
 
@@ -2639,34 +2619,24 @@
 
       <div id="masterListToolbar" class="master-list-toolbar d-none">
         <div class="master-list-toolbar-left">
+          <div id="masterStatusField">
+          <label for="masterStatusFilter" class="awsum-list-filter-label">Status</label>
           <select id="masterStatusFilter" class="form-select master-list-filter">
             <option value="">All Status</option>
             <option value="active">active</option>
             <option value="inactive">inactive</option>
             <option value="terminated">terminated</option>
           </select>
+          </div>
           <select id="masterCategoryFilter" class="form-select master-list-filter d-none" title="Filter by category">
             <option value="">All Categories</option>
           </select>
         </div>
-        <div class="master-list-toolbar-right">
-          <button id="btnListAdd" class="btn btn-sm btn-primary role-action-btn">Add</button>
-          <button id="btnListEdit" class="btn btn-sm btn-outline-secondary role-action-btn" disabled>Edit</button>
-          <button id="btnListDelete" class="btn btn-sm btn-outline-danger role-action-btn" disabled>Delete</button>
-          <button id="btnListDownload" class="btn btn-sm btn-outline-secondary role-action-btn d-none" disabled>Download</button>
-          <div class="btn-group">
-            <button id="btnListExport" type="button" class="btn btn-sm btn-outline-secondary role-action-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-              Export
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li><button type="button" class="dropdown-item" data-export-format="excel">Export Excel</button></li>
-              <li><button type="button" class="dropdown-item" data-export-format="csv">Export CSV</button></li>
-              <li><button type="button" class="dropdown-item" data-export-format="pdf">Export PDF</button></li>
-            </ul>
-          </div>
-        </div>
       </div>
-
+    </div>
+  {% endcall %}
+  <div id="masterListCol" class="col-12 col-xl-3">
+    <div class="card-modern role-panel-left h-100 awsum-table-card">
       <div id="masterListScroll" class="table-responsive" style="max-height: 520px; overflow-y: auto;">
         <table class="table table-hover align-middle mb-0" id="masterListTable">
           <thead>
@@ -3873,11 +3843,7 @@
           const statusSel = document.getElementById('masterStatusFilter');
           const filterBar = document.getElementById('storeFilterBar');
           const sortSel = document.getElementById('storeSortSelect');
-          if (statusSel && filterBar && sortSel) filterBar.insertBefore(statusSel, sortSel);
-          ['masterListHead', 'masterSearchWrap', 'storeFilterBar', 'masterListToolbar'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) tools.appendChild(el);
-          });
+          if (statusSel && filterBar && sortSel) filterBar.insertBefore(document.getElementById('masterStatusField'), sortSel);
           tools.dataset.built = '1';
         }
         if (tools) tools.classList.remove('d-none');

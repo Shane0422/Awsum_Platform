@@ -1,0 +1,36 @@
+{% macro fields(inputs, values, prefix, readonly_email=false) -%}
+<div class="row g-3">
+{% for field in inputs %}
+<div class="col-12">
+  <label class="form-label awsum-list-filter-label" for="{{ prefix }}-{{ field.name }}">{{ field.label }}</label>
+  {% if field.get('options') %}
+  <select class="form-select" name="{{ field.name }}" id="{{ prefix }}-{{ field.name }}">
+    {% for option in field.options %}<option value="{{ option }}"{% if values.get(field.name) == option %} selected{% endif %}>{{ option | title }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <input class="form-control" name="{{ field.name }}" id="{{ prefix }}-{{ field.name }}" type="{{ field.type }}"
+         value="{{ values.get(field.name, '') if field.type != 'password' else '' }}"
+         {% if field.get('required') %}required{% endif %}{% if field.get('max') %} maxlength="{{ field.max }}"{% endif %}
+         {% if readonly_email and field.name == 'email' %}readonly{% endif %}
+         {% if field.type == 'password' %}autocomplete="new-password"{% endif %}>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro editor(id, title, url, method, inputs, values, submit_label='Save', message='') -%}
+<div class="modal fade pm-modal" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+    <form data-awsum-form action="{{ url }}" data-method="{{ method }}">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="{{ id }}-title">{{ title }}</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <div class="alert alert-danger d-none" data-form-error role="alert"></div>
+        {% if message %}<p>{{ message }}</p>{% endif %}
+        {{ fields(inputs, values, id) }}
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn {{ 'btn-danger' if method == 'DELETE' else 'btn-primary' }}" type="submit">{{ submit_label }}</button></div>
+    </form>
+  </div></div>
+</div>
+{%- endmacro %}

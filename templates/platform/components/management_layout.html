@@ -1,0 +1,35 @@
+{% macro page_header(title, subtitle='', title_id='', header_id='') -%}
+<header class="awsum-list-header awsum-page-header"{% if header_id %} id="{{ header_id }}"{% endif %}>
+  <div class="awsum-list-heading">
+    <span class="awsum-list-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+    </span>
+    <div>
+      <h1 class="h4 mb-1"{% if title_id %} id="{{ title_id }}"{% endif %}>{{ title }}</h1>
+      {% if subtitle %}<div class="awsum-list-subtitle">{{ subtitle }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="awsum-list-actions">{{ caller() }}</div>
+</header>
+{%- endmacro %}
+
+{% macro data_table(columns, rows) -%}
+<div class="table-responsive">
+  <table class="table table-hover mb-0">
+    <thead><tr>{% for column in columns %}<th>{{ column.label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>{% for column in columns %}<td>{{ caller(row, column.key) }}</td>{% endfor %}</tr>
+    {% else %}
+      <tr><td colspan="{{ columns | length }}" class="text-center text-muted py-4">No records found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}
+
+{% macro surface(kind, id='', classes='') -%}
+<section class="awsum-{{ kind }}-card {{ classes }}"{% if id %} id="{{ id }}"{% endif %}>
+  {{ caller() }}
+</section>
+{%- endmacro %}

@@ -72,16 +72,21 @@ def create_session(
         PlatformUser.i_platform_user_id == user.i_platform_user_id,
     ).with_for_update().one()
     identity = login_identity(db, locked_user, claims)
-    expire_sessions(db, user_id=locked_user.i_platform_user_id, now=now)
-    if db.query(SessionTbl.i_session_id).filter(
-        SessionTbl.i_platform_user_id == locked_user.i_platform_user_id,
-        SessionTbl.c_status == "ACTIVE",
-    ).first():
-        db.commit()  # persist expiry transitions, never terminate an active session
-        raise ActiveSessionExists(ALREADY_SIGNED_IN)
-    session_key = str(uuid4())
     client_id = (request.cookies.get("awsum_web_client") or "")[:128] or str(uuid4())
     request.state.web_client_id = client_id
+    expire_sessions(db, user_id=locked_user.i_platform_user_id, now=now)
+    active_sessions = db.query(SessionTbl).filter(
+        SessionTbl.i_platform_user_id == locked_user.i_platform_user_id,
+        SessionTbl.c_status == "ACTIVE",
+    ).all()
+    if any(active.c_client_id != client_id for active in active_sessions):
+        db.commit()  # persist expiry transitions, never terminate an active session
+        raise ActiveSessionExists(ALREADY_SIGNED_IN)
+    for active_session in active_sessions:
+        _mark_session_terminated(active_session, locked_user.i_platform_user_id, now)
+    # Release the ACTIVE uniqueness slot before inserting the replacement.
+    db.flush()
+    session_key = str(uuid4())
     lifetime = max_minutes()
     from backend.services.branding import identity_login_entry
     login_entry = identity_login_entry(db, identity)
@@ -218,6 +223,14 @@ def logout_session(request: Request, db: Session) -> None:
     db.commit()
 
 
+def _mark_session_terminated(row: SessionTbl, actor_id: int, now: datetime) -> None:
+    row.c_status = "TERMINATED"
+    row.dt_terminated = now
+    row.i_terminated_by = actor_id
+    row.i_updated_by = actor_id
+    row.dt_updated = now
+
+
 def terminate_session(db: Session, session_id: int, actor_id: int) -> None:
     expire_sessions(db)
     row = db.query(SessionTbl).filter(SessionTbl.i_session_id == session_id).with_for_update().first()
@@ -227,9 +240,5 @@ def terminate_session(db: Session, session_id: int, actor_id: int) -> None:
     if row.c_status != "ACTIVE":
         db.commit()
         raise HTTPException(status_code=409, detail="Only ACTIVE sessions can be terminated.")
-    row.c_status = "TERMINATED"
-    row.dt_terminated = utcnow()
-    row.i_terminated_by = actor_id
-    row.i_updated_by = actor_id
-    row.dt_updated = row.dt_terminated
+    _mark_session_terminated(row, actor_id, utcnow())
     db.commit()

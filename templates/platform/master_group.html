@@ -1,16 +1,11 @@
 {% extends "platform/platform_base.html" %}
+{% from "platform/components/management_layout.html" import page_header, surface %}
 
 {% block page_title %}{{ mg_title }}{% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="/static/css/awsum-list.css?v=3">
 <style>
-  .mg-page .mg-table th.sortable { cursor: pointer; white-space: nowrap; user-select: none; }
-  .mg-page .mg-table th.sortable.sorted::after { content: " \25B2"; font-size: .65rem; }
-  .mg-page .mg-table th.sortable.sorted.desc::after { content: " \25BC"; }
-  .mg-page .mg-table td { vertical-align: middle; }
-  .mg-page .mg-code { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
-  .mg-thumbnail { display: inline-flex; position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border: 1px solid #e1e7ef; border-radius: 6px; background: #f7f9fc; color: #8a97a8; }
-  .mg-thumbnail img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #f7f9fc; border-radius: 6px; }
   {% if mg_entity == 'md' %}
   #mgModal .mg-md-top { display: grid; grid-template-columns: minmax(0, 1fr) 154px; gap: 20px; }
   #mgModal .mg-image-panel { justify-self: end; }
@@ -42,13 +37,9 @@
   }
   @media (max-width: 479.98px) { #mgModal .mg-price-row { grid-template-columns: 1fr; } }
 </style>
-<div class="container-fluid px-0 mg-page" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}">
-  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
-    <div>
-      <h1 class="h4 mb-1">{{ mg_title }}</h1>
-      <p class="text-muted mb-0" id="mgSubtitle"></p>
-    </div>
-    <div class="d-flex gap-2 align-items-center">
+<div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}">
+  {% set subtitle %}<p class="mb-0" id="mgSubtitle"></p>{% endset %}
+  {% call page_header(mg_title, subtitle) %}
       <div class="btn-group">
         <button id="mgExportBtn" type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
         <ul class="dropdown-menu dropdown-menu-end">
@@ -58,18 +49,20 @@
         </ul>
       </div>
       <button type="button" class="btn btn-primary" id="mgAddBtn">Add {{ mg_title }}</button>
-    </div>
-  </div>
+  {% endcall %}
 
   <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
 
-  <div class="card border-0 shadow-sm">
-    <div class="card-body">
-      <div class="row g-2 mb-3">
+  {% call surface('filter') %}
+      <div class="row g-2">
         <div class="col-12 col-md-6 col-lg-4">
+          <label for="mgSearch" class="awsum-list-filter-label">Search</label>
           <input type="search" id="mgSearch" class="form-control" placeholder="Search code or name" aria-label="Search">
         </div>
+  {% endcall %}
+  {% call surface('table') %}
         <div class="col-6 col-md-3 col-lg-2">
+          <label for="mgActiveFilter" class="awsum-list-filter-label">Status</label>
           <select id="mgActiveFilter" class="form-select" aria-label="Status filter">
             <option value="">All status</option>
             <option value="active">Active</option>
@@ -77,20 +70,20 @@
           </select>
         </div>
         <div class="col-6 col-md-3 col-lg-2">
+          <label for="mgPageSize" class="awsum-list-filter-label">Rows per page</label>
           <select id="mgPageSize" class="form-select" aria-label="Rows per page">
             <option value="10">10 / page</option>
             <option value="20" selected>20 / page</option>
             <option value="50">50 / page</option>
           </select>
-        </div>
-      </div>
-      <div class="table-responsive">
+      {% endcall %}
+      <div class="table-responsive awsum-list-table-wrap">
         <table class="table table-hover mg-table mb-0">
           <thead id="mgHead"></thead>
           <tbody id="mgBody"></tbody>
         </table>
       </div>
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 awsum-list-footer">
         <span class="text-muted small" id="mgSummary"></span>
         <div class="btn-group">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="mgPrev">Previous</button>

@@ -80,7 +80,11 @@ window.fetch=async(path,options)=>{
         template = (browser.ROOT / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
         rendered_template = Environment(loader=FileSystemLoader(browser.ROOT / "templates")).get_template(
             "platform/master_management.html")
-        context = rendered_template.new_context({"active_module": "agency", "brand_icon_path": ""})
+        layout = rendered_template.environment.get_template("platform/components/management_layout.html").module
+        context = rendered_template.new_context({
+            "active_module": "agency", "brand_icon_path": "",
+            "page_header": layout.page_header, "surface": layout.surface,
+        })
         rendered = "".join(rendered_template.blocks["content"](context))
         scripts = [body for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script>", rendered, re.DOTALL)
                    if "application/json" not in attrs]

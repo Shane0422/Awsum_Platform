@@ -30,6 +30,7 @@ from backend.models_admin.agency import Agency
 from backend.models_admin.agency_type import AgencyType
 from backend.config.templates import templates, get_brand_context
 from backend.config.settings import APP_NAME
+from backend.routers.auth import get_platform_admin_session
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
@@ -139,14 +140,25 @@ def dashboard_admin(request: Request, db: Session = Depends(get_db)):
 # ==========================
 # Platform Dashboard (Top-level Admin)
 # ==========================
+@router.get("/platform/admin")
+def platform_admin_alias(request: Request, db: Session = Depends(get_db)):
+    _, redirect_resp = _auth_user_or_home_redirect(request, db)
+    if redirect_resp:
+        return redirect_resp
+    session_status, _ = get_platform_admin_session(request, db)
+    if session_status != "authorized":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return _set_no_cache_headers(RedirectResponse(url="/platform/dashboard", status_code=303))
+
+
 @router.get("/platform/dashboard", response_class=HTMLResponse)
 def platform_dashboard(request: Request, db: Session = Depends(get_db)):
     user, redirect_resp = _auth_user_or_home_redirect(request, db)
     if redirect_resp:
         return redirect_resp
 
-    # Only platform-level admins should access this page
-    if user.login_role != 1:
+    session_status, _ = get_platform_admin_session(request, db)
+    if session_status != "authorized":
         raise HTTPException(status_code=403, detail="Forbidden")
 
     from backend.models_admin.store import Store

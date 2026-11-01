@@ -1,0 +1,71 @@
+{% macro nav_icon(name) -%}
+<svg class="platform-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{% if name == 'dashboard' %}<path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/>
+{% elif name == 'master-group' %}<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>
+{% elif name == 'business' %}<path d="M3 10h18l-2-7H5l-2 7ZM5 10v11h14V10M9 21v-7h6v7M3 10v2h18v-2"/>
+{% elif name == 'device-and-license' %}<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M8 21h8M12 16v5m-4-11 3 3 5-6"/>
+{% elif name == 'reports' %}<path d="M4 3v18h17M8 16v-4m5 4V8m5 8V5"/>
+{% elif name == 'billing' %}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/>
+{% elif name == 'security' %}<path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4Zm-4 10 3 3 5-6"/>
+{% elif name == 'system' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>
+{% endif %}
+</svg>
+{%- endmacro %}
+
+{% macro header(agency_portal=false) -%}
+{% set dashboard_url = '/agency/dashboard' if agency_portal else '/platform/dashboard' %}
+{% set settings_url = '/agency/settings' if agency_portal else '/settings' %}
+{% if agency_portal %}
+  {% set items = [
+    ('dashboard', 'Dashboard', 'dashboard', dashboard_url, section == 'dashboard'),
+    ('merchants', 'Merchants', 'business', '/agency/merchants', section == 'merchants'),
+    ('stores', 'Stores', 'business', '/agency/stores', section == 'stores'),
+    ('users', 'Users', 'security', '/agency/users', section == 'users'),
+    ('reports', 'Reports', 'reports', '/agency/reports', section == 'reports'),
+    ('settings', 'Settings', 'system', settings_url, section == 'settings')
+  ] %}
+{% else %}
+  {% set items = [
+    ('dashboard', 'Dashboard', 'dashboard', dashboard_url, active_page == 'dashboard'),
+    ('master-group', 'Master Group', 'master-group', '', false),
+    ('business', 'Business', 'business', '', false),
+    ('device-and-license', 'Device & License', 'device-and-license', '', false),
+    ('reports', 'Reports', 'reports', '', false)
+  ] %}
+{% endif %}
+<header class="platform-header" style="--platform-brand-scale: 1.5">
+  <div class="platform-topbar">
+    <a href="{{ dashboard_url }}" class="brand-mark" aria-label="{{ APP_NAME }}">
+      {% if company_logo_path %}<img src="{{ company_logo_path }}" alt="{{ company_name }}" class="company-logo">{% else %}<span class="brand-text">{{ company_name }}</span>{% endif %}
+    </a>
+    <div class="topbar-meta">
+      <span id="platformDateTime"></span>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <span data-current-user-avatar data-user-id="{{ user.i_platform_user_id }}" data-name="{{ user.c_first_name or '' }} {{ user.c_last_name or '' }}" data-image-url="{{ image_url(user.c_image_path) or '' }}" class="me-1"></span>
+          {{ user.c_first_name }} {{ user.c_last_name }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+          <li><h6 class="dropdown-header">{{ user.c_first_name }} {{ user.c_last_name }}</h6></li>
+          <li><span class="dropdown-item-text text-muted">{{ role }}</span></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="{{ settings_url }}">Settings</a></li>
+          <li><a class="dropdown-item" href="/auth/logout">Logout</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <nav class="platform-navigation" aria-label="{{ 'Agency' if agency_portal else 'Platform' }} navigation">
+    <div class="platform-nav-row">
+      {% for id, label, icon, url, selected in items %}
+        {% if url %}
+        <a class="platform-nav-link{% if selected %} active{% endif %}" href="{{ url }}"{% if selected %} aria-current="page"{% endif %}>{{ nav_icon(icon) }}{{ label }}</a>
+        {% else %}
+        <button type="button" class="platform-nav-toggle" id="nav-{{ id }}" aria-expanded="false" aria-controls="mega-{{ id }}">{{ nav_icon(icon) }}{{ label }}<span class="platform-nav-chevron" aria-hidden="true">&#9662;</span></button>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if not agency_portal %}{{ caller() }}{% endif %}
+  </nav>
+</header>
+{%- endmacro %}

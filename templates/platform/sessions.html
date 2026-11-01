@@ -1,11 +1,10 @@
 {% extends "platform/platform_base.html" %}
+{% from "platform/components/management_layout.html" import page_header, surface %}
 {% block title %}Sessions{% endblock %}
 {% block content %}
 <div id="sessionPage" data-display-timezone="UTC" data-can-terminate="{{ 'true' if is_super_admin else 'false' }}">
-  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-    <div><h1 class="h4 mb-1">Sessions</h1>
-      <p class="text-muted mb-0">Web sign-ins and session security. Times shown in <span id="sessionTimezone">UTC</span>. Device licenses are managed separately.</p></div>
-    <div class="d-flex gap-2">
+  {% set subtitle %}Web sign-ins and session security. Times shown in <span id="sessionTimezone">UTC</span>. Device licenses are managed separately.{% endset %}
+  {% call page_header('Sessions', subtitle) %}
       <button type="button" class="btn btn-outline-secondary" id="sessionRefresh">Refresh</button>
       <div class="btn-group">
         <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
@@ -13,24 +12,25 @@
           <li><button type="button" class="dropdown-item" data-session-export="csv">Export CSV</button></li>
           <li><button type="button" class="dropdown-item" data-session-export="pdf">Export PDF</button></li>
         </ul>
-      </div>
-    </div>
+    {% endcall %}
   </div>
   <div id="sessionMessage" role="status" aria-live="polite" class="alert d-none"></div>
-  <div class="card border-0 shadow-sm"><div class="card-body">
-    <div class="row g-2 mb-3">
-      <div class="col-md-7"><input class="form-control" id="sessionSearch" type="search" aria-label="Search sessions" placeholder="Search user, organization, client, IP, or location"></div>
-      <div class="col-md-3"><select class="form-select" id="sessionStatus" aria-label="Session status">
+  {% call surface('filter') %}
+    <div class="awsum-filter-grid">
+      <div><label for="sessionSearch" class="awsum-list-filter-label">Search</label><input class="form-control" id="sessionSearch" type="search" aria-label="Search sessions" placeholder="Search user, organization, client, IP, or location"></div>
+      <div><label for="sessionStatus" class="awsum-list-filter-label">Status</label><select class="form-select" id="sessionStatus" aria-label="Session status">
         <option value="">All statuses</option><option>ACTIVE</option><option>LOGGED_OUT</option><option>EXPIRED</option><option>TERMINATED</option>
       </select></div>
     </div>
+  {% endcall %}
+  {% call surface('table') %}
     <div class="table-responsive"><table class="table table-hover align-middle">
       <thead><tr><th>User</th><th>Organization / Store</th><th>Client / Device</th><th>IP / Location</th><th>Login Time</th><th>Last Activity</th><th>Status</th><th class="no-print">Actions</th></tr></thead>
       <tbody id="sessionRows"></tbody>
     </table></div>
     <div class="text-muted small" id="sessionCount"></div>
     <p class="text-muted small mt-2 mb-0">Session location is the approximate network location of the client that initiated the authenticated login, not the AWSUM server. It is not GPS. Loopback connections show Local Development. Local IP and device identity may be unavailable; Browser/OS are reported estimates.</p>
-  </div></div>
+  {% endcall %}
 </div>
 <div class="modal fade pm-modal" id="sessionDetails" tabindex="-1" aria-labelledby="sessionDetailsTitle" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">

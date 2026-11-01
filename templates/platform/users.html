@@ -1,4 +1,5 @@
 {% extends "platform/platform_base.html" %}
+{% from "platform/components/management_layout.html" import page_header, surface %}
 
 {% block page_title %}Users{% endblock %}
 
@@ -481,25 +482,29 @@
 </style>
 
 <main class="platform-users" aria-labelledby="platformUsersTitle">
-  <header class="platform-users-header">
-    <div>
-      <h1 id="platformUsersTitle" class="platform-users-title">Users</h1>
-      <p class="platform-users-subtitle">AWSUM PLATFORM user accounts</p>
-    </div>
+  {% call page_header('Users', 'AWSUM PLATFORM user accounts', 'platformUsersTitle') %}
     <button id="addPlatformUserButton" type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#platformUserModal">+ Add User</button>
-  </header>
+  {% endcall %}
 
   <div id="platformUsersAlert" class="alert d-none mb-0" role="alert"></div>
 
-  <section class="platform-users-toolbar" aria-label="User filters">
+  {% call surface('filter') %}
+  <div class="awsum-filter-grid" aria-label="User filters">
+    <div>
+    <label for="platformUsersSearch" class="awsum-list-filter-label">Search</label>
     <input id="platformUsersSearch" class="form-control form-control-sm platform-users-search" type="search" placeholder="Search users..." autocomplete="off">
+    </div><div>
+    <label for="platformUsersStatus" class="awsum-list-filter-label">Status</label>
     <select id="platformUsersStatus" class="form-select form-select-sm" aria-label="Filter users by status" style="max-width: 150px;">
       <option value="">All Status</option>
       <option value="active">Active</option>
       <option value="inactive">Inactive</option>
     </select>
-  </section>
+    </div>
+  </div>
+  {% endcall %}
 
+  {% call surface('table') %}
   <div class="platform-users-table-wrap">
     <table class="table table-hover align-middle platform-users-table">
       <thead>
@@ -521,6 +526,7 @@
       </tbody>
     </table>
   </div>
+  {% endcall %}
 </main>
 
 <div class="modal fade" id="platformUserModal" tabindex="-1" aria-labelledby="platformUserModalTitle" aria-hidden="true">
