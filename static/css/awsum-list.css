@@ -58,6 +58,12 @@
   gap: 1rem;
   margin-bottom: 1rem;
 }
+.mg-page > .awsum-page-header {
+  position: sticky;
+  top: var(--platform-header-height, 0px);
+  z-index: 990;
+  background: var(--platform-bg);
+}
 .awsum-list :is(.awsum-filter-card, .awsum-table-card, .awsum-settings-card) {
   min-width: 0;
   border: 1px solid var(--list-border) !important;

@@ -28,6 +28,10 @@ Platform navigation
 - Master Group lists share `static/css/awsum-list.css` through the existing
   `master_group.html` template. Scope new list styles under `.awsum-list` rather
   than duplicating them per entity; list behavior and edit-modal styles are unchanged.
+- Only `.mg-page > .awsum-page-header` is sticky beneath the Common Navigation,
+  using its observed height (`--platform-header-height`) at every viewport size.
+  Icon, title, description and actions stick together; messages, filters and tables
+  scroll normally. Other management page headers are unchanged.
 - List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
 - The same stylesheet is attached by `platform_base.html` for existing management,
   Users, Sessions, Store Management, Merchants Tree, and System Settings pages.

@@ -24,7 +24,7 @@ class MasterGroupListTemplateTests(unittest.TestCase):
         for entity, title in PAGES:
             with self.subTest(entity=entity):
                 html = render_list(entity, title)
-                self.assertEqual(html.count('href="/static/css/awsum-list.css?v=3"'), 1)
+                self.assertEqual(html.count('href="/static/css/awsum-list.css?v=4"'), 1)
                 self.assertIn("mg-page awsum-list", html)
                 self.assertIn(f'data-entity="{entity}"', html)
                 self.assertIn(f"Add {title}</button>", html)
@@ -41,6 +41,69 @@ class MasterGroupListTemplateTests(unittest.TestCase):
 @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
 class MasterGroupListBrowserTests(unittest.TestCase):
     run_browser = browser.SharedImageComponentTests.run_component_script
+
+    def test_common_headers_stick_without_fixing_message_filter_or_table(self):
+        from backend.services.app_navigation import AppScope
+
+        css = "\n".join(
+            (browser.ROOT / "static" / path).read_text(encoding="utf-8")
+            for path in ("bootstrap/css/bootstrap.min.css", "css/brand.css", "css/awsum-list.css")
+        )
+        pages = []
+        for scope in ("PLATFORM", "MERCHANT"):
+            for entity, title in PAGES[:4]:
+                base, context, _ = render_navigation()
+                context.update(mg_entity=entity, mg_title=title, active_page="master-group",
+                               mg_api_base=f"/{scope.lower()}/api/master-group",
+                               app_navigation=AppScope("MERCHANT", 20, "Merchant Admin", True).navigation()
+                               if scope == "MERCHANT" else None)
+                html = base.environment.get_template("platform/master_group.html").render(context)
+                html = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", html, flags=re.DOTALL)
+                html = re.sub(r"<link\b[^>]*>", "", html)
+                html = html.replace("</head>", f"<style>{css}</style></head>")
+                pages.append(html)
+        serialized = json.dumps(pages).replace("</", "<\\/")
+        script = f"const pages={serialized};\n" + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=()=>new Promise(resolve=>setTimeout(resolve,60));
+(async()=>{
+  for(const html of pages){
+    const frame=document.createElement('iframe');frame.style.border='0';frame.srcdoc=html;
+    const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+    document.body.appendChild(frame);await loaded;
+    const doc=frame.contentDocument,win=frame.contentWindow;
+    const nav=doc.querySelector('.platform-header'),header=doc.querySelector('.mg-page > .awsum-page-header');
+    const message=doc.getElementById('mgMessage'),filter=doc.querySelector('.awsum-filter-card');
+    const table=doc.querySelector('.awsum-table-card');
+    message.className='alert alert-success';message.textContent='Saved.';
+    doc.getElementById('mgSubtitle').textContent='Common description';
+    doc.getElementById('mgBody').innerHTML='<tr><td style="height:1800px">Scrollable records</td></tr>';
+    for(const width of [1440,768,375,320]){
+      frame.style.width=width+'px';frame.style.height='700px';win.scrollTo(0,0);await tick();
+      assert(Math.abs(parseFloat(win.getComputedStyle(header).top)-nav.getBoundingClientRect().height)<1,'actual responsive navigation height');
+      for(const node of [message,filter,table]){
+        assert(!['sticky','fixed'].includes(win.getComputedStyle(node).position),'only page header is sticky');
+      }
+      assert(header.contains(doc.querySelector('.awsum-list-icon'))&&header.contains(doc.getElementById('mgSubtitle'))
+        &&header.contains(doc.getElementById('mgExportBtn'))&&header.contains(doc.getElementById('mgAddBtn')),'complete header sticks together');
+      win.scrollTo(0,500);await tick();
+      assert(Math.abs(nav.getBoundingClientRect().top)<1,'navigation stays at top');
+      assert(Math.abs(header.getBoundingClientRect().top-nav.getBoundingClientRect().bottom)<1,'no gap above sticky page header');
+      assert(message.getBoundingClientRect().bottom<header.getBoundingClientRect().bottom,'message scrolls out');
+      assert(filter.getBoundingClientRect().bottom<header.getBoundingClientRect().bottom,'filter scrolls out');
+      assert(table.getBoundingClientRect().top<header.getBoundingClientRect().bottom,'table scrolls under header without spacer');
+      const previous=table.getBoundingClientRect().top;
+      win.scrollTo(0,600);await tick();
+      assert(Math.abs(previous-table.getBoundingClientRect().top-100)<1,'table scrolls normally');
+    }
+    doc.getElementById('mgPage').classList.remove('mg-page');
+    assert(win.getComputedStyle(header).position==='static','other management headers are unchanged');
+    frame.remove();
+  }
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0,pages:8,viewports:4});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:error.stack});});
+"""
+        self.run_browser(script)
 
     def test_all_list_styles_responsive_and_existing_interactions(self):
         css = (browser.ROOT / "static" / "bootstrap" / "css" / "bootstrap.min.css").read_text(encoding="utf-8") + "\n" + "\n".join(

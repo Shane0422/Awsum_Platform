@@ -311,6 +311,12 @@
   {% endif %}
   <script>
     (function () {
+      const header = document.querySelector('.platform-header');
+      function updateHeaderHeight() {
+        document.documentElement.style.setProperty('--platform-header-height', `${header.getBoundingClientRect().height}px`);
+      }
+      updateHeaderHeight();
+      new ResizeObserver(updateHeaderHeight).observe(header);
       const navigation = document.querySelector('.platform-navigation');
       const toggles = Array.from(navigation.querySelectorAll('.platform-nav-toggle'));
       function fitMenus() {
