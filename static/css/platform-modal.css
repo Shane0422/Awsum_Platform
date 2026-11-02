@@ -116,6 +116,42 @@
 .pm-modal .pm-section-head h3 { margin: 0; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #2563eb; }
 .pm-modal .pm-section-head span { font-size: 0.8rem; color: #6b7f99; }
 
+/* Shared image form: existing field rows stay left, compact uploader stays top-right. */
+.awsum-image-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 154px;
+  align-items: start;
+  gap: 1rem;
+}
+.awsum-image-form-fields { min-width: 0; padding-inline: calc(var(--bs-gutter-x, 1.5rem) * 0.5); }
+.awsum-image-form-full { grid-column: 1 / -1; }
+.awsum-image-form > .awsum-image-form-image {
+  width: 154px;
+  max-width: 100%;
+  justify-self: end;
+}
+@media (max-width: 767.98px) {
+  .awsum-image-form { grid-template-columns: minmax(0, 1fr); }
+  .awsum-image-form > .awsum-image-form-image { grid-row: 1; justify-self: center; }
+}
+
+/* Dynamic Master forms use the same shell without a native form wrapper. */
+.awsum-form-modal .modal-dialog { max-width: min(760px, calc(100vw - 1rem)); }
+.awsum-form-modal .modal-header { border-bottom: 1px solid #eef2f7; }
+.awsum-form-modal .modal-footer { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; }
+.awsum-modal-left-actions { min-width: 0; flex: 1 1 auto; }
+.awsum-modal-action { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+.awsum-modal-primary-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
+.awsum-form-modal .modal-footer .btn { min-height: 42px; padding: 0.5rem 1rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; white-space: nowrap; }
+.awsum-form-modal .modal-footer .btn svg { vertical-align: -3px; margin-right: 0.35rem; }
+.awsum-form-modal.is-create [data-modal-action="delete"] { display: none !important; }
+@media (max-width: 575.98px) {
+  .awsum-form-modal .modal-footer { flex-direction: column; align-items: stretch; }
+  .awsum-modal-left-actions:not(:has(> :not(.d-none))) { display: none; }
+  .awsum-modal-primary-actions { justify-content: flex-end; gap: 0.35rem; }
+  .awsum-form-modal .modal-footer .btn { padding-inline: 0.65rem; font-size: 0.8rem; }
+}
+
 @media (max-width: 767.98px) {
   .pm-modal .modal-header { padding: 1.1rem 1rem 0.75rem; }
   .pm-modal .modal-body { padding-inline: 1rem; }

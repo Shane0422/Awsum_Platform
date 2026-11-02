@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import bcrypt
 import re
 import logging
+import json
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.database.pg_platform import PlatformSessionLocal
@@ -180,6 +181,46 @@ def _get_authenticated_user(request: Request, db: Session):
         raise
 
 
+def _log_platform_forbidden(request: Request, db: Session, location: str, reason: str,
+                            *, payload: dict | None = None, user: PlatformUser | None = None,
+                            role: Role | None = None) -> None:
+    from backend.models_admin.session import SessionTbl
+    claims = payload if payload is not None else getattr(request.state, "platform_auth_diagnostics", {})
+    session_key = claims.get("sid") or getattr(request.state, "web_session_key", None)
+    with db.no_autoflush:
+        session = db.query(SessionTbl).filter(SessionTbl.c_session_key == session_key).first() if session_key else None
+        if user is None:
+            identity = claims.get("uid")
+            if isinstance(identity, int) or (isinstance(identity, str) and identity.isdecimal() and len(identity) <= 10):
+                user = db.get(PlatformUser, int(identity))
+        if role is None and user is not None:
+            role = db.get(Role, user.i_role_id)
+
+    def known(value, allowed):
+        return value if isinstance(value, str) and value in allowed else ("other" if value is not None else None)
+
+    token_role = claims.get("role_id")
+    if not isinstance(token_role, int):
+        token_role = int(token_role) if isinstance(token_role, str) and token_role.isdecimal() and len(token_role) <= 10 else None
+    access_code = claims.get("access_code")
+    logger.warning("PLATFORM_AUTH_FORBIDDEN %s", json.dumps({
+        "path": request.url.path, "location": location, "reason": reason,
+        "session_exists": session is not None,
+        "login_context": known(session.c_login_context if session else claims.get("login_context"),
+                               {"PLATFORM", "AGENCY", "MERCHANT", "STORE"}),
+        "principal_type": known(claims.get("principal_type"), {"platform_user"}),
+        "scope_type": known(claims.get("scope_type"), {"platform", "agency", "merchant", "store"}),
+        "role_id": user.i_role_id if user is not None else token_role,
+        "token_role_id": token_role,
+        "user_status": known(user.c_status if user is not None else None, {"active", "inactive"}),
+        "role_status": known(role.c_status if role is not None else None, {"active", "inactive"}),
+        "access_code_matches": (
+            isinstance(access_code, str) and access_code.strip().casefold() == PLATFORM_ADMIN_ACCESS_CODE.casefold()
+            if payload is not None else claims.get("access_code_matches")
+        ),
+    }, ensure_ascii=True))
+
+
 def get_platform_admin_session(request: Request, db: Session) -> tuple[str, PlatformUser | None]:
     token = request.cookies.get("access_token")
     if not token:
@@ -193,11 +234,22 @@ def get_platform_admin_session(request: Request, db: Session) -> tuple[str, Plat
     except JWTError:
         return "anonymous", None
 
+    request.state.platform_auth_diagnostics = {
+        key: payload.get(key) for key in ("sid", "uid", "login_context", "principal_type", "scope_type", "role_id")
+    }
+    request.state.platform_auth_diagnostics["access_code_matches"] = (
+        isinstance(payload.get("access_code"), str)
+        and payload["access_code"].strip().casefold() == PLATFORM_ADMIN_ACCESS_CODE.casefold()
+    )
+
     if payload.get("principal_type") != "platform_user":
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "principal_type_mismatch", payload=payload)
         return "forbidden", None
     if payload.get("scope_type") != "platform":
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "scope_type_mismatch", payload=payload)
         return "forbidden", None
     if (payload.get("access_code") or "").strip().casefold() != PLATFORM_ADMIN_ACCESS_CODE.casefold():
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "access_code_mismatch", payload=payload)
         return "forbidden", None
 
     try:
@@ -212,22 +264,29 @@ def get_platform_admin_session(request: Request, db: Session) -> tuple[str, Plat
     if not user:
         return "anonymous", None
     if (user.c_status or "").strip().lower() != "active":
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "user_inactive", payload=payload, user=user)
         return "forbidden", None
     if user.i_agency_id is not None:
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "agency_user", payload=payload, user=user)
         return "forbidden", None
 
     try:
         if int(user.i_store_id) != ADMIN_STORE_ID:
+            _log_platform_forbidden(request, db, "get_platform_admin_session", "store_id_mismatch", payload=payload, user=user)
             return "forbidden", None
     except (TypeError, ValueError):
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "invalid_store_id", payload=payload, user=user)
         return "forbidden", None
 
     role = db.query(Role).filter(Role.i_role_id == user.i_role_id).first()
     if not role or (role.c_status or "").strip().lower() != "active":
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "role_missing_or_inactive", payload=payload, user=user, role=role)
         return "forbidden", None
     if token_role_id != user.i_role_id:
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "token_role_mismatch", payload=payload, user=user, role=role)
         return "forbidden", None
     if (role.c_name or "").strip().casefold() != PLATFORM_ADMIN_ROLE_NAME:
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "role_name_mismatch", payload=payload, user=user, role=role)
         return "forbidden", None
 
     return "authorized", user

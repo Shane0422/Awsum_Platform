@@ -378,18 +378,19 @@ class PostgresStorageInitializationTests(unittest.TestCase):
                 request, {"store_name": "PG store", "client_id": merchant["id"], "installed_by_agency_id": agency["id"]}, self.db).body)
             legacy = json.loads(routes.create_client({"client_name": "PG legacy"}, request, self.db).body)
             linked = json.loads(routes.create_client_store(legacy["id"], request, {"store_name": "PG linked"}, self.db).body)
-        self.assertEqual(agency["agency_code"], "AGT00002")
-        self.assertEqual(merchant["merchant_code"], "MER00001")
-        self.assertEqual(store["store_code"], "STR00003")
-        self.assertEqual(legacy["c_client_code"], "CLT11002")
-        self.assertEqual(linked["store_code"], "STR00004")
+        for code, prefix in (
+            (agency["agency_code"], "AGT"), (merchant["merchant_code"], "MER"),
+            (store["store_code"], "STR"), (legacy["c_client_code"], "MER"),
+            (linked["store_code"], "STR"),
+        ):
+            self.assertRegex(code, rf"^{prefix}[0-9]{{2}}[A-HJ-NP-Z2-9]{{4}}$")
         for response in (agency, merchant, store, legacy, linked):
             self.assertTrue(response["storage_initialized"])
         service = AwsumStorageService(self.db)
         self.assertEqual(service.resolve_owner("STORE", store["store_id"]).get_context_root(),
-                         "/merchant/MER00001/store/STR00003")
+                         f"/merchant/{merchant['merchant_code']}/store/{store['store_code']}")
         self.assertEqual(service.resolve_owner("STORE", linked["store_id"]).get_context_root(),
-                         "/merchant/CLT11002/store/STR00004")
+                         f"/merchant/{legacy['c_client_code']}/store/{linked['store_code']}")
         with patch.object(Path, "mkdir", side_effect=OSError("Disk failure")), self.assertLogs(resource_storage.logger, "ERROR"):
             pending = json.loads(routes.create_client({"client_name": "Pending storage"}, request, self.db).body)
         with self.factory() as independent:

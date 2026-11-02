@@ -100,6 +100,26 @@ class UserImageTests(unittest.TestCase):
         self.assertNotIn("password", serialized)
         self.assert_clean()
 
+    def test_shared_reset_preserves_platform_photo_identity_and_validation(self):
+        item = self.create()
+        payload = {"password": "Replacement!42", "confirm_password": "Replacement!42"}
+        invalid = self.client.post(f'/platform/user/{item["id"]}/reset-password',
+                                   json={**payload, "confirm_password": "mismatch"})
+        self.assertEqual(invalid.status_code, 400, invalid.text)
+        self.db.expire_all()
+        row = self.db.get(PlatformUser, item["id"])
+        self.assertTrue(bcrypt.checkpw(self.payload["password"].encode(), row.c_password.encode()))
+        reset = self.client.post(f'/platform/user/{item["id"]}/reset-password', json=payload)
+        self.assertEqual(reset.status_code, 200, reset.text)
+        self.assertEqual(reset.json(), {"success": True, "must_change_password": True})
+        self.db.expire_all()
+        row = self.db.get(PlatformUser, item["id"])
+        self.assertTrue(bcrypt.checkpw(payload["password"].encode(), row.c_password.encode()))
+        self.assertEqual((row.i_agency_id, row.i_role_id, row.i_must_change_password,
+                          row.c_email, row.c_image_path),
+                         (None, 2, 1, self.payload["email"], item["image_path"]))
+        self.assertEqual(self.client.get(item["image_url"]).status_code, 200)
+
     def test_replace_remove_cancel_and_immutable_identifier(self):
         item = self.create()
         old_hash = self.db.get(PlatformUser, item["id"]).c_password

@@ -1,0 +1,29 @@
+{# Dynamic Master forms keep their existing IDs/handlers; slots contain module content only. #}
+{% macro form_modal(id, title_id, cancel_id, delete_id, save_id, left_actions=[]) -%}
+<div class="modal fade pm-modal awsum-form-modal" id="{{ id }}" tabindex="-1" aria-labelledby="{{ title_id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        {{ caller('header') }}
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">{{ caller('body') }}</div>
+      <div class="modal-footer">
+        <div class="awsum-modal-left-actions">
+          {% for action in left_actions %}
+          <div class="awsum-modal-action d-none" id="{{ action.id }}Action">
+            <button type="button" id="{{ action.id }}" class="btn btn-outline-primary" aria-describedby="{{ action.id }}Reason">{{ action.label }}</button>
+            <small id="{{ action.id }}Reason" class="text-muted d-none" role="status"></small>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="awsum-modal-primary-actions">
+          <button type="button" id="{{ cancel_id }}" class="btn btn-outline-secondary role-action-btn" data-bs-dismiss="modal">Cancel</button>
+          {% if delete_id %}<button type="button" id="{{ delete_id }}" class="btn btn-outline-danger role-action-btn" data-modal-action="delete">Delete</button>{% endif %}
+          <button type="button" id="{{ save_id }}" class="btn btn-primary role-action-btn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

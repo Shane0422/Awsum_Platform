@@ -64,9 +64,8 @@ class AgencyPortalTemplateTests(unittest.TestCase):
                     self.assertNotIn('data-bs-target="#edit-', html)
                     self.assertNotIn('data-awsum-form', html)
                 if section == "users":
-                    self.assertIn('data-bs-target="#delete-2"', html)
-                    self.assertNotIn('data-bs-target="#delete-1"', html)
-                    self.assertIn('data-method="DELETE"', html)
+                    self.assertIn('id="platformUserModal"', html)
+                    self.assertIn('"scope": "AGENCY"', html)
 
 
 @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
@@ -172,28 +171,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,40));
       assert(!doc.querySelector('[data-bs-target]'),'no read-only mutation modal');
     }
     if(item.section==='users'){
-      const form=doc.querySelector('#add-user form');
-      const modal=doc.getElementById('add-user');modal.style.display='block';modal.removeAttribute('aria-hidden');
-      let calls=[],release;
-      win.fetch=(path,options)=>{calls.push({path,payload:JSON.parse(options.body)});return new Promise(resolve=>release=()=>resolve(new win.Response(JSON.stringify({detail:'Duplicate Agency Email'}),{status:409})));};
-      win.eval(forms);
-      for(const [name,value] of Object.entries({name:'New Admin',email:'alternate@example.test',phone:'123',password:'Secret!42',confirm_password:'Secret!42'}))form.elements[name].value=value;
-      form.dispatchEvent(new win.Event('submit',{bubbles:true,cancelable:true}));
-      form.dispatchEvent(new win.Event('submit',{bubbles:true,cancelable:true}));
-      assert(calls.length===1&&form.querySelector('[type=submit]').disabled,'duplicate submits blocked');
-      assert(Object.keys(calls[0].payload).sort().join(',')==='confirm_password,email,name,password,phone,status','no scope or role submitted');
-      release();await tick();
-      assert(form.querySelector('[data-form-error]').textContent==='Duplicate Agency Email','server error surfaced');
-      assert(!form.querySelector('[type=submit]').disabled,'failure permits explicit retry');
-      assert(doc.querySelector('#edit-1 form').getAttribute('data-method')==='PUT','existing-user edit does not recreate');
-      const deleteForm=doc.querySelector('#delete-2 form');
-      assert(deleteForm.getAttribute('data-method')==='DELETE','delete reuses common form');
-      assert(!doc.querySelector('#delete-1'),'cannot delete own account');
-      const deleteModal=doc.getElementById('delete-2');deleteModal.style.display='block';deleteModal.removeAttribute('aria-hidden');
-      deleteForm.dispatchEvent(new win.Event('submit',{bubbles:true,cancelable:true}));
-      assert(calls.length===2&&Object.keys(calls[1].payload).length===0,'delete submits no identity fields');
-      release();await tick();
-      assert(deleteForm.querySelector('[data-form-error]').textContent==='Duplicate Agency Email','delete error surfaced');
+      assert(doc.querySelector('#platformUserForm'),'uses extracted Platform User form');
+      assert(!doc.querySelector('#add-user'),'no parallel Agency editor');
     }
     if(item.section==='settings'){
       assert(doc.querySelector('[name=email]').readOnly,'settings Login Email cannot be edited');

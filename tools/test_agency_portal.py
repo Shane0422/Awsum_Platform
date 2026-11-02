@@ -1,11 +1,15 @@
 """Agency portal tests with real auth/session checks against an isolated database."""
 import csv
 import io
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
 
 import bcrypt
+from PIL import Image
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -21,9 +25,9 @@ from backend.models_admin.role import Role
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
-from backend.routers import agency_portal, auth, dashboard, platform_store, platform_store_license
+from backend.routers import agency_portal, auth, dashboard, images as image_routes, platform_store, platform_store_license
 from backend.services.agency_permissions import AgencyPortalPermissions, PortalPermission
-from backend.services import web_sessions
+from backend.services import images, web_sessions
 
 
 class AgencyPortalTests(unittest.TestCase):
@@ -74,6 +78,7 @@ class AgencyPortalTests(unittest.TestCase):
         app.include_router(auth.router, prefix="/auth")
         app.include_router(auth.platform_admin_router)
         app.include_router(agency_portal.router)
+        app.include_router(image_routes.router)
         app.include_router(platform_store.router)
         app.include_router(platform_store_license.router)
         app.include_router(dashboard.router)
@@ -84,8 +89,13 @@ class AgencyPortalTests(unittest.TestCase):
             with self.factory() as db:
                 yield db
 
-        for dependency in (auth.get_db, agency_portal.get_db, platform_store.get_db, dashboard.get_db):
+        for dependency in (auth.get_db, agency_portal.get_db, platform_store.get_db, dashboard.get_db, image_routes.get_db):
             app.dependency_overrides[dependency] = get_db
+        image_directory = tempfile.TemporaryDirectory(prefix="awsum-agency-user-test-")
+        self.addCleanup(image_directory.cleanup)
+        storage = patch.object(images, "image_storage_root", return_value=Path(image_directory.name))
+        storage.start()
+        self.addCleanup(storage.stop)
         self.app = app
         for target, value in (
             ("backend.services.web_sessions.collect_session_metadata", {}),
@@ -216,6 +226,55 @@ class AgencyPortalTests(unittest.TestCase):
         self.assertEqual(self.client.get("/platform/admin").status_code, 403)
         self.assertEqual(self.client.get("/platform/dashboard").status_code, 403)
 
+    def test_forbidden_diagnostics_identify_scope_without_logging_credentials(self):
+        with self.assertLogs(auth.logger, level="WARNING") as captured:
+            response = self.client.get("/platform/master/store", headers={"Accept": "text/html"})
+        self.assertEqual((response.status_code, response.text), (403, "Forbidden"))
+        message = captured.records[0].getMessage()
+        details = json.loads(message.split("PLATFORM_AUTH_FORBIDDEN ", 1)[1])
+        self.assertEqual(details, {
+            "path": "/platform/master/store", "location": "get_platform_admin_session",
+            "reason": "scope_type_mismatch", "session_exists": True,
+            "login_context": "AGENCY", "principal_type": "platform_user", "scope_type": "agency",
+            "role_id": 99, "token_role_id": 99, "user_status": "active",
+            "role_status": "active", "access_code_matches": False,
+        })
+        for secret in (self.client.cookies.get("access_token"), self.password,
+                       self.password_hash, "same@example.test"):
+            self.assertNotIn(secret, message)
+
+    def test_master_role_diagnostic_preserves_403_and_expired_redirect(self):
+        with self.factory() as db:
+            db.get(Role, 1).c_name = "FormerAdmin"
+            db.add(Role(i_role_id=7, c_name="SuperAdmin", c_status="active"))
+            db.get(PlatformUser, 3).i_role_id = 7
+            db.commit()
+        with TestClient(self.app) as platform:
+            login = platform.post("/platform-admin/login", data={
+                "login_mode": "platform_admin", "access_code": "ADMIN",
+                "email": "platform@example.test", "password": self.password,
+            }, follow_redirects=False)
+            self.assertEqual(login.status_code, 303, login.text)
+            with self.assertLogs(auth.logger, level="WARNING") as captured:
+                forbidden = platform.get("/platform/master/store", headers={"Accept": "text/html"})
+            self.assertEqual(forbidden.status_code, 403, forbidden.text)
+            details = json.loads(captured.records[0].getMessage().split("PLATFORM_AUTH_FORBIDDEN ", 1)[1])
+            self.assertEqual((details["location"], details["reason"], details["role_id"]),
+                             ("master_management", "login_role_not_1", 7))
+            self.assertEqual((details["session_exists"], details["login_context"],
+                              details["access_code_matches"]), (True, "PLATFORM", True))
+            with self.factory() as db:
+                db.query(SessionTbl).filter_by(i_platform_user_id=3, c_status="ACTIVE").one().dt_expires = (
+                    web_sessions.utcnow() - timedelta(seconds=1)
+                )
+                db.commit()
+            with patch.object(auth.logger, "warning") as warning:
+                expired = platform.get("/platform/master/store", headers={"Accept": "text/html"},
+                                       follow_redirects=False)
+                self.assertEqual(expired.status_code, 303, expired.text)
+                self.assertIn("reason=session_expired", expired.headers["location"])
+                warning.assert_not_called()
+
     def test_scope_applies_to_lists_filters_counts_and_devices(self):
         merchants = self.client.get("/agency/merchants")
         self.assertIn("Merchant One", merchants.text)
@@ -263,8 +322,15 @@ class AgencyPortalTests(unittest.TestCase):
             self.assertIn("Read Only.", page.text)
             self.assertNotIn('data-awsum-form', page.text)
             for method, path in (("POST", "/agency/users"), ("PUT", "/agency/users/1"),
+                                 ("POST", "/agency/users/with-image"),
+                                 ("PUT", "/agency/users/1/with-image"),
+                                 ("POST", "/agency/users/1/reset-password"),
                                  ("DELETE", "/agency/users/1")):
                 self.assertEqual(self.client.request(method, path, json={}).status_code, 403)
+            self.assertIn('"reset": false', page.text)
+        # Reset is an update action, not account creation.
+        with patch.dict(AgencyPortalPermissions.POLICY, users=PortalPermission(create=True)):
+            self.assertEqual(self.client.post("/agency/users/1/reset-password", json={}).status_code, 403)
 
     def test_user_delete_is_scoped_soft_delete_and_revokes_sessions(self):
         self.assertEqual(self.client.delete("/agency/users/1").status_code, 409)
@@ -290,6 +356,23 @@ class AgencyPortalTests(unittest.TestCase):
                 self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=target).one().c_status, "TERMINATED")
                 self.assertEqual(db.get(PlatformUser, 2).c_status, "active")
 
+    def test_common_user_list_json_is_scoped_and_excludes_credentials(self):
+        response = self.client.get("/agency/users?agency_id=2&scope=PLATFORM",
+                                   headers={"Accept": "application/json"})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["pages"], 1)
+        self.assertEqual([row["id"] for row in body["users"]], [1])
+        self.assertEqual(body["users"][0]["role"], "Agency Admin")
+        for forbidden in ("c_password", "password", "session", "token"):
+            self.assertNotIn(forbidden, body["users"][0])
+        self.assertEqual(self.client.get("/agency/users?q=NoMatch", headers={
+            "Accept": "application/json",
+        }).json()["users"], [])
+        self.assertEqual(self.client.get("/agency/users?size=101", headers={
+            "Accept": "application/json",
+        }).status_code, 422)
+
     def test_users_create_scoped_identity_and_existing_auth(self):
         payload = {"name": "New Admin", "email": "platform@example.test", "phone": "555-1111",
                    "password": " NewPassword!42 ", "confirm_password": " NewPassword!42 "}
@@ -305,6 +388,115 @@ class AgencyPortalTests(unittest.TestCase):
             login = self.login(other, email=payload["email"], password=payload["password"])
             self.assertEqual(login.headers.get("location"), "/agency/dashboard", login.text)
             self.assertEqual(other.get("/agency/dashboard").status_code, 200)
+
+    def test_common_user_photo_and_must_change_flag_preserve_scope_phone_and_password(self):
+        payload = {"name": "Photo Admin", "email": "photo@example.test", "phone": "555-1111",
+                   "password": "Hello!42", "confirm_password": "Hello!42", "must_change_password": True}
+        buffer = io.BytesIO()
+        Image.new("RGB", (25, 30), "blue").save(buffer, "PNG")
+        photo = buffer.getvalue()
+        created = self.client.post("/agency/users/with-image", data={"payload": json.dumps(payload)},
+                                   files={"image": ("personal.png", photo, "image/png")})
+        self.assertEqual(created.status_code, 200, created.text)
+        item = created.json()
+        target = item["id"]
+        self.assertEqual(item["image_path"], f"/agency/AGT00001/images/users/{target}.webp")
+        downloaded = self.client.get(item["image_url"])
+        self.assertEqual(downloaded.status_code, 200, downloaded.text)
+        self.assertEqual(downloaded.headers["cache-control"], "private, no-store")
+        with Image.open(io.BytesIO(downloaded.content)) as saved:
+            self.assertEqual((saved.format, saved.size), ("WEBP", (512, 512)))
+        with TestClient(self.app) as anonymous:
+            self.assertEqual(anonymous.get(item["image_url"]).status_code, 401)
+        listed = self.client.get("/agency/users", headers={"Accept": "application/json"}).json()["users"]
+        self.assertEqual(next(row for row in listed if row["id"] == target)["image_url"], item["image_url"])
+        with self.factory() as db:
+            record = db.get(PlatformUser, target)
+            old_hash = record.c_password
+            self.assertEqual((record.i_agency_id, record.i_role_id, record.i_must_change_password), (1, 99, 1))
+            self.assertTrue(bcrypt.checkpw(payload["password"].encode(), old_hash.encode()))
+        update = {"name": payload["name"], "email": payload["email"], "phone": "555-2222",
+                  "must_change_password": False, "status": "active"}
+        response = self.client.put(f"/agency/users/{target}/with-image",
+                                   data={"payload": json.dumps(update)})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["image_path"], item["image_path"])
+        # A status-only common action must not accidentally clear this setting.
+        self.assertEqual(self.client.put(f"/agency/users/{target}", json={
+            **update, "must_change_password": True,
+        }).status_code, 200)
+        self.assertEqual(self.client.put(f"/agency/users/{target}", json={
+            key: value for key, value in update.items() if key != "must_change_password"
+        }).status_code, 200)
+        with self.factory() as db:
+            record = db.get(PlatformUser, target)
+            self.assertEqual((record.c_phone, record.c_password, record.i_must_change_password),
+                             ("555-2222", old_hash, 1))
+        invalid = self.client.put(f"/agency/users/{target}/with-image",
+                                 data={"payload": json.dumps({**update, "phone": "not saved"})},
+                                 files={"image": ("broken.png", b"invalid image", "image/png")})
+        self.assertEqual(invalid.status_code, 400, invalid.text)
+        with self.factory() as db:
+            self.assertEqual(db.get(PlatformUser, target).c_phone, "555-2222")
+        with TestClient(self.app) as other:
+            self.assertEqual(self.login(other, code="AGT00002").status_code, 303)
+            self.assertEqual(other.get(item["image_url"]).status_code, 404)
+            self.assertEqual(other.put(f"/agency/users/{target}/with-image",
+                                      data={"payload": json.dumps(update)}).status_code, 404)
+        for foreign in (2, 3):
+            self.assertEqual(self.client.put(f"/agency/users/{foreign}/with-image",
+                                            data={"payload": json.dumps(update)}).status_code, 404)
+        for forbidden in ({"role_id": 1}, {"agency_id": 2}, {"image_path": "/arbitrary.png"}):
+            rejected = self.client.put(f"/agency/users/{target}/with-image",
+                                      data={"payload": json.dumps({**update, **forbidden})})
+            self.assertEqual(rejected.status_code, 422, rejected.text)
+            self.assertEqual(rejected.json()["detail"][0]["loc"][0], "body")
+        self.assertEqual(self.client.post("/agency/users/with-image?record_id=1",
+                                         data={"payload": json.dumps(payload)}).status_code, 422)
+        cross_origin = self.client.put(
+            f"/agency/users/{target}/with-image", data={"payload": json.dumps(update)},
+            headers={"Origin": "https://foreign.example.test"},
+        )
+        self.assertEqual(cross_origin.status_code, 403, cross_origin.text)
+        removed = self.client.put(f"/agency/users/{target}/with-image",
+                                  data={"payload": json.dumps(update), "remove_image": "true"})
+        self.assertEqual(removed.status_code, 200, removed.text)
+        self.assertFalse(removed.json()["image_path"])
+        self.assertEqual(self.client.get(item["image_url"]).status_code, 404)
+
+    def test_common_reset_password_validation_and_agency_scope(self):
+        created = self.client.post("/agency/users", json={
+            "name": "Reset Admin", "email": "reset@example.test",
+            "password": "Hello!42", "confirm_password": "Hello!42",
+        })
+        self.assertEqual(created.status_code, 200, created.text)
+        target = created.json()["id"]
+        with self.factory() as db:
+            original_hash = db.get(PlatformUser, target).c_password
+        reset_payload = {"password": "Replacement!42", "confirm_password": "Replacement!42"}
+        for foreign in (2, 3, 999):
+            self.assertEqual(self.client.post(f"/agency/users/{foreign}/reset-password",
+                                             json=reset_payload).status_code, 404)
+        mismatch = self.client.post(f"/agency/users/{target}/reset-password",
+                                    json={**reset_payload, "confirm_password": "mismatch"})
+        self.assertEqual(mismatch.status_code, 400, mismatch.text)
+        with self.factory() as db:
+            self.assertEqual(db.get(PlatformUser, target).c_password, original_hash)
+        with patch.object(platform_store, "_validate_platform_user_password",
+                          wraps=platform_store._validate_platform_user_password) as validator:
+            reset = self.client.post(f"/agency/users/{target}/reset-password", json=reset_payload)
+            self.assertEqual(reset.status_code, 200, reset.text)
+            self.assertEqual(validator.call_count, 1)
+        self.assertTrue(reset.json()["must_change_password"])
+        with self.factory() as db:
+            record = db.get(PlatformUser, target)
+            self.assertTrue(bcrypt.checkpw(reset_payload["password"].encode(), record.c_password.encode()))
+            self.assertEqual((record.i_must_change_password, record.i_agency_id, record.i_role_id), (1, 1, 99))
+            self.assertEqual(db.get(PlatformUser, 2).c_password, self.password_hash)
+        with TestClient(self.app) as other:
+            response = self.login(other, email="reset@example.test", password=reset_payload["password"])
+            self.assertEqual(response.status_code, 303, response.text)
+            self.assertIn("change-password", response.headers["location"])
 
     def test_user_status_changes_are_scoped_and_self_deactivation_is_rejected(self):
         payload = {"name": "Updated", "email": "same@example.test", "phone": "", "status": "inactive"}

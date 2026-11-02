@@ -1,12 +1,15 @@
 {% extends "agency/base.html" %}
 {% from "platform/components/management_layout.html" import page_header, surface, data_table %}
-{% from "platform/components/management_form.html" import editor, fields as form_fields %}
+{% from "platform/components/management_form.html" import fields as form_fields %}
 {% block page_title %}Agency - {{ title or section | title }}{% endblock %}
 {% block content %}
+{% if section == 'users' %}
+  {% set user_management_scope = 'AGENCY' %}
+  {% include "platform/components/user_management.html" %}
+{% else %}
 {% set permission = permissions.capabilities(kind if section in ['merchants', 'stores', 'users'] else section) %}
 {% call page_header(title or section | title, agency.c_agency_name ~ ' / ' ~ agency.c_agency_code) %}
   {% if section == 'reports' %}<a class="btn btn-outline-secondary" href="/agency/reports/export">Export CSV</a>{% endif %}
-  {% if permission.create %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#add-user" type="button">Add User</button>{% endif %}
 {% endcall %}
 {% if section in ['dashboard', 'reports'] %}
   <div class="row g-3 mb-3">
@@ -42,13 +45,11 @@
     {% if permission.read_only %}<p class="text-muted">Read Only. Changes are managed by Platform Admin.</p>{% endif %}
     {% if kind == 'devices' %}<a href="/agency/stores" class="btn btn-outline-secondary mb-3">Back to Stores</a>{% endif %}
     {% set columns = [{'key':'code','label':'Device' if kind == 'devices' else 'Code'}, {'key':'name','label':'Type' if kind == 'devices' else 'Name'}, {'key':'email','label':'OS' if kind == 'devices' else 'Email'}, {'key':'phone','label':'Last Seen' if kind == 'devices' else 'Phone'}, {'key':'status','label':'Status'}] %}
-    {% if permission.update or permission.delete or kind == 'stores' %}{% set columns = columns + [{'key':'actions','label':'Actions'}] %}{% endif %}
+    {% if kind == 'stores' %}{% set columns = columns + [{'key':'actions','label':'Actions'}] %}{% endif %}
     {% call(row, key) data_table(columns, rows) %}
       {% if key == 'status' %}<span class="badge {{ 'text-bg-success' if row.status == 'active' else 'text-bg-secondary' }}">{{ row.status }}</span>
       {% elif key == 'actions' %}
         <div class="d-flex gap-1">
-          {% if permission.update %}<button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#edit-{{ row.id }}">Edit</button>{% endif %}
-          {% if permission.delete and permissions.can_deactivate_user(row.id) %}<button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#delete-{{ row.id }}">Delete</button>{% endif %}
           {% if kind == 'stores' %}<a class="btn btn-outline-secondary btn-sm" href="/agency/stores/{{ row.id }}/devices">Devices (Read Only)</a>{% endif %}
         </div>
       {% else %}{{ row[key] or '-' }}{% endif %}
@@ -59,18 +60,7 @@
       {% if page < pages %}<a class="btn btn-outline-secondary btn-sm" href="{{ list_path }}?{{ {'q':q, 'status':status, 'size':size, 'page':page+1}|urlencode }}">Next</a>{% endif %}</div>
     </div>
   {% endcall %}
-  {% if permission.update %}
-    {% for row in rows %}{{ editor('edit-' ~ row.id, 'Edit ' ~ kind | title, '/agency/' ~ kind ~ '/' ~ row.id, 'PUT', fields, row) }}{% endfor %}
-  {% endif %}
-  {% if permission.delete %}
-    {% for row in rows if permissions.can_deactivate_user(row.id) %}
-      {{ editor('delete-' ~ row.id, 'Delete Agency User', '/agency/users/' ~ row.id, 'DELETE', [], {}, submit_label='Delete', message='This account will be deactivated and its active sessions terminated. User history is preserved.') }}
-    {% endfor %}
-  {% endif %}
-    {% if permission.create %}
-      {% set password_fields = [{'name':'password','label':'Password','type':'password','required':true}, {'name':'confirm_password','label':'Confirm Password','type':'password','required':true}] %}
-      {{ editor('add-user', 'Add Agency Admin User', '/agency/users', 'POST', fields + password_fields, {}) }}
-    {% endif %}
 {% endif %}
 <script src="/static/js/management-form.js?v=1" defer></script>
+{% endif %}
 {% endblock %}

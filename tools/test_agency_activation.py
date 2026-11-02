@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
+from datetime import datetime
 import bcrypt
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -336,6 +337,118 @@ class AgencyActivationTests(unittest.TestCase):
         with self.factory() as db:
             self.assertEqual(db.query(BusinessContact).one().c_email, "Jane@example.test")
             self.assertEqual(db.query(PlatformUser).filter_by(i_agency_id=1).one().c_email, "jane@example.test")
+
+    def test_registration_uses_only_current_primary_without_changing_login(self):
+        self.allow_multiple_contacts_in_sqlite()
+        self.activate()
+        with self.factory() as db:
+            original_user = db.query(PlatformUser).filter_by(i_agency_id=1).one()
+            original_identity = (original_user.c_email, original_user.c_password)
+            service = BusinessContactService(db)
+            other = service.create_contact("AGENCY", 1, {
+                "first_name": "Other", "email": "other@example.test", "phone": "1234567890",
+            })
+        preview = self.client.post("/platform/agency/1/registration-email/preview", json={})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertEqual(preview.json()["recipient"], "Jane@example.test")
+        with self.factory() as db:
+            BusinessContactService(db).set_primary(other["contact_id"])
+        with patch("backend.routers.platform_store.send_configured_email", return_value=("<mock@test>", "accepted")) as smtp:
+            preview = self.client.post("/platform/agency/1/registration-email/preview", json={})
+            self.assertEqual(preview.status_code, 200, preview.text)
+            self.assertEqual(preview.json()["recipient"], "other@example.test")
+            self.assertIn("jane@example.test", preview.json()["message"])
+            sent = self.client.post("/platform/agency/1/registration-email", json={})
+            self.assertEqual(sent.status_code, 200, sent.text)
+            self.assertEqual(str(smtp.call_args.args[1]["To"]), "other@example.test")
+        with self.factory() as db:
+            user = db.query(PlatformUser).filter_by(i_agency_id=1).one()
+            self.assertEqual((user.c_email, user.c_password), original_identity)
+
+    def test_registration_requires_primary_and_email_even_with_recipient_override(self):
+        self.allow_multiple_contacts_in_sqlite()
+        self.activate()
+        with self.factory() as db:
+            BusinessContactService(db).create_contact("AGENCY", 1, {
+                "first_name": "Other", "email": "other@example.test", "phone": "1234567890",
+            })
+        for state, expected in (
+            ("no_primary", "Please designate a Primary Contact first."),
+            ("no_email", "Please enter the Primary Contact Email first."),
+            ("invalid_email", "Please correct it first."),
+        ):
+            with self.subTest(state=state):
+                with self.factory() as db:
+                    contact = db.query(BusinessContact).filter_by(c_first_name="Jane").one()
+                    contact.b_is_primary = state != "no_primary"
+                    contact.c_email = "" if state == "no_email" else "invalid" if state == "invalid_email" else "Jane@example.test"
+                    db.commit()
+                with patch("backend.routers.platform_store.send_configured_email") as smtp:
+                    for suffix in ("/preview", ""):
+                        for payload in ({}, {"recipient": "override@example.test"}):
+                            response = self.client.post("/platform/agency/1/registration-email" + suffix, json=payload)
+                            self.assertEqual(response.status_code, 400, response.text)
+                            self.assertIn(expected, response.json()["detail"])
+                    smtp.assert_not_called()
+
+    def allow_multiple_contacts_in_sqlite(self):
+        # Model index has a PostgreSQL-only predicate; mirror it in this isolated SQLite fixture.
+        with self.engine.begin() as connection:
+            connection.execute(text("DROP INDEX ux_business_contact_primary"))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX ux_business_contact_primary ON tb_business_contact "
+                "(c_owner_type, i_owner_id) WHERE b_is_primary = 1"
+            ))
+
+    def test_registration_requires_activation_and_real_admin_before_rendering(self):
+        with patch("backend.routers.platform_store.send_configured_email") as smtp:
+            for suffix in ("/preview", ""):
+                response = self.client.post("/platform/agency/1/registration-email" + suffix, json={})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["detail"], "An active Agency is required.")
+            with self.factory() as db:
+                db.get(Agency, 1).c_status = "active"
+                db.commit()
+            for suffix in ("/preview", ""):
+                response = self.client.post("/platform/agency/1/registration-email" + suffix, json={})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["detail"], "An active Agency User is required.")
+                self.assertNotIn("Not registered", response.text)
+            smtp.assert_not_called()
+        with self.factory() as db:
+            self.assertEqual(db.query(PlatformUser).filter_by(i_agency_id=1).count(), 0)
+        activation = self.activate()
+        preview = self.client.post("/platform/agency/1/registration-email/preview", json={})
+        self.assertEqual(preview.status_code, 200, preview.text)
+        for expected in ("Agency Name", "Agency Code", "Login Email", "Login URL",
+                         "Initial Password", "Sign In", activation["temporary_password"], activation["login_email"]):
+            self.assertIn(expected, preview.json()["html"])
+        with self.factory() as db:
+            db.query(PlatformUser).filter_by(i_agency_id=1).one().c_status = "inactive"
+            db.commit()
+        with patch("backend.routers.platform_store.send_configured_email") as smtp:
+            for suffix in ("/preview", ""):
+                response = self.client.post("/platform/agency/1/registration-email" + suffix, json={})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["detail"], "An active Agency User is required.")
+            smtp.assert_not_called()
+
+    def test_resend_after_password_change_omits_password_without_modifying_account(self):
+        self.activate()
+        changed_hash = bcrypt.hashpw(b"ChangedPassword!42", bcrypt.gensalt(rounds=4)).decode()
+        with self.factory() as db:
+            user = db.query(PlatformUser).filter_by(i_agency_id=1).one()
+            user.c_password = changed_hash
+            user.dt_password_changed = datetime.now()
+            db.commit()
+        with patch("backend.routers.platform_store.send_configured_email", return_value=("<mock@test>", "accepted")):
+            preview = self.client.post("/platform/agency/1/registration-email/preview", json={})
+            self.assertEqual(preview.status_code, 200, preview.text)
+            self.assertNotIn("Initial Password:", preview.json()["message"])
+            self.assertNotIn("ChangedPassword!42", preview.text)
+            self.assertEqual(self.client.post("/platform/agency/1/registration-email", json={}).status_code, 200)
+        with self.factory() as db:
+            self.assertEqual(db.query(PlatformUser).filter_by(i_agency_id=1).one().c_password, changed_hash)
 
     def test_resend_uses_creation_phone_even_after_contact_phone_changes(self):
         self.activate()

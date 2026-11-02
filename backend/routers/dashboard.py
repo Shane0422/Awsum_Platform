@@ -30,7 +30,7 @@ from backend.models_admin.agency import Agency
 from backend.models_admin.agency_type import AgencyType
 from backend.config.templates import templates, get_brand_context
 from backend.config.settings import APP_NAME
-from backend.routers.auth import get_platform_admin_session
+from backend.routers.auth import get_platform_admin_session, _log_platform_forbidden
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
@@ -216,6 +216,7 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         return redirect_resp
 
     if user.login_role != 1:
+        _log_platform_forbidden(request, db, "master_management", "login_role_not_1", user=user)
         raise HTTPException(status_code=403, detail="Forbidden")
 
     # Normalize aliases used by legacy/deep links.

@@ -7,6 +7,7 @@ import re
 import secrets
 import bcrypt
 import logging
+import json
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
@@ -47,6 +48,7 @@ from backend.services.image_service import commit_entity_image, image_operation_
 from backend.services.paths import AwsumPathResolver
 from backend.services.money import format_money
 from backend.services.business_contact import BusinessContactService
+from backend.services.business_code import generate_business_code
 from backend.services.license_email import load_company_branding
 from backend.services.agency_email import build_agency_registration_email
 from backend.services.email_layout import AwsumEmailLayout
@@ -60,14 +62,6 @@ ADMIN_STORE_ID = 1000001
 LEGACY_TEST_STORE_CODE = "CUST00001"
 TEST_STORE_CODE = "CLT00001"
 LEGACY_TEST_STORE_CODES = {"CLT_00001", "CUST00001", "CUST_00001"}
-CLIENT_STORE_PREFIX = "ST"
-CLIENT_STORE_CODE_DIGITS = 6
-CLIENT_STORE_SEQ_START = 20001
-STORE_CODE_ADVISORY_LOCK_KEY = 11001003
-ACCOUNT_CODE_PREFIX = "CLT"
-ACCOUNT_CODE_SEQ_START = 11001
-ACCOUNT_CODE_ADVISORY_LOCK_KEY = 11001001
-AGENCY_CODE_PREFIX = "AGT"
 ALLOWED_DASHBOARD_TYPES = {"PLATFORM", "STANDARD", "RESTAURANT", "DELI", "TUXEDO_RENTAL"}
 BASE_DIR = PROJECT_ROOT
 DEVICE_ACTIVATION_TTL_MINUTES = 30
@@ -421,20 +415,9 @@ def _build_contract_pdf_bytes(contract: Contract, context: ReportPrintContext) -
 
 
 def _generate_client_store_code(db: Session) -> tuple[str, int]:
-    # Business stores get ST000001, ST000002, ...; the Platform Admin store is never counted.
-    # The advisory lock serializes generators; unique constraints stay the final guard.
-    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": STORE_CODE_ADVISORY_LOCK_KEY})
-    max_code = db.execute(
-        text(
-            """
-            SELECT COALESCE(MAX(CAST(SUBSTRING(c_store_code FROM '([0-9]+)$') AS INTEGER)), 0)
-            FROM tb_store WHERE c_store_code ~ '^ST[0-9]{6}$' AND i_store_id <> :admin_id
-            """
-        ),
-        {"admin_id": ADMIN_STORE_ID},
-    ).scalar()
-    max_seq = db.execute(text("SELECT COALESCE(MAX(i_store_seq), 0) FROM tb_store")).scalar()
-    return f"{CLIENT_STORE_PREFIX}{int(max_code or 0) + 1:0{CLIENT_STORE_CODE_DIGITS}d}", int(max_seq or 0) + 1
+    code = generate_business_code(db, "STORE")
+    max_seq = db.query(func.max(Store.i_store_seq)).scalar()
+    return code, int(max_seq or 0) + 1
 
 
 def _get_business_store(db: Session, store_id: int) -> Store:
@@ -448,31 +431,11 @@ def _get_business_store(db: Session, store_id: int) -> Store:
 
 
 def _generate_next_client_code(db: Session) -> str:
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(:lock_key)"),
-        {"lock_key": ACCOUNT_CODE_ADVISORY_LOCK_KEY},
-    )
-
-    max_seq = db.execute(
-        text(
-            """
-            SELECT COALESCE(
-                MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER)),
-                :seq_start - 1
-            ) AS max_seq
-            FROM tb_client
-            WHERE c_client_code ~ '^CLT_?[0-9]+$'
-            """
-        ),
-        {"seq_start": ACCOUNT_CODE_SEQ_START},
-    ).scalar()
-
-    next_seq = ACCOUNT_CODE_SEQ_START if not max_seq or max_seq < ACCOUNT_CODE_SEQ_START else max_seq + 1
-    return f"{ACCOUNT_CODE_PREFIX}{next_seq:05d}"
+    return generate_business_code(db, "MERCHANT")
 
 
-def _generate_agency_code(agency_id: int) -> str:
-    return f"{AGENCY_CODE_PREFIX}{int(agency_id):05d}"
+def _generate_agency_code(db: Session) -> str:
+    return generate_business_code(db, "AGENCY")
 
 
 def _save_organization_logo(db, organization, file, context, code, *, merchant_code=None):
@@ -902,6 +865,8 @@ def list_stores(
             "store_id": s.i_store_id,
             "store_seq": s.i_store_seq,
             "store_code": s.c_store_code,
+            "image_path": s.c_logo_url,
+            "image_url": image_url(s.c_logo_url),
             "store_name": s.c_store_name,
             "client_id": s.i_account_id,
             "client_name": client.c_account_name if client else None,
@@ -969,6 +934,8 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
         "store_id": store.i_store_id,
         "store_seq": store.i_store_seq,
         "store_code": store.c_store_code,
+        "image_path": store.c_logo_url,
+        "image_url": image_url(store.c_logo_url),
         "store_name": store.c_store_name,
         "client_id": store.i_account_id,
         "client_name": client.c_account_name if client else None,
@@ -1167,6 +1134,43 @@ def delete_business_contact(contact_id: int, request: Request, db: Session = Dep
 
 @router.post("/platform/store")
 def create_store(request: Request, payload: dict, db: Session = Depends(get_db)):
+    return _create_store(request, payload, db)
+
+
+def _commit_store_image(db, store, *, image_data=None, remove_image=False):
+    if image_data is None and not remove_image:
+        db.commit()
+        return None
+    db.flush()
+    owner = AwsumStorageService(db).resolve_owner("STORE", store.i_store_id)
+    with image_operation_lock(owner, "logo"):
+        return commit_entity_image(db, store, owner, "logo", category="logo",
+                                   image_data=image_data, remove_image=remove_image,
+                                   reference_field="c_logo_url")
+
+
+@router.post("/platform/store/with-image")
+@router.put("/platform/store/{store_id}/with-image")
+def save_store_with_image(
+    request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+    remove_image: bool = Form(False), store_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    from backend.routers.system_settings import _validate_origin
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    _validate_origin(request)
+    if request.method == "POST" and store_id is not None:
+        raise HTTPException(422, "Store ID cannot be supplied when creating a Store.")
+    if store_id is not None:
+        _get_business_store(db, store_id)
+    values, data = image_mutation_form(payload, remove_image, image)
+    if store_id is None:
+        return _create_store(request, values, db, image_data=data)
+    return _update_store(store_id, values, request, db, image_data=data, remove_image=remove_image)
+
+
+def _create_store(request: Request, payload: dict, db: Session, *, image_data: bytes | None = None):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
@@ -1251,9 +1255,12 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
         _stamp_created(store, user)
         db.add(store)
         try:
-            db.commit()
+            warning = _commit_store_image(db, store, image_data=image_data)
             storage = AwsumStorageService(db).initialize_after_registration("STORE", next_id)
-            return JSONResponse({"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq, **storage})
+            result = {"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq, **storage}
+            if image_data is not None:
+                result.update(image_path=store.c_logo_url, image_url=image_url(store.c_logo_url), image_warning=warning)
+            return JSONResponse(result)
         except IntegrityError as exc:
             db.rollback()
             if (
@@ -1270,10 +1277,18 @@ def create_store(request: Request, payload: dict, db: Session = Depends(get_db))
 
 @router.put("/platform/store/{store_id}")
 def update_store(store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    _update_store(store_id, payload, request, db)
+    return JSONResponse({"success": True})
+
+
+def _update_store(store_id: int, payload: dict, request: Request, db: Session,
+                  *, image_data: bytes | None = None, remove_image: bool = False):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
     store = _get_business_store(db, store_id)
+    if image_data is not None or remove_image:
+        db.refresh(store, with_for_update=True)
 
     # Bulk-update allowed fields
     for key, value in {
@@ -1373,8 +1388,9 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
 
     _apply_store_license_and_options(db, store, payload, creating=False)
     _stamp_updated(store, user)
-    db.commit()
-    return JSONResponse({"success": True})
+    warning = _commit_store_image(db, store, image_data=image_data, remove_image=remove_image)
+    return JSONResponse({"success": True, "image_path": store.c_logo_url,
+                         "image_url": image_url(store.c_logo_url), "image_warning": warning})
 
 
 @router.delete("/platform/store/{store_id}")
@@ -1458,6 +1474,8 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
         "store_id": store.i_store_id,
         "store_seq": store.i_store_seq,
         "store_code": store.c_store_code,
+        "image_path": store.c_logo_url,
+        "image_url": image_url(store.c_logo_url),
         "store_name": store.c_store_name,
         "client_id": store.i_account_id,
         "client_name": client.c_account_name,
@@ -2084,6 +2102,8 @@ def list_agents(
     return JSONResponse([
         {
             "id": agency.i_agency_id,
+            "image_path": agency.c_logo_url,
+            "image_url": image_url(agency.c_logo_url),
             "has_agency_admin": agency.i_agency_id in agency_admin_ids,
             "agency_type_id": agency.i_agency_type_id,
             "agency_type_code": agency_type.c_agency_type_code if agency_type else None,
@@ -2177,6 +2197,57 @@ def _activate_agency(db: Session, agency: Agency) -> dict:
 
 @router.post("/platform/agency")
 def create_agent(payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _create_agent(payload, request, db)
+
+
+def _commit_organization_image(
+    db: Session, item: Agency | Client, context: str, *,
+    image_data: bytes | None = None, remove_image: bool = False,
+) -> str | None:
+    if image_data is None and not remove_image:
+        db.commit()
+        return None
+    db.flush()
+    identity = item.i_agency_id if context == "AGENCY" else item.i_account_id
+    owner = AwsumStorageService(db).resolve_owner(context, identity)
+    with image_operation_lock(owner, "logo"):
+        return commit_entity_image(db, item, owner, "logo", category="logo",
+                                   image_data=image_data, remove_image=remove_image,
+                                   reference_field="c_logo_url")
+
+
+@router.post("/platform/agency/with-image")
+@router.put("/platform/agency/{record_id}/with-image")
+@router.post("/platform/client/with-image")
+@router.put("/platform/client/{record_id}/with-image")
+def save_organization_with_image(
+    request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+    remove_image: bool = Form(False), record_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    from backend.routers.system_settings import _validate_origin
+    require_platform_admin(get_current_user(request, db))
+    _validate_origin(request)
+    if request.method == "POST" and record_id is not None:
+        raise HTTPException(422, "Record ID cannot be supplied when creating an organization.")
+    agency = request.url.path.startswith("/platform/agency/")
+    model, key = (Agency, Agency.i_agency_id) if agency else (Client, Client.i_account_id)
+    if record_id is not None and not db.query(model).filter(key == record_id).first():
+        raise HTTPException(404, "Organization not found.")
+    values, data = image_mutation_form(payload, remove_image, image)
+    if agency:
+        response = (_create_agent(values, request, db, image_data=data) if record_id is None else
+                    _update_agent(record_id, values, request, db, image_data=data, remove_image=remove_image))
+    else:
+        response = (_create_client(values, request, db, image_data=data) if record_id is None else
+                    _update_client(record_id, values, request, db, image_data=data, remove_image=remove_image))
+    result = json.loads(response.body)
+    item = db.query(model).filter(key == (record_id or result["id"])).one()
+    result.update(image_path=item.c_logo_url, image_url=image_url(item.c_logo_url))
+    return _set_no_cache_headers(JSONResponse(result))
+
+
+def _create_agent(payload: dict, request: Request, db: Session, *, image_data: bytes | None = None):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
@@ -2198,7 +2269,7 @@ def create_agent(payload: dict, request: Request, db: Session = Depends(get_db))
 
     item = Agency(
         i_agency_type_id=agency_type_id,
-        c_agency_code=f"TMP_{secrets.token_hex(6).upper()}",
+        c_agency_code=_generate_agency_code(db),
         c_agency_name=(contact_name or company_name)[:120],
         c_company_name=company_name,
         c_contact_name=contact_name or None,
@@ -2217,9 +2288,8 @@ def create_agent(payload: dict, request: Request, db: Session = Depends(get_db))
     try:
         db.add(item)
         db.flush()
-        item.c_agency_code = _generate_agency_code(item.i_agency_id)
         activation = _activate_agency(db, item)
-        db.commit()
+        warning = _commit_organization_image(db, item, "AGENCY", image_data=image_data)
     except HTTPException:
         db.rollback()
         raise
@@ -2231,12 +2301,18 @@ def create_agent(payload: dict, request: Request, db: Session = Depends(get_db))
 
     storage = AwsumStorageService(db).initialize_after_registration("AGENCY", item.i_agency_id)
     return _set_no_cache_headers(JSONResponse(
-        {"id": item.i_agency_id, "agency_code": item.c_agency_code, **storage, **activation}
+        {"id": item.i_agency_id, "agency_code": item.c_agency_code, **storage, **activation,
+         **({"image_warning": warning} if image_data is not None else {})}
     ))
 
 
 @router.put("/platform/agency/{agency_id}")
 def update_agent(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _update_agent(agency_id, payload, request, db)
+
+
+def _update_agent(agency_id: int, payload: dict, request: Request, db: Session,
+                   *, image_data: bytes | None = None, remove_image: bool = False):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
@@ -2289,7 +2365,7 @@ def update_agent(agency_id: int, payload: dict, request: Request, db: Session = 
 
     try:
         activation = _activate_agency(db, item)
-        db.commit()
+        warning = _commit_organization_image(db, item, "AGENCY", image_data=image_data, remove_image=remove_image)
     except HTTPException:
         db.rollback()
         raise
@@ -2300,7 +2376,8 @@ def update_agent(agency_id: int, payload: dict, request: Request, db: Session = 
         db.rollback()
         logging.getLogger(__name__).exception("Unable to save Agency activation")
         raise HTTPException(status_code=500, detail="Unable to save the agency. Please try again.")
-    return _set_no_cache_headers(JSONResponse({"success": True, "id": agency_id, **activation}))
+    return _set_no_cache_headers(JSONResponse({"success": True, "id": agency_id, **activation,
+        **({"image_warning": warning} if image_data is not None or remove_image else {})}))
 
 
 def _agency_registration_email(db: Session, agency_id: int, payload: dict, request: Request):
@@ -2311,14 +2388,22 @@ def _agency_registration_email(db: Session, agency_id: int, payload: dict, reque
         raise HTTPException(400, "An active Agency is required.")
     agency_user = db.query(PlatformUser).join(Role, Role.i_role_id == PlatformUser.i_role_id).filter(
         PlatformUser.i_agency_id == agency_id, Role.c_name == AGENCY_ADMIN_ROLE_NAME,
+    ).order_by(
+        (PlatformUser.c_status == "active").desc(), PlatformUser.i_platform_user_id,
     ).first()
     if not agency_user or agency_user.c_status != "active":
         raise HTTPException(400, "An active Agency User is required.")
     contact = BusinessContactService(db).get_primary_contact("AGENCY", agency_id)
     if not contact:
-        raise HTTPException(400, "An active Primary Contact is required.")
+        raise HTTPException(400, "No active Primary Contact is registered. Please designate a Primary Contact first.")
+    if not (contact.c_email or "").strip():
+        raise HTTPException(400, "The Primary Contact has no Email. Please enter the Primary Contact Email first.")
     try:
-        recipient = validate_email_address(payload.get("recipient", contact.c_email))
+        primary_email = validate_email_address(contact.c_email)
+    except ValueError as exc:
+        raise HTTPException(400, "The Primary Contact Email is invalid. Please correct it first.") from exc
+    try:
+        recipient = validate_email_address(payload.get("recipient", primary_email))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     password = str(payload.get("temporary_password") or "")
@@ -3810,6 +3895,10 @@ def reset_user_password(user_id: int, payload: dict, request: Request, db: Sessi
     actor = get_current_user(request, db)
     require_platform_admin(actor)
     target = _get_platform_user(db, user_id)
+    return _reset_user_password(target, payload, actor, db)
+
+
+def _reset_user_password(target: PlatformUser, payload: dict, actor: PlatformUser, db: Session):
     password = _validate_platform_user_password(payload.get("password"), payload.get("confirm_password"))
 
     target.c_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -3917,6 +4006,8 @@ def list_clients(
     return JSONResponse([
         {
             "id": i.i_account_id,
+            "image_path": i.c_logo_url,
+            "image_url": image_url(i.c_logo_url),
             "account_id": i.i_account_id,
             "account_code": i.c_client_code,
             "c_account_code": i.c_client_code,  # legacy
@@ -4071,6 +4162,10 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/platform/client")
 def create_client(payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _create_client(payload, request, db)
+
+
+def _create_client(payload: dict, request: Request, db: Session, *, image_data: bytes | None = None):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
@@ -4125,10 +4220,11 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
         db.add(item)
 
         try:
-            db.commit()
+            warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data)
             db.refresh(item)
             storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_account_id)
-            return JSONResponse({"id": item.i_account_id, "c_client_code": item.c_client_code, **storage})
+            return JSONResponse({"id": item.i_account_id, "c_client_code": item.c_client_code, **storage,
+                                 **({"image_warning": warning} if image_data is not None else {})})
         except IntegrityError as exc:
             db.rollback()
             lowered = str(exc).lower()
@@ -4147,12 +4243,19 @@ def create_client(payload: dict, request: Request, db: Session = Depends(get_db)
 
 @router.put("/platform/client/{client_id}")
 def update_client(client_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _update_client(client_id, payload, request, db)
+
+
+def _update_client(client_id: int, payload: dict, request: Request, db: Session,
+                    *, image_data: bytes | None = None, remove_image: bool = False):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
     item = db.query(Client).filter(Client.i_account_id == client_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Client not found")
+    if image_data is not None or remove_image:
+        db.refresh(item, with_for_update=True)
 
     if "client_name" in payload:
         client_name = (payload.get("client_name") or "").strip()
@@ -4216,12 +4319,13 @@ def update_client(client_id: int, payload: dict, request: Request, db: Session =
 
     _stamp_updated(item, user)
     try:
-        db.commit()
+        warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data, remove_image=remove_image)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="client_name already exists")
 
-    return JSONResponse({"success": True})
+    return JSONResponse({"success": True,
+                         **({"image_warning": warning} if image_data is not None or remove_image else {})})
 
 
 @router.delete("/platform/client/{client_id}")
@@ -4241,30 +4345,13 @@ def delete_client(client_id: int, request: Request, db: Session = Depends(get_db
 
 # Merchants (backed by the existing tb_client table; no schema change)
 
-MERCHANT_CODE_PREFIX = "MER"
-MERCHANT_CODE_ADVISORY_LOCK_KEY = 11001002
 MERCHANT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
 MERCHANT_TEXT_LIMITS = {
     "first_name": 120, "last_name": 120, "email": 255, "phone": 50,
     "address_line1": 255, "address_line2": 255, "city": 120, "state": 120, "zip": 20, "country": 120, "website": 1000, "notes": 5000, "timezone": 64,
     }
 def _generate_next_merchant_code(db: Session) -> str:
-    # The advisory lock serializes generators; the unique constraint on
-    # c_client_code remains the final guard (callers retry on collision).
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(:lock_key)"),
-        {"lock_key": MERCHANT_CODE_ADVISORY_LOCK_KEY},
-    )
-    max_seq = db.execute(
-        text(
-            """
-            SELECT COALESCE(MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER)), 0)
-            FROM tb_client
-            WHERE c_client_code ~ '^MER_?[0-9]+$'
-            """
-        )
-    ).scalar()
-    return f"{MERCHANT_CODE_PREFIX}{int(max_seq or 0) + 1:05d}"
+    return generate_business_code(db, "MERCHANT")
 
 
 def _merchant_agency_label(agency: Optional[Agency]) -> str:
@@ -4276,6 +4363,8 @@ def _merchant_agency_label(agency: Optional[Agency]) -> str:
 def _serialize_merchant(item: Client, agency_map: dict, bt_name_map: dict) -> dict:
     return {
         "id": item.i_account_id,
+        "image_path": item.c_logo_url,
+        "image_url": image_url(item.c_logo_url),
         "merchant_code": item.c_client_code,
         "merchant_name": item.c_account_name,
         "primary_agency_id": str(item.i_agency_id) if item.i_agency_id is not None else "",

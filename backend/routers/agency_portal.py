@@ -6,9 +6,10 @@ import logging
 from typing import Annotated, Literal
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -25,10 +26,13 @@ from backend.models_admin.session import SessionTbl
 from backend.models_admin.store import Store
 from backend.routers.platform_store import (
     _platform_user_email, _platform_user_name, _require_unique_platform_user_email,
-    _validate_platform_user_password,
+    _reset_user_password, _validate_platform_user_password,
 )
 from backend.services import web_sessions
 from backend.services.agency_permissions import AgencyPortalPermissions
+from backend.services.images import image_mutation_form, image_url
+from backend.services.image_service import commit_entity_image, image_operation_lock
+from backend.services.resource_storage import AwsumStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +99,11 @@ class Profile(BaseModel):
 
 
 class UserEdit(Profile):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    first_name: str = Field(default="", max_length=255)
+    last_name: str = Field(default="", max_length=255)
     status: Literal["active", "inactive"] = "active"
+    must_change_password: bool | None = None
 
 
 class UserCreate(UserEdit):
@@ -124,6 +132,7 @@ def serialize(record, kind):
     if kind == "users":
         return {"id": record.i_platform_user_id, "code": str(record.i_platform_user_id),
                 "name": f"{record.c_first_name or ''} {record.c_last_name or ''}".strip(),
+                "first_name": record.c_first_name or "", "last_name": record.c_last_name or "",
                 "email": record.c_email, "phone": record.c_phone or "", "status": record.c_status}
     return {"id": record.i_device_id, "code": record.c_device_name or "Unnamed",
             "name": record.c_device_type or "", "email": record.c_os or "",
@@ -245,6 +254,17 @@ def list_records(kind: Literal["merchants", "stores", "users"], request: Request
         query = query.filter(model.c_status == status)
     total = query.count()
     records = query.order_by(pk).offset((page - 1) * size).limit(size).all()
+    if kind == "users" and "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({
+            "users": [{
+                **serialize(record, "users"), "role": AGENCY_ADMIN_ROLE_NAME,
+                "must_change_password": bool(record.i_must_change_password),
+                "last_login": record.dt_last_login.isoformat() if record.dt_last_login else None,
+                "created_at": record.dt_created.isoformat() if record.dt_created else None,
+                "image_path": record.c_image_path, "image_url": image_url(record.c_image_path),
+            } for record in records],
+            "pages": max(1, (total + size - 1) // size),
+        }, headers={"Cache-Control": "no-store"})
     return render(request, db, user, kind, title=kind.title(), kind=kind,
                   rows=[serialize(item, kind) for item in records], fields=fields(kind),
                   q=q, status=status, page=page, size=size, total=total,
@@ -260,6 +280,10 @@ def unsupported_record_mutation(record_id: int):
 
 @router.post("/users")
 def create_user(payload: UserCreate, db: Session = Depends(get_db), user: PlatformUser = Depends(agency_user)):
+    return _create_user(payload, db, user)
+
+
+def _create_user(payload: UserCreate, db: Session, user: PlatformUser, *, image_data: bytes | None = None):
     db.query(Agency).filter(Agency.i_agency_id == user.i_agency_id).with_for_update().one()
     role = db.query(Role).filter(Role.c_name == AGENCY_ADMIN_ROLE_NAME, Role.c_status == "active").first()
     if role is None:
@@ -267,34 +291,93 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user: Platfo
     email = _platform_user_email(payload.email)
     _require_unique_platform_user_email(db, email, agency_id=user.i_agency_id)
     password = _validate_platform_user_password(payload.password, payload.confirm_password)
-    first, last = _platform_user_name(payload.model_dump())
+    first, last = _platform_user_name(payload.model_dump(exclude_none=True))
     record = PlatformUser(
         i_store_id=ADMIN_STORE_ID, i_agency_id=user.i_agency_id, i_role_id=role.i_role_id,
         c_email=email, c_first_name=first, c_last_name=last, c_phone=payload.phone,
         c_password=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
-        c_status=payload.status, i_must_change_password=0,
+        c_status=payload.status, i_must_change_password=int(payload.must_change_password or False),
     )
     db.add(record)
-    commit(db)
-    return {"success": True, "id": record.i_platform_user_id}
+    return save_user_image(db, user, record, image_data=image_data)
 
 
 @router.put("/users/{record_id}")
 def update_user(record_id: int, payload: UserEdit, db: Session = Depends(get_db),
                 user: PlatformUser = Depends(agency_user)):
+    return _update_user(record_id, payload, db, user)
+
+
+def _update_user(record_id: int, payload: UserEdit, db: Session, user: PlatformUser,
+                 *, image_data: bytes | None = None, remove_image: bool = False):
     db.query(Agency).filter(Agency.i_agency_id == user.i_agency_id).with_for_update().one()
     record = scoped_record(users(db, user).with_for_update(), PlatformUser.i_platform_user_id, record_id)
     if payload.status == "inactive":
         AgencyPortalPermissions(user).require_deactivation(db, record)
     email = _platform_user_email(payload.email)
     _require_unique_platform_user_email(db, email, agency_id=user.i_agency_id, exclude_user_id=record_id)
-    record.c_first_name, record.c_last_name = _platform_user_name(payload.model_dump())
+    record.c_first_name, record.c_last_name = _platform_user_name(payload.model_dump(exclude_none=True))
     record.c_email, record.c_phone, record.c_status = email, payload.phone, payload.status
+    if payload.must_change_password is not None:
+        record.i_must_change_password = int(payload.must_change_password)
     record.dt_updated = datetime.now()
     if payload.status == "inactive":
         terminate_user_sessions(db, user, record_id)
-    commit(db)
-    return {"success": True}
+    return save_user_image(db, user, record, image_data=image_data, remove_image=remove_image)
+
+
+def save_user_image(db, user, record, *, image_data=None, remove_image=False):
+    owner = AwsumStorageService(db).resolve_owner("AGENCY", user.i_agency_id)
+    try:
+        db.flush()
+        warning = commit_entity_image(db, record, owner, record.i_platform_user_id,
+                                      category="users", image_data=image_data, remove_image=remove_image)
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("Agency User update conflicts with an existing record")
+        raise HTTPException(409, "The update conflicts with an existing record.") from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Unable to save Agency User changes")
+        raise HTTPException(500, "Unable to save changes. Please try again.") from exc
+    return {"success": True, "id": record.i_platform_user_id,
+            "image_path": record.c_image_path, "image_url": image_url(record.c_image_path),
+            "image_warning": warning}
+
+
+@router.post("/users/with-image")
+@router.put("/users/{record_id}/with-image")
+def save_user_with_image(
+    request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+    remove_image: bool = Form(False), record_id: int | None = None,
+    db: Session = Depends(get_db), user: PlatformUser = Depends(agency_user),
+):
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    if request.method == "POST" and record_id is not None:
+        raise HTTPException(422, "User ID cannot be supplied when creating a User.")
+    # Resolve membership before reading uploads; the browser never chooses the owner.
+    if record_id is not None:
+        scoped_record(users(db, user), PlatformUser.i_platform_user_id, record_id)
+    values, data = image_mutation_form(payload, remove_image, image)
+    try:
+        model = UserCreate.model_validate(values) if record_id is None else UserEdit.model_validate(values)
+    except ValidationError as exc:
+        raise RequestValidationError([
+            {**error, "loc": ("body", *error["loc"])} for error in exc.errors()
+        ]) from exc
+    owner = AwsumStorageService(db).resolve_owner("AGENCY", user.i_agency_id)
+    with image_operation_lock(owner, "users"):
+        if isinstance(model, UserCreate):
+            return _create_user(model, db, user, image_data=data)
+        return _update_user(record_id, model, db, user, image_data=data, remove_image=remove_image)
+
+
+@router.post("/users/{record_id}/reset-password")
+def reset_user_password(record_id: int, payload: dict, db: Session = Depends(get_db),
+                        user: PlatformUser = Depends(agency_user)):
+    record = scoped_record(users(db, user).with_for_update(), PlatformUser.i_platform_user_id, record_id)
+    return _reset_user_password(record, payload, user, db)
 
 
 def terminate_user_sessions(db, user, record_id):

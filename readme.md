@@ -62,17 +62,32 @@ Platform Admin Policy (fixed)
 - PS D:\01_Development\Awsum_Projects> cd Awsum_Platform\backend
 - PS D:\01_Development\Awsum_Projects\Awsum_Platform\backend> py -m uvicorn main:app --reload --no-proxy-headers
 
-## Business code separator migration
+## New registration business codes
 
-Merchant, Store, and Agency codes are issued without a separator (for example,
-`CLT11001`, `CLT00001`/`STR00001`, and `AGT00001`). Prefixes and digit widths
-are retained; the first Merchant Account code remains `CLT11001`. Store
+Agency, Merchant (including legacy Client registration), and Store creation use
+`backend/services/business_code.py::generate_business_code`:
+`AGT` / `MER` / `STR` + registration year `YY` + four random characters.
+The alphabet is `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no `0`, `O`, `1`, `I`).
+Existing codes in the corresponding entity table are checked and collisions
+regenerated. PostgreSQL transaction advisory locks serialize same-entity
+generation (Client and Merchant share the lock); DB unique constraints remain.
+Store sequence allocation and all numeric PK/FK rules are unchanged.
+Existing codes are not rewritten; storage, images, auth and licenses still use
+the saved codes and relationships. No migration is required for this generator.
+Focused checks: `py -m unittest tools.test_business_codes.BusinessCodeTests`.
+
+## Historical business code separator migration
+
+Legacy Merchant, Store, and Agency codes include `CLT11001`,
+`CLT00001`/`STR00001`, and `AGT00001`. The historical separator conversion
+retains their prefixes and digit widths; it is separate from new registration.
+Store
 database files use `AWSUM_STORAGE_ROOT`, then saved System Settings, then
 the sibling `Awsum_Data` directory. Tenant database names generated from
 numeric Store IDs also omit the separator (for example, `CUST00001`).
 
-Before starting the application against an existing database, preview the
-conversion and check for collisions:
+Only when explicitly performing the historical separator migration, preview
+the conversion and check for collisions:
 
 ```powershell
 py tools\migrate_business_codes.py
@@ -227,11 +242,96 @@ The technical Admin Store is always excluded.
 
 The Portal extends `platform_base.html` with Agency navigation, reuses
 `management_layout.html`, `awsum-list.css`, Bootstrap modals, and shared
-`management_form.html`/`management-form.js`. No separate UI theme or Auth/Session
+`management_form.html`/`management-form.js` for Settings. No separate UI theme or Auth/Session
 system and no DB migration are introduced.
 Focused tests: `.venv\Scripts\python.exe -m unittest tools.test_agency_portal tools.test_agency_portal_ui`.
 
+Platform and Agency Users both include `platform/components/user_management.html`,
+extracted from the existing Platform Users screen (styles, list, modal and JS).
+`platform/users.html` is a wrapper, not a second implementation. The component's
+scope/transport/capability configuration supports later Merchant integration;
+Store Employee management is not part of this component.
+Platform photo, Role selection, Reset Password, Must Change Password and existing
+APIs are retained. Agency uses its existing scoped create/update/status/soft-delete
+APIs, fixed Agency Admin role, Phone and central `AgencyPortalPermissions`.
+Both scopes use the same Profile Photo uploader, Must Change Password control and
+Reset Password modal/JS. Agency keeps Phone and its optional-password-change
+creation default; the administrator can explicitly set Must Change Password.
+Agency image adapters reuse `image_mutation_form`, `commit_entity_image` and
+`AwsumStorageService` with the login-derived Agency owner. Agency photos remain
+private and are served only after common membership/read checks (or Platform
+Admin authorization). Reset Password reuses the extracted existing Platform
+password validation/hash/update function; Agency scope is resolved before calling
+it, and central Users **update** permission gates Reset Password, including POST.
+Platform endpoints and behavior remain unchanged; Activation/Registration defaults
+are not affected.
+`GET /agency/users` still renders HTML; `Accept: application/json` returns paginated
+safe User display data from the same server-enforced scope for the common list.
+Agency IDs are derived from login, never trusted from browser query parameters.
+Focused common User UI checks: `py -m unittest tools.test_common_user_management`.
+
+Platform authorization denials emit `PLATFORM_AUTH_FORBIDDEN` warnings from the
+existing Auth helper and Master role gate. JSON fields identify path, location,
+reason, session existence, login context, principal/scope, token/current Role IDs,
+User/Role status and Access Code match (boolean only). JWTs, cookies, passwords,
+session keys and Access Code values are never logged. This is diagnostic only;
+401/403 classification, redirects, permissions and timeouts are unchanged.
+
+Store Master and Merchant > Store editors use the same `AwsumImages.createUploader`
+as User Profile Photo, configured with label `Store Logo` and contain preview.
+Replace/Remove/file validation/crop/Cancel are local component state; only Store
+Save submits its `formData` to `/platform/store[/<id>]/with-image`.
+The multipart adapter reuses existing Store field handling plus
+`image_mutation_form`, `image_operation_lock` and `commit_entity_image`
+(`STORE` owner, `logo` category, `c_logo_url` reference). Store fields and logo
+commit together, with filesystem compensation on failure. Existing Merchant/Store
+path rules and JSON/legacy logo APIs are retained; there is no immediate Store
+upload/reset button. Existing legacy files are not rewritten during preview/Cancel.
+Agency and Merchant (including legacy Account) Add/Edit use this same uploader,
+with `AGENCY`/`MERCHANT` owner and `logo` category options. Their multipart Save
+adapters reuse the existing create/update/activation handlers and the same atomic
+image service. Default paths remain `/agency/<code>/images/logo/logo.webp` and
+`/merchant/<code>/images/logo/logo.webp`; JSON and legacy logo APIs are retained.
+There are no separate Choose File/Upload/Reset controls. Lists provide the saved
+image reference and common versioned preview URL. User Profile Photo and existing
+Store uploader behavior are unchanged.
+Organization image forms share the responsive `awsum-image-form` layout in
+`platform-modal.css`: existing input rows on the left and a compact 154px image
+column at the top-right. Below 768px the image and fields stack vertically.
+Only the first Information section shares the image column; subsequent sections
+(starting with Primary Contact) span the full form width.
+This also applies to the linked Store editor; uploader/save APIs are unchanged.
+Focused logo/API/browser checks: `py -m unittest tools.test_store_logo`.
+
 Focused validation: `py -m unittest tools.test_agency_activation tools.test_agency_activation_browser tools.test_license_email`.
+
+### Common Master form modal
+
+`platform/components/form_modal.html::form_modal` owns the shared Master
+Header/Body/Footer shell. Agency, Merchant, Store and other Master modules retain
+`masterEditModal`, their dynamic fields, validation, button IDs and event handlers.
+The component accepts header/body slots, optional left-action data and an optional
+Delete ID; it does not replace the Master save API with the simpler Portal editor.
+`platform-modal.css` supplies the common `.pm-modal`/`.awsum-form-modal` layout:
+fixed header/footer, body-only scrolling, stable Cancel / Delete / Save order.
+On narrow screens optional left actions occupy a separate row above primary actions.
+
+Agency supplies `btnAgencyRegistrationEmail` as a left action. It is hidden before
+the Agency is saved; Edit always shows it enabled, independent of `has_agency_admin`.
+The existing Preview and Send endpoints check the current account on every request.
+Registration uses the original active-Agency/active-Admin flow. Saving an Agency
+as Active creates its first Admin through the existing activation helper.
+Preview/Send never fabricates login details or creates/resets accounts.
+Registration Email defaults to the current active Primary Contact Email through
+`BusinessContactService.get_primary_contact`; other contacts and Login Email are
+never fallback recipients. Missing/invalid Primary Contact Email blocks Preview
+and Send even when a recipient override is supplied. Preview To edits remain
+send-only, and changing the Primary Contact never updates the Admin login.
+Resend never resets a password or reads a plaintext password from storage.
+The existing saved-Agency requirement, Preview/Send, recipient validation and API remain.
+Field/tab-specific styling stays in the module; modal chrome uses the common CSS.
+Focused UI regressions:
+`py -m unittest tools.test_master_form_modal tools.test_agency_activation_browser`.
 
 ## System Settings
 

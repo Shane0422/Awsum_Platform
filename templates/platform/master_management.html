@@ -1,5 +1,6 @@
 {% extends "platform/platform_base.html" %}
 {% from "platform/components/management_layout.html" import page_header, surface %}
+{% from "platform/components/form_modal.html" import form_modal %}
 
 {% block page_title %}Master Management{% endblock %}
 
@@ -2499,27 +2500,16 @@
     }
   }
 
-  /* Agency modal (same design language as Users modal) */
+  /* Module-specific fields and tabs; shared modal shell is in platform-modal.css. */
   #masterEditModal .agency-hdr-icon, #masterEditModal .agency-hdr-sub, #masterEditModal .agency-info-box { display: none; }
-  #masterEditModal.agency-modal .modal-dialog { max-width: 760px; }
-  #masterEditModal.agency-modal .modal-content { border: 1px solid rgba(23,52,81,.08); border-radius: 18px; box-shadow: 0 20px 50px rgba(23,52,81,.16); background: #fff; max-height: calc(100vh - 2rem); overflow: hidden; }
-  #masterEditModal.agency-modal .modal-header { padding: 1.5rem 1.75rem 1.1rem; border-bottom: 1px solid #eef2f7; align-items: center; gap: .9rem; }
-  #masterEditModal.agency-modal .agency-hdr-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: #e8f0fe; color: #2563eb; flex: 0 0 44px; }
-  #masterEditModal.agency-modal .agency-hdr-text { flex: 1 1 auto; min-width: 0; }
-  #masterEditModal.agency-modal .modal-title { color: #173451; font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
-  #masterEditModal.agency-modal .agency-hdr-sub { display: block; color: #718096; font-size: .84rem; margin-top: .15rem; }
-  #masterEditModal.agency-modal .modal-body { padding: 1.25rem 1.75rem; overflow-y: auto; }
+  #masterEditModal.agency-modal .agency-hdr-icon { display: inline-flex; }
+  #masterEditModal.agency-modal .agency-hdr-sub { display: block; }
   #masterEditModal.agency-modal #masterFormModal .id-field-wrap { display: none; }
   #masterEditModal.agency-modal.is-create .agency-created-field { display: none; }
   #masterEditModal.agency-modal .master-form-section-title { color: #173451; font-weight: 700; font-size: .95rem; padding-top: .9rem; margin-top: .2rem; border-top: 1px solid #eef2f7; }
   #masterEditModal.agency-modal #masterFormModal > .id-field-wrap + div .master-form-section-title { border-top: 0; padding-top: 0; margin-top: 0; }
-  #masterEditModal.agency-modal .form-label { font-size: .8rem; font-weight: 600; color: #3b4a5e; margin-bottom: .35rem; }
   #masterEditModal.agency-modal .agency-lbl-icon { color: #6b7f99; margin-right: .4rem; vertical-align: -2px; }
   #masterEditModal.agency-modal .agency-required { color: #dc2626; }
-  #masterEditModal.agency-modal .form-control, #masterEditModal.agency-modal .form-select { height: 46px; border-radius: 10px; border: 1px solid #d3dcea; padding: 0 .9rem; font-size: .92rem; color: #173451; }
-  #masterEditModal.agency-modal textarea.form-control { height: auto; padding: .7rem .9rem; }
-  #masterEditModal.agency-modal .form-control:focus, #masterEditModal.agency-modal .form-select:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37,99,235,.12); }
-  #masterEditModal.agency-modal .form-control[readonly] { background: #f4f7fb; color: #6b7f99; }
   #masterEditModal.agency-modal .form-control.is-invalid, #masterEditModal.agency-modal .form-select.is-invalid { border-color: #dc2626; }
   #masterEditModal.agency-modal .agency-field-help { display: block; color: #718096; font-size: .76rem; margin-top: .3rem; }
   #masterEditModal.agency-modal .agency-status-wrap { position: relative; }
@@ -2530,15 +2520,8 @@
   #masterEditModal.agency-modal .agency-info-icon { color: #2563eb; flex: 0 0 auto; margin-top: 1px; }
   #masterEditModal.agency-modal .agency-info-title { color: #173451; font-weight: 600; font-size: .88rem; }
   #masterEditModal.agency-modal .agency-info-text { color: #5b6b82; font-size: .82rem; }
-  #masterEditModal.agency-modal .modal-footer { padding: 1rem 1.75rem 1.5rem; border-top: 1px solid #eef2f7; justify-content: flex-end !important; }
-  #masterEditModal.agency-modal .modal-footer > .d-flex { flex-direction: row-reverse; }
-  #masterEditModal.agency-modal .modal-footer .btn { height: 42px; padding: 0 1.4rem; border-radius: 10px; font-size: .9rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
-  #masterEditModal.agency-modal #btnModalCancel { background: #fff; border: 1px solid #d3dcea; color: #3b4a5e; }
-  #masterEditModal.agency-modal #btnModalSave { background: #2563eb; border: 1px solid #2563eb; color: #fff; }
-  #masterEditModal.agency-modal #btnModalSave:hover { background: #1d4ed8; }
   #masterEditModal.agency-modal.agency-type-modal .modal-dialog { max-width: 660px; }
   #masterEditModal.agency-modal:not(.is-create) .agency-field-help { display: none; }
-  #masterEditModal.agency-modal.is-create #btnModalDelete { display: none !important; }
   #masterEditModal.agency-modal.business-type-modal #btnModalDelete { display: none !important; }
   #masterEditModal.agency-modal.store-modal #btnModalDelete,
   #masterEditModal.agency-modal.store-modal #agencyInfoBox { display: none !important; }
@@ -2564,9 +2547,6 @@
   #masterEditModal.agency-modal.merchant-modal .modal-content { height: min(700px, calc(100vh - 2rem)); }
   #masterEditModal.agency-modal.merchant-modal .client-detail-tabs { grid-template-columns: repeat(4, 1fr); }
   #masterEditModal.agency-modal.merchant-modal .client-tab-panel { min-height: 390px; }
-  @media (max-width: 575.98px) {
-    #masterEditModal.agency-modal .modal-header, #masterEditModal.agency-modal .modal-body, #masterEditModal.agency-modal .modal-footer { padding-left: 1.1rem; padding-right: 1.1rem; }
-  }
 </style>
 
 {% call page_header(active_module | replace('-', ' ') | title, 'Manage records, search and filter the list, or select a record to edit.', 'masterListTitle', 'masterListHead') %}
@@ -2728,18 +2708,15 @@
   </div>
 </div>
 
-<div class="modal fade" id="masterEditModal" tabindex="-1" aria-labelledby="masterEditModalTitle" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span class="agency-hdr-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M8 7h3M8 11h3M8 15h3M3 21h18"/></svg></span>
-        <div class="agency-hdr-text">
+{% set modal_left_actions = [{'id':'btnAgencyRegistrationEmail', 'label':'Registration Email'}] if active_module == 'agency' else [] %}
+{% call(slot) form_modal('masterEditModal', 'masterEditModalTitle', 'btnModalCancel', 'btnModalDelete', 'btnModalSave', modal_left_actions) %}
+  {% if slot == 'header' %}
+        <span class="agency-hdr-icon pm-head-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M8 7h3M8 11h3M8 15h3M3 21h18"/></svg></span>
+        <div class="agency-hdr-text pm-head-text">
           <h5 class="modal-title" id="masterEditModalTitle">Edit Record</h5>
-          <div class="agency-hdr-sub" id="masterEditModalSub"></div>
+          <div class="agency-hdr-sub pm-head-sub" id="masterEditModalSub"></div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
+  {% elif slot == 'body' %}
         <div id="masterModalError" class="alert alert-danger py-2 px-3 d-none" role="alert"></div>
         <div id="masterFormModal" class="row g-3"></div>
         <div class="agency-info-box" id="agencyInfoBox">
@@ -2749,18 +2726,8 @@
             <div class="agency-info-text" id="agencyInfoText"></div>
           </div>
         </div>
-      </div>
-      <div class="modal-footer d-flex justify-content-between">
-        <button type="button" id="btnAgencyRegistrationEmail" class="btn btn-outline-primary d-none">Registration Email</button>
-        <button type="button" id="btnModalCancel" class="btn btn-sm btn-outline-secondary role-action-btn" data-bs-dismiss="modal">Close</button>
-        <div class="d-flex gap-2">
-          <button type="button" id="btnModalSave" class="btn btn-sm btn-dark role-action-btn">Save</button>
-          <button type="button" id="btnModalDelete" class="btn btn-sm btn-outline-danger role-action-btn">Delete</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+  {% endif %}
+{% endcall %}
 
 <div class="modal fade client-store-modal" id="clientStoreModal" tabindex="-1" aria-labelledby="clientStoreModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
@@ -2785,6 +2752,8 @@
           <input type="hidden" id="field_client_store_id" value="">
 
           <div class="client-tab-panel active" data-store-modal-panel="basic">
+            <div class="awsum-image-form">
+            <div class="awsum-image-form-fields">
             <div class="row g-3">
               <div class="col-12 col-md-6">
                 <label class="form-label">Store Code</label>
@@ -2821,29 +2790,11 @@
                   <option value="Other">Other</option>
                 </select>
               </div>
-              <div class="col-12">
-                <div class="brand-logo-upload-card">
-                  <div class="brand-logo-upload-head">
-                    <h6 class="brand-logo-upload-title">Store Logo (Dashboard)</h6>
-                    <span class="text-muted small">PNG/JPG/WebP</span>
-                  </div>
-                  <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-                    <img id="clientStoreLogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="Store logo preview">
-                    <div class="w-100">
-                      <div class="brand-file-picker mb-2">
-                        <input id="clientStoreLogoFile" type="file" class="d-none" accept="image/*">
-                        <button type="button" id="btnBrowseClientStoreLogoFile" class="btn btn-sm btn-outline-secondary role-action-btn">Choose File</button>
-                        <span id="clientStoreLogoFileName" class="brand-file-name">No file selected</span>
-                      </div>
-                      <div class="d-flex gap-2 flex-wrap">
-                        <button type="button" id="btnUploadClientStoreLogo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload Store Logo</button>
-                        <button type="button" id="btnResetClientStoreLogo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
-                      </div>
-                      <div id="clientStoreLogoPathHint" class="brand-logo-hint mt-2">Save Store first to enable logo path.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            </div>
+            </div>
+            <div class="awsum-image-form-image">
+              <div id="clientStoreLogoUploader"></div>
+            </div>
             </div>
           </div>
 
@@ -3696,7 +3647,18 @@
   }
 
   function isFormDirty() {
+    if (document.getElementById('businessContactManager')?.pendingContacts?.length) return true;
     if (!formBaselineSnapshot) return false;
+    if (['store', 'agency', 'merchant', 'account'].includes(activeModule)) {
+      try {
+        const image = (activeModule === 'store' ? getStoreLogoUploader() : getOrganizationLogoUploader())?.formData({});
+        if (image?.has('image') || image?.get('remove_image') === 'true') return true;
+      } catch (error) {
+        // Keep Save available so the common uploader can explain invalid/pending input.
+        if (!(error instanceof Error)) throw error;
+        return true;
+      }
+    }
     return JSON.stringify(snapshotFormState()) !== JSON.stringify(formBaselineSnapshot);
   }
 
@@ -5946,149 +5908,83 @@
 
   function createBrandLogoUploadPanel(kind) {
     const col = document.createElement('div');
-    col.className = 'col-12';
-
-    if (kind === 'client') {
-      col.innerHTML = `
-        <div class="brand-logo-upload-card">
-          <div class="brand-logo-upload-head">
-            <h6 class="brand-logo-upload-title">Client Logo (Dashboard)</h6>
-            <span class="text-muted small">PNG/JPG/WebP</span>
-          </div>
-          <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-            <img id="clientLogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="Client logo preview">
-            <div class="w-100">
-              <div class="brand-file-picker mb-2">
-                <input id="clientLogoFile" type="file" class="d-none" accept="image/*">
-                <button type="button" id="btnBrowseClientLogoFile" class="btn btn-sm btn-outline-secondary role-action-btn">Choose File</button>
-                <span id="clientLogoFileName" class="brand-file-name">No file selected</span>
-              </div>
-              <div class="d-flex gap-2 flex-wrap">
-                <button type="button" id="btnUploadClientLogo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload Client Logo</button>
-                <button type="button" id="btnResetClientLogo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
-              </div>
-              <div id="clientLogoPathHint" class="brand-logo-hint mt-2">Organization logo resolved by the server.</div>
-            </div>
-          </div>
-        </div>
-      `;
+    col.className = 'awsum-image-form-image';
+    if (kind === 'store') {
+      document.getElementById('storeLogoUploader')?.awsumUploader?.destroy();
+      col.innerHTML = '<div id="storeLogoUploader"></div>';
       return col;
     }
 
-    const orgTitle = { store: 'Store', agency: 'Agency', merchant: 'Merchant' }[kind] || 'Store';
-    col.innerHTML = `
-      <div class="brand-logo-upload-card">
-        <div class="brand-logo-upload-head">
-          <h6 class="brand-logo-upload-title">${orgTitle} Logo (Dashboard)</h6>
-          <span class="text-muted small">PNG/JPG/WebP</span>
-        </div>
-        <div class="d-flex flex-column flex-md-row gap-3 align-items-start">
-          <img id="${kind}LogoPreview" class="brand-logo-preview" src="{{ brand_icon_path or '' }}" alt="${orgTitle} logo preview">
-          <div class="w-100">
-            <div class="brand-file-picker mb-2">
-              <input id="${kind}LogoFile" type="file" class="d-none" accept="image/*">
-              <button type="button" id="btnBrowse${orgTitle}LogoFile" class="btn btn-sm btn-outline-secondary role-action-btn">Choose File</button>
-              <span id="${kind}LogoFileName" class="brand-file-name">No file selected</span>
-            </div>
-            <div class="d-flex gap-2 flex-wrap">
-              <button type="button" id="btnUpload${orgTitle}Logo" class="btn btn-sm btn-outline-secondary role-action-btn">Upload ${orgTitle} Logo</button>
-              <button type="button" id="btnReset${orgTitle}Logo" class="btn btn-sm btn-outline-danger role-action-btn">Reset Logo</button>
-            </div>
-            <div id="${kind}LogoPathHint" class="brand-logo-hint mt-2">Organization logo resolved by the server.</div>
-          </div>
-        </div>
-      </div>
-    `;
+    document.getElementById(`${kind}LogoUploader`)?.awsumUploader?.destroy();
+    col.innerHTML = `<div id="${kind}LogoUploader"></div>`;
     return col;
   }
 
-  // Agency / Merchant / Store editors share one logo panel; the server resolves storage from the saved DB ID.
-  const ORG_LOGO_KINDS = {
-    agency: { title: 'Agency', context: 'AGENCY', endpoint: 'agency' },
-    merchant: { title: 'Merchant', context: 'MERCHANT', endpoint: 'client' },
-    store: { title: 'Store', context: 'STORE', endpoint: 'store' },
-  };
-
-  function refreshOrgLogoPreview() {
-    const kind = activeModule;
-    const meta = ORG_LOGO_KINDS[kind];
-    if (!meta) return;
-    const fileInput = document.getElementById(`${kind}LogoFile`);
-    fileInput?.awsumImage?.reset();
-    const preview = document.getElementById(`${kind}LogoPreview`);
-    const hint = document.getElementById(`${kind}LogoPathHint`);
-    if (!preview || !hint) return;
-    const ownerId = String(selectedMasterId.value || '').trim();
-    loadBrandLogo(preview, '', hint, meta.context, ownerId || null);
-    const fileName = document.getElementById(`${kind}LogoFileName`);
-    if (fileName && !ownerId) fileName.textContent = 'No file selected';
-    if (fileInput) fileInput.disabled = !ownerId;
-    ['btnBrowse', 'btnUpload', 'btnReset'].forEach((prefix) => {
-      const btn = document.getElementById(prefix === 'btnBrowse' ? `${prefix}${meta.title}LogoFile` : `${prefix}${meta.title}Logo`);
-      if (btn) btn.disabled = !ownerId;
-    });
+  function createImageFormLayout(fields, image) {
+    const layout = document.createElement('div');
+    layout.className = 'col-12 awsum-image-form';
+    const content = document.createElement('div');
+    content.className = 'awsum-image-form-fields';
+    content.appendChild(fields);
+    layout.append(content, image);
+    const sections = Array.from(fields.children).filter(child => child.querySelector('.master-form-section-title'));
+    if (sections.length > 1) {
+      const remainingFields = fields.cloneNode(false);
+      let next = sections[1];
+      while (next) {
+        const current = next;
+        next = next.nextElementSibling;
+        remainingFields.appendChild(current);
+      }
+      const remaining = document.createElement('div');
+      remaining.className = 'awsum-image-form-fields awsum-image-form-full';
+      remaining.appendChild(remainingFields);
+      layout.appendChild(remaining);
+    }
+    return layout;
   }
 
-  function bindOrgLogoHandlers(kind) {
-    const meta = ORG_LOGO_KINDS[kind];
-    bindEnglishFilePicker(`${kind}LogoFile`, `btnBrowse${meta.title}LogoFile`, `${kind}LogoFileName`);
-    const sendLogoRequest = async (method) => {
-      const ownerId = String(selectedMasterId.value || '').trim();
-      const action = method === 'POST' ? 'upload' : 'reset';
-      if (!ownerId) {
-        alert(`Please save the ${meta.title} first to ${action} a logo.`);
-        return;
-      }
-      const fileInput = document.getElementById(`${kind}LogoFile`);
-      const options = { method, credentials: 'same-origin' };
-      if (method === 'POST') {
-        const file = fileInput?.awsumImage?.pending();
-        if (!file) {
-          alert('Choose an image file first.');
-          return;
-        }
-        options.body = new FormData();
-        options.body.append('file', file);
-      } else if (!(await showCenteredConfirm(`Reset the ${meta.title} logo to the default image?`, 'Reset Logo', { variant: 'warning', okText: 'Reset', cancelText: 'No' }))) {
-        return;
-      }
-      const res = await fetch(`${apiBase}/${meta.endpoint}/${encodeURIComponent(ownerId)}/logo`, options);
-      if (res.status === 401) {
-        alert('Session expired. Please refresh the page and login again.');
-        return;
-      }
-      if (!res.ok) {
-        const text = await res.text();
-        alert(`Unable to ${action} the ${meta.title} logo: ` + text);
-        return;
-      }
-      if (fileInput) fileInput.value = '';
-      refreshOrgLogoPreview();
-      const result = await res.json();
-      alert(result.image_warning || `${meta.title} logo ${action === 'upload' ? 'uploaded' : 'reset'} successfully.`);
-    };
-    [['btnUpload', 'POST'], ['btnReset', 'DELETE']].forEach(([prefix, method]) => {
-      const btn = document.getElementById(`${prefix}${meta.title}Logo`);
-      if (!btn || btn.dataset.bound === '1') return;
-      btn.dataset.bound = '1';
-      btn.addEventListener('click', () => sendLogoRequest(method));
-    });
+  function getOrganizationLogoUploader() {
+    return ['agency', 'merchant', 'account'].includes(activeModule)
+      ? getStoreLogoUploader(false, activeModule === 'account' ? 'client' : activeModule) : null;
   }
 
-  function refreshClientLogoPreview() {
-    document.getElementById('clientLogoFile')?.awsumImage?.reset();
-    const preview = document.getElementById('clientLogoPreview');
-    const hint = document.getElementById('clientLogoPathHint');
-    if (!preview || !hint) return;
+  function refreshOrgLogoPreview(item = selectedOriginalRecord) {
+    getOrganizationLogoUploader()?.reset(item?.image_url || null, !!item?.image_path);
+  }
+
+  function refreshClientLogoPreview(item = selectedOriginalRecord) {
+    if (activeModule !== 'account') return;
+    refreshOrgLogoPreview(item);
     const clientCode = normalizeBrandCode((document.getElementById('field_c_account_code') || document.getElementById('field_c_client_code'))?.value || '');
-    loadBrandLogo(preview, clientCode, hint);
     if (clientDetailLogo) {
       loadBrandLogo(clientDetailLogo, clientCode);
     }
   }
 
-  function refreshStoreLogoPreview() {
-    refreshOrgLogoPreview();
+  function getStoreLogoUploader(linked = false, kind = 'store') {
+    const target = document.getElementById(linked ? 'clientStoreLogoUploader' : `${kind}LogoUploader`);
+    if (!target) return null;
+    if (!target.awsumUploader) {
+      target.awsumUploader = AwsumImages.createUploader(target, {
+        idPrefix: linked ? 'clientStoreLogo' : `${kind}Logo`,
+        label: `${({store: 'Store', agency: 'Agency', merchant: 'Merchant', client: 'Merchant'})[kind]} Logo`,
+        previewSize: 120, fit: 'contain',
+      });
+      target.closest('.modal')?.addEventListener('hide.bs.modal', event => {
+        if (savingStoreImage) event.preventDefault();
+      });
+      target.closest('.modal')?.addEventListener('hidden.bs.modal', () => target.awsumUploader.reset());
+    }
+    return target.awsumUploader;
+  }
+
+  function refreshStoreLogoPreview(item = null) {
+    if (activeModule === 'store') {
+      getStoreLogoUploader()?.reset(item?.image_url || null, !!item?.image_path);
+    } else {
+      refreshOrgLogoPreview(item);
+    }
   }
 
   // Common Business Contact Manager: Agency / Merchant / Store differ only by owner_type + owner_id.
@@ -6153,7 +6049,52 @@
         saveBusinessContact();
       }
     });
+    const modal = document.getElementById('masterEditModal');
+    if (modal && !modal.dataset.contactDraftsBound) {
+      modal.dataset.contactDraftsBound = '1';
+      modal.addEventListener('hide.bs.modal', event => {
+        if (document.getElementById('businessContactManager')?.inert) event.preventDefault();
+      });
+      modal.addEventListener('hidden.bs.modal', resetContactDrafts);
+    }
     return col;
+  }
+
+  function contactDrafts() {
+    return document.getElementById('businessContactManager')?.pendingContacts || null;
+  }
+
+  function resetContactDrafts() {
+    const manager = document.getElementById('businessContactManager');
+    if (!manager || !manager.pendingContacts) return;
+    manager.pendingContacts = null;
+    manager.pendingOwnerId = null;
+    businessContactRevision++;
+    businessContacts = [];
+    closeContactEditor();
+    renderBusinessContacts();
+  }
+
+  async function savePendingBusinessContacts() {
+    const manager = document.getElementById('businessContactManager');
+    const drafts = contactDrafts();
+    if (!drafts) return;
+    const owner = contactOwner();
+    if (!owner) throw new Error('An organization ID is required to save pending contacts.');
+    manager.inert = true;
+    try {
+      while (drafts.length) {
+        const { contact_id, ...payload } = drafts[0];
+        await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload);
+        drafts.shift();
+      }
+      manager.pendingContacts = null;
+    } catch (error) {
+      renderBusinessContacts();
+      throw new Error(`Organization saved. Some contacts were not saved: ${error.message} Retry Save to save the remaining contacts.`);
+    } finally {
+      manager.inert = false;
+    }
   }
 
   function contactOwner() {
@@ -6186,7 +6127,7 @@
       const cell = row.insertCell();
       cell.colSpan = 7;
       cell.className = 'text-muted small';
-      cell.textContent = contactOwner() ? 'No contacts registered.' : 'Save this organization first to add contacts.';
+      cell.textContent = 'No contacts registered.';
       return;
     }
     const roleLabels = Object.fromEntries(CONTACT_ROLE_OPTIONS);
@@ -6224,14 +6165,23 @@
     if (!document.getElementById('businessContactManager')) return;
     const revision = ++businessContactRevision;
     closeContactEditor();
-    businessContacts = [];
     const owner = contactOwner();
+    const manager = document.getElementById('businessContactManager');
+    if (owner && manager.pendingContacts && manager.pendingOwnerId !== owner.ownerId) {
+      manager.pendingContacts = null;
+    }
+    if (!owner && !manager.pendingContacts) {
+      manager.pendingContacts = [];
+      manager.nextDraftId = -1;
+    }
+    businessContacts = contactDrafts() || [];
     const hint = document.getElementById('businessContactHint');
     const addBtn = document.getElementById('btnAddBusinessContact');
-    if (addBtn) addBtn.disabled = !owner;
-    if (hint) hint.textContent = owner ? '' : 'Save this organization first to add contacts.';
+    if (addBtn) addBtn.disabled = false;
+    if (hint) hint.textContent = contactDrafts()
+      ? 'Contacts will be saved after the organization is created.' : '';
     renderBusinessContacts();
-    if (!owner) return;
+    if (!owner || contactDrafts()) return;
     try {
       const rows = await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
       if (revision !== businessContactRevision) return;
@@ -6244,7 +6194,7 @@
   }
 
   function openContactEditor(contact) {
-    if (!contactOwner()) return;
+    if (!contactOwner() && !contactDrafts()) return;
     const editor = document.getElementById('businessContactEditor');
     if (!editor) return;
     document.getElementById('bc_contact_id').value = contact?.contact_id || '';
@@ -6274,7 +6224,8 @@
 
   async function saveBusinessContact() {
     const owner = contactOwner();
-    if (!owner) return;
+    const drafts = contactDrafts();
+    if (!owner && !drafts) return;
     const payload = { contact_role: document.getElementById('bc_contact_role').value, is_primary: document.getElementById('bc_is_primary').checked };
     CONTACT_EDITOR_FIELDS.forEach((name) => { payload[name] = document.getElementById(`bc_${name}`).value.trim(); });
     if (!payload.first_name && !payload.last_name) {
@@ -6286,24 +6237,52 @@
       return;
     }
     const contactId = document.getElementById('bc_contact_id').value;
+    if (drafts) {
+      if (payload.is_primary) drafts.forEach(contact => { contact.is_primary = false; });
+      const existing = drafts.find(contact => String(contact.contact_id) === contactId);
+      if (existing) Object.assign(existing, payload);
+      else drafts.push({ ...payload, contact_id: document.getElementById('businessContactManager').nextDraftId-- });
+      closeContactEditor();
+      renderBusinessContacts();
+      return;
+    }
     await runContactAction(() => contactId
       ? contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
       : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload));
   }
 
   function setPrimaryBusinessContact(contactId) {
+    const drafts = contactDrafts();
+    if (drafts) {
+      drafts.forEach(contact => { contact.is_primary = contact.contact_id === contactId; });
+      renderBusinessContacts();
+      return;
+    }
     return runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'));
   }
 
   async function deleteBusinessContact(contact) {
     const name = `${contact.first_name} ${contact.last_name}`.trim() || 'this contact';
     if (!(await showCenteredConfirm(`Delete ${name}?`, 'Delete Contact'))) return;
+    const drafts = contactDrafts();
+    if (drafts) {
+      drafts.splice(drafts.indexOf(contact), 1);
+      renderBusinessContacts();
+      return;
+    }
     await runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'));
   }
 
   function moveBusinessContact(index, offset) {
     const owner = contactOwner();
     const target = index + offset;
+    const drafts = contactDrafts();
+    if (drafts) {
+      if (target < 0 || target >= drafts.length) return;
+      [drafts[index], drafts[target]] = [drafts[target], drafts[index]];
+      renderBusinessContacts();
+      return;
+    }
     if (!owner || target < 0 || target >= businessContacts.length) return;
     const ids = businessContacts.map((c) => c.contact_id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
@@ -6311,216 +6290,7 @@
   }
 
   function refreshClientStoreModalLogoPreview(item = null) {
-    document.getElementById('clientStoreLogoFile')?.awsumImage?.reset();
-    const preview = document.getElementById('clientStoreLogoPreview');
-    const hint = document.getElementById('clientStoreLogoPathHint');
-    const fileInput = document.getElementById('clientStoreLogoFile');
-    const browseBtn = document.getElementById('btnBrowseClientStoreLogoFile');
-    const fileName = document.getElementById('clientStoreLogoFileName');
-    const uploadBtn = document.getElementById('btnUploadClientStoreLogo');
-    const resetBtn = document.getElementById('btnResetClientStoreLogo');
-    if (!preview || !hint) return;
-
-    const currentItem = item
-      || clientStoreItems.find((store) => String(store.store_id) === String(selectedClientStoreId))
-      || {};
-    const { clientCode } = getSelectedClientContext();
-    const normalizedClientCode = normalizeBrandCode(currentItem.client_code || clientCode || '');
-    const storeCode = normalizeBrandCode(document.getElementById('field_client_store_code')?.value || currentItem.store_code || '');
-    const hasSavedStore = Boolean(String(selectedClientStoreId || '').trim() && normalizedClientCode && storeCode);
-
-    loadBrandLogo(preview, hasSavedStore ? storeCode : '', hint, 'STORE');
-
-    if (fileInput) {
-      fileInput.disabled = !hasSavedStore;
-      if (!hasSavedStore) fileInput.value = '';
-    }
-    if (fileName && !hasSavedStore) fileName.textContent = 'No file selected';
-    if (browseBtn) browseBtn.disabled = !hasSavedStore;
-    if (uploadBtn) uploadBtn.disabled = !hasSavedStore;
-    if (resetBtn) resetBtn.disabled = !hasSavedStore;
-  }
-
-  function bindEnglishFilePicker(fileInputId, browseButtonId, fileNameId) {
-    const fileInput = document.getElementById(fileInputId);
-    const browseButton = document.getElementById(browseButtonId);
-    const fileName = document.getElementById(fileNameId);
-    if (!fileInput || !browseButton || !fileName) return;
-
-    const syncName = () => {
-      fileName.textContent = fileInput.files && fileInput.files.length > 0
-        ? fileInput.files[0].name
-        : 'No file selected';
-    };
-
-    if (browseButton.dataset.bound !== '1') {
-      browseButton.dataset.bound = '1';
-      browseButton.addEventListener('click', () => {
-        if (browseButton.disabled || fileInput.disabled) return;
-        fileInput.click();
-      });
-    }
-
-    if (fileInput.dataset.boundName !== '1') {
-      fileInput.dataset.boundName = '1';
-      fileInput.awsumImage = AwsumImages.bindImageInput(fileInput, message => alert(message),
-        document.getElementById(fileInputId.replace('File', 'Preview')));
-      fileInput.addEventListener('awsumimageapply', event => {
-        fileName.textContent = event.detail.name;
-      });
-    }
-
-    syncName();
-  }
-
-  function bindBrandLogoUploadHandlers() {
-    bindEnglishFilePicker('clientLogoFile', 'btnBrowseClientLogoFile', 'clientLogoFileName');
-    bindEnglishFilePicker('clientStoreLogoFile', 'btnBrowseClientStoreLogoFile', 'clientStoreLogoFileName');
-    if (ORG_LOGO_KINDS[activeModule]) bindOrgLogoHandlers(activeModule);
-
-    const clientBtn = document.getElementById('btnUploadClientLogo');
-    if (clientBtn && clientBtn.dataset.bound !== '1') {
-      clientBtn.dataset.bound = '1';
-      clientBtn.addEventListener('click', async () => {
-        const clientId = getSelectedClientId();
-        if (!clientId) {
-          alert('Please save the Client first to upload a logo.');
-          return;
-        }
-        const fileInput = document.getElementById('clientLogoFile');
-        const file = fileInput?.awsumImage?.pending();
-        if (!file) {
-          alert('Choose an image file first.');
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`${apiBase}/client/${clientId}/logo`, {
-          method: 'POST',
-          body: formData,
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Client logo upload failed: ' + text);
-          return;
-        }
-        fileInput.value = '';
-        fileInput.awsumImage.reset();
-        refreshClientLogoPreview();
-        const result = await res.json();
-        alert(result.image_warning || 'Client logo uploaded successfully.');
-      });
-    }
-
-    const resetClientBtn = document.getElementById('btnResetClientLogo');
-    if (resetClientBtn && resetClientBtn.dataset.bound !== '1') {
-      resetClientBtn.dataset.bound = '1';
-      resetClientBtn.addEventListener('click', async () => {
-        const clientId = getSelectedClientId();
-        if (!clientId) {
-          alert('Please save the Client first to reset the logo.');
-          return;
-        }
-        if (!(await showCenteredConfirm('Reset the Client logo to the default image?', 'Reset Logo', { variant: 'warning', okText: 'Reset', cancelText: 'No' }))) return;
-        const res = await fetch(`${apiBase}/client/${clientId}/logo`, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Unable to reset the Client logo: ' + text);
-          return;
-        }
-        refreshClientLogoPreview();
-        const result = await res.json();
-        alert(result.image_warning || 'Client logo reset successfully.');
-      });
-    }
-  }
-
-  function bindClientStoreModalLogoHandlers() {
-    const uploadBtn = document.getElementById('btnUploadClientStoreLogo');
-    if (uploadBtn && uploadBtn.dataset.bound !== '1') {
-      uploadBtn.dataset.bound = '1';
-      uploadBtn.addEventListener('click', async () => {
-        const storeId = String(selectedClientStoreId || document.getElementById('field_client_store_id')?.value || '').trim();
-        if (!storeId) {
-          alert('Please save the Store first to upload a logo.');
-          return;
-        }
-
-        const fileInput = document.getElementById('clientStoreLogoFile');
-        const file = fileInput?.awsumImage?.pending();
-        if (!file) {
-          alert('Choose an image file first.');
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}/logo`, {
-          method: 'POST',
-          body: formData,
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Unable to upload the Store logo: ' + text);
-          return;
-        }
-
-        fileInput.value = '';
-        fileInput.awsumImage.reset();
-        refreshClientStoreModalLogoPreview();
-        const result = await res.json();
-        alert(result.image_warning || 'Store logo uploaded successfully.');
-      });
-    }
-
-    const resetBtn = document.getElementById('btnResetClientStoreLogo');
-    if (resetBtn && resetBtn.dataset.bound !== '1') {
-      resetBtn.dataset.bound = '1';
-      resetBtn.addEventListener('click', async () => {
-        const storeId = String(selectedClientStoreId || document.getElementById('field_client_store_id')?.value || '').trim();
-        if (!storeId) {
-          alert('Please save the Store first to reset the logo.');
-          return;
-        }
-        if (!(await showCenteredConfirm('Reset the Store logo to the default image?', 'Reset Logo', { variant: 'warning', okText: 'Reset', cancelText: 'No' }))) return;
-
-        const res = await fetch(`${apiBase}/store/${encodeURIComponent(storeId)}/logo`, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) {
-          alert('Session expired. Please refresh the page and login again.');
-          return;
-        }
-        if (!res.ok) {
-          const text = await res.text();
-          alert('Unable to reset the Store logo: ' + text);
-          return;
-        }
-
-        refreshClientStoreModalLogoPreview();
-        const result = await res.json();
-        alert(result.image_warning || 'Store logo reset successfully.');
-      });
-    }
+    getStoreLogoUploader(true)?.reset(item?.image_url || null, !!item?.image_path);
   }
 
   function getSelectedClientId() {
@@ -7503,6 +7273,7 @@
   }
 
   async function saveClientLinkedStore() {
+    if (savingStoreImage) return;
     const { isReadyForStoreRegistration } = getSelectedClientContext();
     const isEditingStore = Boolean(selectedClientStoreId);
     if (!isReadyForStoreRegistration && !isEditingStore) {
@@ -7527,30 +7298,25 @@
       return;
     }
     const method = storeId ? 'PUT' : 'POST';
-    let url = storeId
-      ? `${apiBase}/client/${encodeURIComponent(clientId)}/stores/${encodeURIComponent(storeId)}`
-      : `${apiBase}/client/${encodeURIComponent(clientId)}/stores`;
+    const url = `${apiBase}/store${storeId ? '/' + encodeURIComponent(storeId) : ''}/with-image`;
 
     let res;
+    const uploader = getStoreLogoUploader(true);
     try {
+      const body = uploader.formData({...payload, _agency_optional: true});
+      savingStoreImage = true;
+      uploader.setDisabled(true);
       res = await fetch(url, {
         method,
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body,
       });
-      if (!res.ok && res.status === 404) {
-        url = storeId ? `${apiBase}/store/${encodeURIComponent(storeId)}` : `${apiBase}/store`;
-        res = await fetch(url, {
-          method,
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      }
     } catch (error) {
-      alert('Unable to save the store right now. Please refresh and try again.');
+      alert(error.message || 'Unable to save the store right now. Please refresh and try again.');
       return;
+    } finally {
+      savingStoreImage = false;
+      uploader.setDisabled(false);
     }
 
     if (!res.ok) {
@@ -7570,6 +7336,7 @@
     setClientStoreFormVisible(false);
     await loadClientStoresForSelectedClient();
     notifyStorageWarning(savedStore);
+    if (savedStore.image_warning) alert(savedStore.image_warning);
 
   }
 
@@ -7608,7 +7375,7 @@
     if (activeModule !== 'account') return;
     initClientStoreDeviceSortHandlers();
     initClientStoreDeviceInfoTabs();
-    bindClientStoreModalLogoHandlers();
+    getStoreLogoUploader(true);
     refreshClientStoreModalLogoPreview();
     resetClientStoreDeviceEditor();
     const addBtn = document.getElementById('btnClientStoreAdd');
@@ -7777,9 +7544,6 @@
         fullCol.appendChild(createClientStoresPanel());
         panelRow.appendChild(fullCol);
       } else {
-        if ((activeModule === 'store' || activeModule === 'merchant') && tab === config.tabs[0]) {
-          panelRow.appendChild(createBrandLogoUploadPanel(activeModule));
-        }
         (tab.fields || []).forEach((fieldName) => {
           const field = fieldMap[fieldName];
           if (field) panelRow.appendChild(createField(field));
@@ -7787,12 +7551,12 @@
         if (CONTACT_OWNER_TYPES[activeModule] && tab.id === 'contact') {
           panelRow.appendChild(createContactManagerPanel());
         }
-        if (activeModule === 'account' && tab.id === 'overview') {
-          panelRow.appendChild(createBrandLogoUploadPanel('client'));
-        }
       }
 
-      panel.appendChild(panelRow);
+      const imageKind = (activeModule === 'store' || activeModule === 'merchant') && tab === config.tabs[0]
+        ? activeModule : activeModule === 'account' && tab.id === 'overview' ? 'client' : null;
+      panel.appendChild(imageKind
+        ? createImageFormLayout(panelRow, createBrandLogoUploadPanel(imageKind)) : panelRow);
       tabBody.appendChild(panel);
     });
 
@@ -7827,7 +7591,6 @@
     if (Array.isArray(config.tabs)) {
       targetForm.appendChild(createClientTabs());
       bindUsDatePickers();
-      bindBrandLogoUploadHandlers();
       refreshClientLogoPreview();
       refreshStoreLogoPreview();
       refreshContactManager();
@@ -7837,15 +7600,17 @@
       }
       return;
     }
-    if (activeModule === 'agency') {
-      targetForm.appendChild(createBrandLogoUploadPanel('agency'));
-    }
+    const fieldContainer = activeModule === 'agency' ? document.createElement('div') : targetForm;
+    if (activeModule === 'agency') fieldContainer.className = 'row g-3';
     config.fields.forEach(field => {
-      targetForm.appendChild(createField(field));
+      fieldContainer.appendChild(createField(field));
       if (activeModule === 'agency' && field.type === 'section' && field.label === 'Primary Contact') {
-        targetForm.appendChild(createContactManagerPanel());
+        fieldContainer.appendChild(createContactManagerPanel());
       }
     });
+    if (activeModule === 'agency') {
+      targetForm.appendChild(createImageFormLayout(fieldContainer, createBrandLogoUploadPanel('agency')));
+    }
     bindUsDatePickers();
     if (activeModule === 'agency') {
       document.getElementById('btnAgencyRegistrationEmail').onclick = async (event) => {
@@ -7861,7 +7626,6 @@
         }
       };
       syncAgencyEmailButton();
-      bindBrandLogoUploadHandlers();
       refreshOrgLogoPreview();
       refreshContactManager();
     }
@@ -8031,6 +7795,7 @@
   }
 
   function clearForm() {
+    resetContactDrafts();
     selectedMasterId.value = '';
     selectedOriginalRecord = null;
     const idInput = document.getElementById('field_record_id');
@@ -8360,7 +8125,15 @@
   function syncAgencyEmailButton() {
     const button = document.getElementById('btnAgencyRegistrationEmail');
     if (!button) return;
-    button.classList.toggle('d-none', !selectedMasterId.value || !selectedOriginalRecord?.has_agency_admin);
+    // Saved Agency actions stay available; Preview/Send checks the current account.
+    // List metadata must not prevent resending after accounts change.
+    const saved = Boolean(selectedMasterId.value);
+    document.getElementById(button.id + 'Action').classList.toggle('d-none', !saved);
+    button.disabled = !saved;
+    const reason = document.getElementById(button.id + 'Reason');
+    reason.textContent = '';
+    reason.classList.add('d-none');
+    button.title = '';
   }
 
   async function openAgencyRegistrationEmail(agencyId) {
@@ -8399,7 +8172,10 @@
     });
   }
 
+  let savingStoreImage = false;
+
   async function saveItem() {
+    if (savingStoreImage || document.getElementById('businessContactManager')?.inert) return false;
     const dirty = isFormDirty();
     if (!dirty && !(usesPremiumModal() && agencyModalMode === 'create')) {
       if (isListCentricModule) {
@@ -8483,13 +8259,30 @@
     const method = id ? 'PUT' : 'POST';
     // device-category / device-type endpoints use PATCH for updates
     const resolvedMethod = (id && (activeModule === 'device-category' || activeModule === 'device-type')) ? 'PATCH' : method;
-  const url = getItemUrl(id);
-
-    const res = await fetch(url, {
-      method: resolvedMethod,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    const uploader = activeModule === 'store' ? getStoreLogoUploader() : getOrganizationLogoUploader();
+    const url = (activeModule === 'merchant' && uploader
+      ? `${apiBase}/client${id ? `/${id}` : ''}` : getItemUrl(id)) + (uploader ? '/with-image' : '');
+    let res;
+    try {
+      const body = uploader ? uploader.formData(data) : JSON.stringify(data);
+      if (uploader) {
+        savingStoreImage = true;
+        uploader.setDisabled(true);
+      }
+      res = await fetch(url, {
+        method: resolvedMethod,
+        headers: uploader ? {} : { 'Content-Type': 'application/json' },
+        body,
+      });
+    } catch (error) {
+      showMasterModalError(error.message);
+      return false;
+    } finally {
+      if (uploader) {
+        savingStoreImage = false;
+        uploader.setDisabled(false);
+      }
+    }
 
     if (!res.ok) {
       const text = await res.text();
@@ -8514,10 +8307,20 @@
       agencyRegistrationPasswords.set(String(savedId), json.temporary_password);
     }
 
+    if (document.getElementById('businessContactManager')?.pendingContacts) {
+      document.getElementById('businessContactManager').pendingOwnerId = String(savedId);
+      try {
+        await savePendingBusinessContacts();
+      } catch (error) {
+        showMasterModalError(error.message);
+        return false;
+      }
+    }
     await loadList(lastSavedId);
     setBaselineSnapshot();
     updateListCentricActionButtons();
     notifyStorageWarning(json);
+    if (json.image_warning) alert(json.image_warning);
     if (activeModule === 'agency' && json.agency_user_created) {
       alert('Agency Admin User created.');
     }

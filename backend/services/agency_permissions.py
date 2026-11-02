@@ -57,6 +57,9 @@ class AgencyPortalPermissions:
         resource = parts[1] if len(parts) > 1 else "dashboard"
         if resource == "stores" and len(parts) > 3 and parts[3] == "devices":
             resource = "devices"
+        if resource == "users" and len(parts) == 4 and parts[3] == "reset-password":
+            self.require("users", "update")
+            return
         self.require(resource, self.METHODS.get(method, "denied"))
 
     def can_deactivate_user(self, record_id: int) -> bool:

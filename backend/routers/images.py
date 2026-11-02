@@ -51,9 +51,25 @@ def store_image(request: Request, merchant_code: str, store_code: str,
 def _deliver(request: Request, db: Session, image: images.ImagePath):
     images.validate_owner(db, image.owner)
     public = image.image_category in images.PUBLIC_CATEGORIES
-    if not public:
+    agency_user_photo = image.image_category == "users" and image.context_type == "AGENCY"
+    if agency_user_photo:
+        from backend.services import web_sessions
+        from backend.services.agency_permissions import AgencyPortalPermissions
+        from backend.models_admin.agency import Agency
+        from backend.models_admin.platform_user import PlatformUser
+        user = web_sessions.authenticate(request, db)
+        if user.i_agency_id is not None:
+            query = AgencyPortalPermissions(user).query(db, "users")
+        else:
+            images.authorize_images(request, db, image.context_type, image.owner_code)
+            query = db.query(PlatformUser)
+        if not query.join(Agency, Agency.i_agency_id == PlatformUser.i_agency_id).filter(
+            Agency.c_agency_code == image.owner_code, PlatformUser.c_image_path == image.logical_path,
+        ).first():
+            raise HTTPException(404, "User photo not found.")
+    elif not public:
         images.authorize_images(request, db, image.context_type, image.owner_code, merchant_code=image.merchant_code)
-    if image.image_category == "users":
+    if image.image_category == "users" and not agency_user_photo:
         from backend.database.pg_platform import ADMIN_STORE_ID
         from backend.models_admin.platform_user import PlatformUser
         if image.context_type != "PLATFORM" or not db.query(PlatformUser.i_platform_user_id).filter(

@@ -84,23 +84,25 @@ window.fetch=async(path,options)=>{
         context = rendered_template.new_context({
             "active_module": "agency", "brand_icon_path": "",
             "page_header": layout.page_header, "surface": layout.surface,
+            "form_modal": rendered_template.environment.get_template("platform/components/form_modal.html").module.form_modal,
         })
         rendered = "".join(rendered_template.blocks["content"](context))
         scripts = [body for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script>", rendered, re.DOTALL)
                    if "application/json" not in attrs]
         footer = re.search(
-            r'<div class="modal-footer d-flex justify-content-between">\s*'
-            r'<button[^>]*id="btnAgencyRegistrationEmail".*?</div>\s*</div>', rendered, re.DOTALL,
+            r'<div class="modal-footer">\s*<div class="awsum-modal-left-actions">.*?</div>\s*</div>\s*</div>',
+            rendered, re.DOTALL,
         ).group()
         styles = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", rendered, re.DOTALL))
         bootstrap_css = (browser.ROOT / "static" / "bootstrap" / "css" / "bootstrap.min.css").read_text(encoding="utf-8")
+        bootstrap_css += (browser.ROOT / "static" / "css" / "platform-modal.css").read_text(encoding="utf-8")
         functions = "\n".join(re.search(
             rf"  function {name}\([^\n]*\) \{{.*?\n  \}}", template, re.DOTALL).group()
             for name in ("createField", "createContactManagerPanel", "renderForm", "clearForm", "syncAgencyEmailButton"))
         config = re.search(r"    agency: (\{.*?\n    \}),\n    license:", template, re.DOTALL).group(1)
         script = (
             f"const style=document.createElement('style');style.textContent={json.dumps(bootstrap_css + styles)};document.head.appendChild(style);\n"
-            "document.body.className='page-master';const edit=document.createElement('div');edit.id='masterEditModal';edit.className='agency-modal';\n"
+            "document.body.className='page-master';const edit=document.createElement('div');edit.id='masterEditModal';edit.className='agency-modal pm-modal awsum-form-modal';\n"
             f"edit.innerHTML={json.dumps(footer)};document.body.appendChild(edit);\n"
             f"const renderedScripts={json.dumps(scripts)};\n"
             "const activeModule='agency',isListCentricModule=true,FIELD_ICONS={},masterAgencyTypeOptions=[];\n"
@@ -127,23 +129,27 @@ window.fetch=async(path,options)=>{
   const status=document.getElementById('field_status'),button=document.getElementById('btnAgencyRegistrationEmail');
   assert(status.value==='inactive','new Agency starts Inactive for contact registration');
   assert(!document.getElementById('sendRegistrationEmail'),'old send checkbox removed');
-  assert(button.classList.contains('d-none'),'unsaved Agency has no email button');
+  assert(button.closest('.awsum-modal-action').classList.contains('d-none'),'unsaved Agency has no email button');
   assert(!!document.getElementById('businessContactManager'),'existing Contacts component reused');
   assert(!!document.getElementById('bc_email'),'existing Business Contact email editor reused');
   selectedMasterId.value='1';selectedOriginalRecord={has_agency_admin:false};syncAgencyEmailButton();
-  assert(button.classList.contains('d-none'),'saved Agency without Admin hides button');
+  assert(!button.closest('.awsum-modal-action').classList.contains('d-none')&&!button.disabled,'saved Agency without Admin keeps action enabled');
+  assert(document.getElementById(button.id+'Reason').textContent==='','no stale disabled reason');
+  button.click();await new Promise(resolve=>setTimeout(resolve,20));
+  assert(previewOpens===1,'missing Admin metadata still requests current account check');
   selectedOriginalRecord.has_agency_admin=true;syncAgencyEmailButton();
-  assert(!button.classList.contains('d-none')&&button.textContent==='Registration Email','saved Admin shows Registration Email');
+  assert(!button.disabled&&button.textContent==='Registration Email','saved Admin shows Registration Email');
   assert(button.closest('.modal-footer'),'Registration Email is in actual Edit footer, not the scrollable form');
   const cancel=document.getElementById('btnModalCancel'),del=document.getElementById('btnModalDelete'),save=document.getElementById('btnModalSave');
   assert(button.getBoundingClientRect().width>0,'Registration Email visibly rendered');
   const positions=[button,cancel,del,save].map(el=>el.getBoundingClientRect().x);
   assert(positions.every((x,i)=>!i||x>positions[i-1]),'footer order: Registration Email | Cancel | Delete | Save');
   button.click();await new Promise(resolve=>setTimeout(resolve,20));
-  assert(previewOpens===1,'button opens Preview independently');
+  assert(previewOpens===2,'button opens Preview independently');
   button.click();await new Promise(resolve=>setTimeout(resolve,20));
-  assert(previewOpens===2,'button can reopen Preview later');
-  clearForm();assert(button.classList.contains('d-none'),'new record clears email availability');
+  assert(previewOpens===3,'button can reopen Preview later');
+  selectedOriginalRecord={};syncAgencyEmailButton();assert(!button.disabled,'missing list metadata does not disable Edit action');
+  clearForm();assert(button.closest('.awsum-modal-action').classList.contains('d-none'),'new record clears email availability');
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
 """
