@@ -269,6 +269,9 @@ def get_platform_admin_session(request: Request, db: Session) -> tuple[str, Plat
     if user.i_agency_id is not None:
         _log_platform_forbidden(request, db, "get_platform_admin_session", "agency_user", payload=payload, user=user)
         return "forbidden", None
+    if user.i_merchant_id is not None:
+        _log_platform_forbidden(request, db, "get_platform_admin_session", "merchant_user", payload=payload, user=user)
+        return "forbidden", None
 
     try:
         if int(user.i_store_id) != ADMIN_STORE_ID:
@@ -329,7 +332,8 @@ def platform_admin_login(
         user = (
             db.query(PlatformUser)
             .filter(func.lower(PlatformUser.c_email) == email_norm,
-                    PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None))
+                    PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None),
+                    PlatformUser.i_merchant_id.is_(None))
             .first()
         )
         role = db.query(Role).filter(Role.i_role_id == user.i_role_id).first() if user else None
@@ -421,31 +425,48 @@ def login(
     if store_identifier_norm in {"AWSUM", PLATFORM_ADMIN_ACCESS_CODE}:
         return _login_error("Platform administrators must sign in at /platform-admin.", status_code=400)
 
-    agency = db.query(Agency).filter(
-        func.upper(Agency.c_agency_code) == store_identifier_norm, Agency.c_status == "active"
-    ).first()
-    if agency:
-        user = db.query(PlatformUser).filter(
-            PlatformUser.i_agency_id == agency.i_agency_id,
+    from backend.services.organization_users import REGISTRATION_OWNERS, organization_admin_query
+    for owner_type, (model, field, code_field, _, _) in REGISTRATION_OWNERS.items():
+        owner = db.query(model).filter(
+            func.upper(getattr(model, code_field)) == store_identifier_norm, model.c_status == "active",
+        ).first()
+        if owner is None:
+            continue
+        owner_id = getattr(owner, field)
+        if owner_type == "STORE" and owner_id == ADMIN_STORE_ID:
+            return _login_error("Invalid credentials.")
+        user = organization_admin_query(db, owner_type, owner_id).filter(
             func.lower(PlatformUser.c_email) == normalize_email(email),
         ).first()
         role = db.get(Role, user.i_role_id) if user else None
         if (not user or user.c_status != "active" or not role or role.c_status != "active"
-                or role.c_name != AGENCY_ADMIN_ROLE_NAME or not password_matches(user, password)):
+                or not password_matches(user, password)):
             return _login_error("Invalid credentials.")
         claims = {
             "uid": user.i_platform_user_id, "sub": user.c_email, "email": user.c_email,
             "store": user.i_store_id, "role_id": user.i_role_id, "role": role.c_name,
-            "scope_type": "agency", "agency_id": agency.i_agency_id,
-            "access_code": agency.c_agency_code, "principal_type": "platform_user",
+            "scope_type": owner_type.lower(), f"{owner_type.lower()}_id": owner_id,
+            "access_code": getattr(owner, code_field), "principal_type": "platform_user",
         }
-        return _finish_login(db, user, request, claims, "/agency/dashboard")
+        return _finish_login(db, user, request, claims, _organization_login_target(db, user))
 
     # Store operation-user authentication remains unchanged.
     return _login_error(
         "Platform DB does not manage Store users. Please use your Merchant/Store operation DB login path.",
         status_code=400,
     )
+
+
+def _organization_login_target(db: Session, user: PlatformUser) -> str:
+    if user.i_agency_id is not None:
+        return "/agency/dashboard"
+    if user.i_merchant_id is not None:
+        return "/merchant/dashboard/standard"
+    from backend.models_admin.platform_user import STORE_ADMIN_ROLE_NAME
+    role = db.get(Role, user.i_role_id)
+    if role and role.c_name == STORE_ADMIN_ROLE_NAME:
+        return _resolve_store_dashboard_redirect(db, user.i_store_id)
+    return _resolve_post_login_redirect(db, user, user.i_store_id)
 
 
 @router.get("/change-password", response_class=HTMLResponse)
@@ -533,12 +554,7 @@ def change_password_submit(
         user.i_updated_by = user.i_platform_user_id
     db.commit()
 
-    if user.i_agency_id is not None:
-        return RedirectResponse(url="/agency/dashboard", status_code=303)
-    if isinstance(user, PlatformUser):
-        return RedirectResponse(url="/platform/dashboard", status_code=303)
-
-    return RedirectResponse(url=_resolve_post_login_redirect(db, user, user.i_store_id), status_code=303)
+    return RedirectResponse(url=_organization_login_target(db, user), status_code=303)
 
 
 @router.get("/registration-completed", response_class=HTMLResponse)

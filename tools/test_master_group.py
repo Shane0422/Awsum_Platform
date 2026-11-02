@@ -274,7 +274,8 @@ class MasterGroupApiTests(unittest.TestCase):
     def req(self, origin=None):
         headers = {"origin": origin} if origin else {}
         cookies = {"access_token": self.cookie} if self.cookie else {}
-        return SimpleNamespace(cookies=cookies, headers=headers, url=SimpleNamespace(netloc="localhost:8000"))
+        return SimpleNamespace(cookies=cookies, headers=headers, state=SimpleNamespace(),
+                               url=SimpleNamespace(netloc="localhost:8000", path="/platform/api/master-group"))
 
     def status(self, fn, *args, **kw):
         try:
@@ -341,5 +342,4 @@ class MasterGroupApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

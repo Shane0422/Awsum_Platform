@@ -5,7 +5,8 @@ from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
-from backend.models_admin.platform_user import AGENCY_ADMIN_ROLE_NAME
+from backend.models_admin.platform_user import AGENCY_ADMIN_ROLE_NAME, MERCHANT_ADMIN_ROLE_NAME
+from backend.database.pg_platform import ADMIN_STORE_ID
 from backend.models_admin.role import Role
 
 
@@ -13,23 +14,28 @@ def login_identity(db, user, claims):
     context = str(claims.get("scope_type") or "").upper()
     identity = {"c_login_context": context, "i_store_id": None, "i_merchant_id": None, "i_agency_id": None}
     if context == "PLATFORM":
-        if user.i_agency_id is not None:
-            raise HTTPException(401, "Agency users cannot use the Platform login scope.")
+        if user.i_agency_id is not None or user.i_merchant_id is not None or user.i_store_id != ADMIN_STORE_ID:
+            raise HTTPException(401, "Organization users cannot use the Platform login scope.")
         return identity
     if context == "STORE":
         store = db.get(Store, user.i_store_id)
-        if store:
+        if (store and store.i_store_id != ADMIN_STORE_ID and store.c_status == "active"
+                and user.i_agency_id is None and user.i_merchant_id is None):
             identity.update(i_store_id=store.i_store_id, i_merchant_id=store.i_merchant_id)
             return identity
     if context == "MERCHANT":
         merchant = db.get(Merchant, claims.get("merchant_id")) if claims.get("merchant_id") else None
-        if merchant:
+        role = db.get(Role, user.i_role_id)
+        if (merchant and merchant.c_status == "active" and user.i_merchant_id == merchant.i_merchant_id
+                and user.i_agency_id is None and user.i_store_id == ADMIN_STORE_ID
+                and role and role.c_name == MERCHANT_ADMIN_ROLE_NAME):
             identity["i_merchant_id"] = merchant.i_merchant_id
             return identity
     if context == "AGENCY":
         agency = db.get(Agency, claims.get("agency_id")) if claims.get("agency_id") else None
         role = db.get(Role, user.i_role_id)
         if (agency and agency.c_status == "active" and user.i_agency_id == agency.i_agency_id
+                and user.i_merchant_id is None and user.i_store_id == ADMIN_STORE_ID
                 and role and role.c_name == AGENCY_ADMIN_ROLE_NAME):
             identity["i_agency_id"] = agency.i_agency_id
             return identity

@@ -26,7 +26,8 @@ class MerchantTests(unittest.TestCase):
         self.db.add(BusinessType(c_business_code="TEST", c_name="Test", c_status="active"))
         self.db.commit()
         self.payload = {"merchant_name": "New Merchant", "primary_agency_id": 1,
-                        "business_type": "Test", "website": "example.test", "notes": "Original"}
+                        "business_type": "Test", "website": "example.test", "notes": "Original",
+                        "status": "inactive"}
         # Mirror the PostgreSQL partial index in the SQLite test database.
         with self.engine.begin() as connection:
             connection.execute(text("DROP INDEX ux_business_contact_primary"))
@@ -66,7 +67,7 @@ class MerchantTests(unittest.TestCase):
     def test_store_relation_and_existing_delete_policy(self):
         identity = self.create()
         linked = self.client.post(f"/platform/merchant/{identity}/stores",
-                                  json={"store_name": "Linked Store"})
+                                  json={"store_name": "Linked Store", "store_status": "inactive"})
         self.assertEqual(linked.status_code, 200, linked.text)
         with self.factory() as db:
             store = db.get(Store, linked.json()["store_id"])

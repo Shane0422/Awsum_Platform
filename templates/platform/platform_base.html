@@ -1,3 +1,4 @@
+{% set app_navigation = app_navigation | default(none) %}
 {% macro nav_link(label, url, selected=false) -%}
 <li><a class="platform-menu-link{% if selected %} active{% endif %}" href="{{ url }}"{% if selected %} aria-current="page"{% endif %}>{{ label }}</a></li>
 {%- endmacro %}
@@ -172,10 +173,43 @@
   </style>
   <link rel="stylesheet" href="/static/components/image-uploader/image-uploader.css?v=4">
   <script src="/static/components/image-uploader/image-uploader.js?v=5"></script>
+  {% block extra_head %}{% endblock %}
 </head>
 <body class="{% if active_page %}page-{{ active_page }}{% endif %}{% if active_module %} module-{{ active_module }}{% endif %}">
   <div class="platform-shell">
-    {% call awsum_header(active_page == 'agency-portal') %}
+    {% call awsum_header(active_page == 'agency-portal', app_navigation) %}
+      {% if app_navigation %}
+        {% if app_navigation.master_items %}
+        <div class="platform-mega-menu" id="mega-master-group" aria-labelledby="nav-master-group" hidden>
+          <div class="platform-mega-grid">
+            <section class="platform-menu-section">
+              <h2>{{ nav_icon('master-group') }}Master Group</h2>
+              <ul class="platform-menu-list">
+                {% for item in app_navigation.master_items %}
+                {{ nav_link(item.label, item.url, active_page == 'master-group' and active_module == item.slug) }}
+                {% endfor %}
+              </ul>
+            </section>
+          </div>
+        </div>
+        {% endif %}
+        {% if app_navigation.business %}
+        <div class="platform-mega-menu" id="mega-business" aria-labelledby="nav-business" hidden>
+          <section class="platform-menu-section">
+            <h2>{{ nav_icon('business') }}Business</h2>
+            <p class="text-muted mb-0">Coming soon.</p>
+          </section>
+        </div>
+        {% endif %}
+        {% if app_navigation.reports %}
+        <div class="platform-mega-menu" id="mega-reports" aria-labelledby="nav-reports" hidden>
+          <section class="platform-menu-section">
+            <h2>{{ nav_icon('reports') }}Reports</h2>
+            <p class="text-muted mb-0">Coming soon.</p>
+          </section>
+        </div>
+        {% endif %}
+      {% else %}
         <div class="platform-mega-menu" id="mega-master-group" aria-labelledby="nav-master-group" hidden>
           <div class="platform-mega-grid">
             <section class="platform-menu-section">
@@ -263,9 +297,11 @@
             <p class="text-muted mb-0">Coming soon.</p>
           </section>
         </div>
+      {% endif %}
     {% endcall %}
     <main class="platform-main">
       <div class="platform-view{% if active_page in ['master', 'stores', 'system-settings', 'merchants-tree', 'agency-portal'] %} awsum-list awsum-admin{% endif %}">
+        {% block page_heading %}{% endblock %}
         {% block content %}{% endblock %}
       </div>
     </main>

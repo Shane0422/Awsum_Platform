@@ -20,6 +20,8 @@ from backend.routers.system_settings import _validate_origin
 from backend.services import master_group as svc
 from backend.services.images import image_mutation_form
 from backend.services.reporting import table_report_html
+from backend.services.app_navigation import resolve_app_scope
+from backend.services.branding import resolve_branding
 
 router = APIRouter()
 
@@ -35,7 +37,18 @@ ENTITY_TO_SLUG = {entity: slug for slug, (entity, _title) in PAGES.items()}
 
 def _admin(request: Request, db: Session):
     user = get_current_user(request, db)
-    require_platform_admin(user)
+    prefix = request.url.path.strip("/").split("/")[0]
+    if prefix == "platform":
+        require_platform_admin(user)
+        request.state.master_merchant_id = None
+    else:
+        scope = resolve_app_scope(request, db, user)
+        if prefix.upper() != scope.context:
+            raise HTTPException(403, "Login scope does not match this route.")
+        action = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}[request.method]
+        scope.require("export" if request.url.path.endswith("/export") else action)
+        request.state.master_merchant_id = scope.merchant_id
+        request.state.app_scope = scope
     return user
 
 
@@ -54,22 +67,29 @@ def _fail(exc: Exception) -> JSONResponse:
     raise exc
 
 
-def _entity(entity: str) -> str:
+def _entity(entity: str, request: Request | None = None) -> str:
     if entity not in svc.ENTITIES:
         raise HTTPException(status_code=404, detail="Unknown master type.")
+    if request is not None and getattr(request.state, "master_merchant_id", None) is not None and entity == "md":
+        raise HTTPException(403, "MD Master is Platform-only.")
     return entity
 
 
 @router.get("/platform/master-group/{slug}", response_class=HTMLResponse)
+@router.get("/merchant/master-group/{slug}", response_class=HTMLResponse)
+@router.get("/store/master-group/{slug}", response_class=HTMLResponse)
 def master_group_page(slug: str, request: Request, db: Session = Depends(get_db)):
     user, redirect = _auth_user_or_home_redirect(request, db)
     if redirect:
         return redirect
-    if user.login_role != 1:
-        raise HTTPException(status_code=403, detail="Not authorized.")
+    user = _admin(request, db)
     if slug not in PAGES:
         raise HTTPException(status_code=404, detail="Page not found.")
     entity, title = PAGES[slug]
+    _entity(entity, request)
+    scope = getattr(request.state, "app_scope", None)
+    brand = resolve_branding(db, scope.context, merchant_id=scope.merchant_id,
+                             store_id=user.i_store_id if scope.context == "STORE" else None) if scope else None
     return _set_no_cache_headers(templates.TemplateResponse(
         request,
         "platform/master_group.html",
@@ -77,34 +97,44 @@ def master_group_page(slug: str, request: Request, db: Session = Depends(get_db)
             "request": request,
             "APP_NAME": APP_NAME,
             "user": user,
-            "role": "Platform Admin",
+            "role": scope.role_name if scope else "Platform Admin",
             "is_super_admin": _is_super_admin(db, user),
             "active_page": "master-group",
             "active_module": slug,
             "mg_entity": entity,
             "mg_title": title,
+            "mg_api_base": f"/{scope.context.lower() if scope else 'platform'}/api/master-group",
+            "app_navigation": scope.navigation() if scope else None,
             **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
+            **(brand.template() if brand else {}),
         },
     ))
 
 
 @router.get("/platform/api/master-group/options")
+@router.get("/merchant/api/master-group/options")
+@router.get("/store/api/master-group/options")
 def master_group_options(request: Request, db: Session = Depends(get_db)):
     user = _admin(request, db)
-    return _set_no_cache_headers(JSONResponse(svc.lookup_options(db, _can_view_cost(db, user))))
+    return _set_no_cache_headers(JSONResponse(svc.lookup_options(
+        db, _can_view_cost(db, user), merchant_id=request.state.master_merchant_id,
+    )))
 
 
 @router.get("/platform/api/master-group/{entity}")
+@router.get("/merchant/api/master-group/{entity}")
+@router.get("/store/api/master-group/{entity}")
 def master_group_list(
     entity: str, request: Request, q: str = "", active: str = "", sort: str = "",
     direction: str = "asc", page: int = 1, size: int = 20, db: Session = Depends(get_db),
 ):
     user = _admin(request, db)
-    _entity(entity)
+    _entity(entity, request)
     return _set_no_cache_headers(JSONResponse(
         svc.list_items(
             db, entity, q=q, active=active, sort=sort, direction=direction, page=page, size=size,
             can_cost=_can_view_cost(db, user),
+            merchant_id=request.state.master_merchant_id,
         )
     ))
 
@@ -115,17 +145,20 @@ def _safe_cell(value: str) -> str:
 
 
 @router.get("/platform/api/master-group/{entity}/export")
+@router.get("/merchant/api/master-group/{entity}/export")
+@router.get("/store/api/master-group/{entity}/export")
 def master_group_export(
     entity: str, request: Request, format: str = "csv", q: str = "", active: str = "",
     sort: str = "", direction: str = "asc", db: Session = Depends(get_db),
 ):
     user = _admin(request, db)
-    _entity(entity)
+    _entity(entity, request)
     fmt = (format or "").lower()
     if fmt not in ("csv", "excel", "pdf"):
         raise HTTPException(status_code=400, detail="Unsupported export format.")
     can_cost = _can_view_cost(db, user)  # Cost column is omitted entirely without permission
-    headers, rows = svc.export_table(db, entity, q=q, active=active, sort=sort, direction=direction, can_cost=can_cost)
+    headers, rows = svc.export_table(db, entity, q=q, active=active, sort=sort, direction=direction,
+                                    can_cost=can_cost, merchant_id=request.state.master_merchant_id)
     title = PAGES[ENTITY_TO_SLUG[entity]][1]
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     base = f"master-{ENTITY_TO_SLUG[entity]}-{stamp}"
@@ -156,12 +189,15 @@ def master_group_export(
     return HTMLResponse(table_report_html(f"{title} Report", headers, rows), headers=no_store)
 
 @router.post("/platform/api/master-group/{entity}")
+@router.post("/merchant/api/master-group/{entity}")
+@router.post("/store/api/master-group/{entity}")
 def master_group_create(entity: str, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = _admin(request, db)
     _validate_origin(request)
-    _entity(entity)
+    _entity(entity, request)
     try:
-        item = svc.create_item(db, entity, payload, user.i_platform_user_id, _can_view_cost(db, user))
+        item = svc.create_item(db, entity, payload, user.i_platform_user_id, _can_view_cost(db, user),
+                               merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -202,12 +238,15 @@ def md_update_with_image(
 
 
 @router.put("/platform/api/master-group/{entity}/{item_id}")
+@router.put("/merchant/api/master-group/{entity}/{item_id}")
+@router.put("/store/api/master-group/{entity}/{item_id}")
 def master_group_update(entity: str, item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = _admin(request, db)
     _validate_origin(request)
-    _entity(entity)
+    _entity(entity, request)
     try:
-        item = svc.update_item(db, entity, item_id, payload, user.i_platform_user_id, _can_view_cost(db, user))
+        item = svc.update_item(db, entity, item_id, payload, user.i_platform_user_id, _can_view_cost(db, user),
+                               merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -215,12 +254,14 @@ def master_group_update(entity: str, item_id: int, payload: dict, request: Reque
 
 
 @router.delete("/platform/api/master-group/{entity}/{item_id}")
+@router.delete("/merchant/api/master-group/{entity}/{item_id}")
+@router.delete("/store/api/master-group/{entity}/{item_id}")
 def master_group_delete(entity: str, item_id: int, request: Request, db: Session = Depends(get_db)):
     _admin(request, db)
     _validate_origin(request)
-    _entity(entity)
+    _entity(entity, request)
     try:
-        warning = svc.delete_item(db, entity, item_id)
+        warning = svc.delete_item(db, entity, item_id, merchant_id=request.state.master_merchant_id)
     except (svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)

@@ -40,6 +40,27 @@ Platform navigation
   a separate filter card, then the table card. Master Group uses the same components.
   Store keeps its device panel and splitter below its filters. System Settings uses
   the shared header and tab card followed by its existing settings forms.
+- Platform, Agency, Merchant and Store use `platform_base.html` and
+  `awsum_header.html` for the same App shell and Top Navigation. Merchant
+  dashboards retain their existing content but no longer own a Sidebar/Topbar.
+  `app_navigation.py` resolves the authenticated session scope and the shared
+  menu/API permission policy. Existing Platform/Agency navigation is unchanged.
+- Merchant Admin and Store Admin (`Admin`, `CustomerAdmin`, `StoreAdmin`)
+  may CRUD/export Tax and Category I/II/III via the existing Common Master Group.
+  Other Store roles have no Master menu or API access. Merchant and Store routes
+  render the same template and use the same JavaScript and service.
+  Store uses its saved Merchant relationship, never a requested Merchant ID.
+  Business/Reports dropdowns remain Coming soon; no new business/report features
+  are introduced.
+- `migrate_master_scopes` adds nullable Merchant FKs to the four existing master
+  tables. NULL preserves existing Platform data; new tenant rows are isolated
+  per Merchant, including parent selection, lookup options and exports.
+  Store shares its Merchant's records. Existing codes/rows are not rewritten,
+  and existing global code uniqueness/code generation remains unchanged.
+  The migration runs during normal schema initialization.
+- Focused checks: `.venv\Scripts\python.exe -m unittest
+  tools.test_common_app_navigation tools.test_platform_navigation
+  tools.test_master_group_ui.MasterGroupListTemplateTests`.
 
 Database
 - AdminDB
@@ -75,6 +96,33 @@ Store sequence allocation and all numeric PK/FK rules are unchanged.
 Existing codes are not rewritten; storage, images, auth and licenses still use
 the saved codes and relationships. No migration is required for this generator.
 Focused checks: `py -m unittest tools.test_business_codes.BusinessCodeTests`.
+
+## Common organization registration email
+
+Agency, Merchant and Store reuse `build_registration_email`, `AwsumEmailLayout`,
+`AwsumEmailPreview.open` and the configured SMTP sender. Merchant/Store expose
+Send Registration Email in Contacts; the existing Agency action stays in place.
+Common endpoints are `/platform/registration-email/{owner_type}/{owner_id}`
+and its `/preview` suffix; the existing Agency endpoints delegate to them.
+Preview and resend never create users or reset passwords. To Email overrides
+apply only to the email, not to the Primary Contact or login identity.
+
+Active saves create the first scoped Admin from the saved Primary Contact.
+For new owners, save Inactive, add a Primary Contact, then activate. Initial
+passwords use phone digits (`Awsum@` plus the last four) or a random fallback;
+only hashes are stored and password change remains optional.
+Existing users and passwords are never regenerated.
+
+`migrate_registration_users` extends `tb_platform_user` with nullable
+`i_merchant_id`, scoped email uniqueness and Merchant/Store Admin roles.
+It runs during normal schema initialization without altering existing
+credentials. All three owners use the existing `/login/{type}/{code}` page,
+`/auth/login`, server sessions and Change Password flow. Platform administration
+remains unavailable to organization users. Store operational DB authentication
+is not implemented by this registration feature.
+
+Focused checks: `.venv\Scripts\python.exe -m unittest tools.test_registration_email
+tools.test_agency_activation tools.test_email_layout`.
 
 ## Merchant model and API naming
 

@@ -6,6 +6,8 @@ from backend.database.pg_platform import PlatformBase
 from backend.database.pg_platform import ADMIN_STORE_ID
 
 AGENCY_ADMIN_ROLE_NAME = "Agency Admin"
+MERCHANT_ADMIN_ROLE_NAME = "Merchant Admin"
+STORE_ADMIN_ROLE_NAME = "Admin"
 
 
 class PlatformUser(PlatformBase):
@@ -18,6 +20,7 @@ class PlatformUser(PlatformBase):
     # 플랫폼 관리자 권한
     i_role_id = Column(Integer, ForeignKey("tb_role.i_role_id"), nullable=False, default=1, index=True)
     i_agency_id = Column(Integer, ForeignKey("tb_agency.i_agency_id"), nullable=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
 
     c_email = Column(String, nullable=False)
     c_password = Column(String, nullable=False)
@@ -39,7 +42,13 @@ class PlatformUser(PlatformBase):
             unique=True, postgresql_where=i_agency_id.is_not(None), sqlite_where=i_agency_id.is_not(None),
         ),
         Index(
+            "uq_platform_user_merchant_email", i_merchant_id, func.lower(func.trim(c_email)),
+            unique=True, postgresql_where=i_merchant_id.is_not(None), sqlite_where=i_merchant_id.is_not(None),
+        ),
+        Index(
             "uq_platform_user_store_email", i_store_id, func.lower(func.trim(c_email)),
-            unique=True, postgresql_where=i_agency_id.is_(None), sqlite_where=i_agency_id.is_(None),
+            unique=True,
+            postgresql_where=i_agency_id.is_(None) & i_merchant_id.is_(None),
+            sqlite_where=i_agency_id.is_(None) & i_merchant_id.is_(None),
         ),
     )

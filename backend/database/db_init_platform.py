@@ -653,6 +653,10 @@ def init_platform_db() -> None:
     migrate_business_contacts(platform_engine)
     from backend.database.agency_user_migration import migrate_agency_users
     migrate_agency_users(platform_engine)
+    from backend.database.registration_user_migration import migrate_registration_users
+    migrate_registration_users(platform_engine)
+    from backend.database.master_scope_migration import migrate_master_scopes
+    migrate_master_scopes(platform_engine)
     from backend.services.paths import AwsumPathResolver, resource_storage_path
     backup_path = resource_storage_path(AwsumPathResolver("PLATFORM").get_data_path("audit"))
     safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
@@ -718,6 +722,7 @@ def init_platform_db() -> None:
             {"c_name": "Staff", "c_description": "Store Staff"},
             {"c_name": "Customer", "c_description": "End Customer"},
             {"c_name": "Agency Admin", "c_description": "Agency Administrator"},
+            {"c_name": "Merchant Admin", "c_description": "Merchant Administrator"},
         ]
         for role_item in default_roles:
             if not db.query(Role).filter_by(c_name=role_item["c_name"]).first():

@@ -86,6 +86,19 @@ def entity_config(entity: str) -> dict:
     return cfg
 
 
+def _scoped_query(db: Session, model, merchant_id: int | None):
+    if model is MdMaster:
+        if merchant_id is not None:
+            raise NotFound("MD Master is not available in this scope.")
+        return db.query(model)
+    return db.query(model).filter(model.i_merchant_id == merchant_id)
+
+
+def _scoped_parent(db: Session, model, item_id: int | None, merchant_id: int | None):
+    row = db.get(model, item_id) if item_id is not None else None
+    return row if row is not None and row.i_merchant_id == merchant_id else None
+
+
 # ---------- helpers ----------
 
 def _text(payload: dict, key: str, limit: int, errors: dict, *, required=False, label=None) -> str | None:
@@ -213,7 +226,8 @@ def _validate_common(payload: dict, errors: dict, *, ordered: bool) -> dict:
     return values
 
 
-def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost: bool = False) -> dict:
+def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost: bool = False,
+                      merchant_id: int | None = None) -> dict:
     errors: dict[str, str] = {}
     values: dict = {}
 
@@ -231,7 +245,7 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
         c1 = _id(payload, "category1_id", errors, required=True, label="Category I")
         values["i_category1_id"] = c1
         if c1 is not None and "category1_id" not in errors:
-            parent = db.get(Category1, c1)
+            parent = _scoped_parent(db, Category1, c1, merchant_id)
             if not parent:
                 errors["category1_id"] = "Category I does not exist."
             elif current is None or current.i_category1_id != c1:
@@ -247,7 +261,8 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
         c2 = _id(payload, "category2_id", errors, required=True, label="Category II")
         values["i_category1_id"], values["i_category2_id"] = c1, c2
         if c1 is not None and c2 is not None and not errors.get("category1_id") and not errors.get("category2_id"):
-            p1, p2 = db.get(Category1, c1), db.get(Category2, c2)
+            p1 = _scoped_parent(db, Category1, c1, merchant_id)
+            p2 = _scoped_parent(db, Category2, c2, merchant_id)
             if not p1:
                 errors["category1_id"] = "Category I does not exist."
             elif not p2:
@@ -326,9 +341,9 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
         errors["category3_id"] = "Select Category II before Category III."
     cat_bad = {"category1_id", "category2_id", "category3_id"} & set(errors)
     if not cat_bad:
-        p1 = db.get(Category1, c1)
-        p2 = db.get(Category2, c2) if c2 is not None else None
-        p3 = db.get(Category3, c3) if c3 is not None else None
+        p1 = _scoped_parent(db, Category1, c1, None)
+        p2 = _scoped_parent(db, Category2, c2, None)
+        p3 = _scoped_parent(db, Category3, c3, None)
         if not p1:
             errors["category1_id"] = "Category I does not exist."
         elif c2 is not None and not p2:
@@ -349,7 +364,7 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
                     errors[key] = "This category is inactive."
 
     if tax_id is not None and "default_tax_id" not in errors:
-        tax = db.get(Tax, tax_id)
+        tax = _scoped_parent(db, Tax, tax_id, None)
         if not tax:
             errors["default_tax_id"] = "Tax does not exist."
         elif not tax.b_active and (current is None or current.i_default_tax_id != tax_id):
@@ -428,10 +443,10 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
     if entity in ("category1", "category2", "category3"):
         base["display_order"] = row.i_display_order
     if entity in ("category2", "category3"):
-        c1 = db.get(Category1, row.i_category1_id)
+        c1 = _scoped_parent(db, Category1, row.i_category1_id, row.i_merchant_id)
         base.update(category1_id=row.i_category1_id, category1_name=c1.c_category_name if c1 else None)
     if entity == "category3":
-        c2 = db.get(Category2, row.i_category2_id)
+        c2 = _scoped_parent(db, Category2, row.i_category2_id, row.i_merchant_id)
         base.update(category2_id=row.i_category2_id, category2_name=c2.c_category_name if c2 else None)
     if entity == "md":
         c1 = db.get(Category1, row.i_category1_id)
@@ -484,11 +499,11 @@ SORT_COLUMNS = {
 DEFAULT_SORT = {"tax": "code", "category1": "display_order", "category2": "display_order", "category3": "display_order", "md": "code"}
 
 
-def _filtered_query(db: Session, entity: str, q, active, sort, direction):
+def _filtered_query(db: Session, entity: str, q, active, sort, direction, merchant_id: int | None = None):
     """Search / status filter / sort shared by the list screen and Export."""
     cfg = entity_config(entity)
     model = cfg["model"]
-    query = db.query(model)
+    query = _scoped_query(db, model, merchant_id)
 
     term = (q or "").strip()
     if term:
@@ -506,8 +521,9 @@ def _filtered_query(db: Session, entity: str, q, active, sort, direction):
     return query, key
 
 
-def list_items(db: Session, entity: str, *, q="", active="", sort="", direction="asc", page=1, size=20, can_cost=False) -> dict:
-    query, key = _filtered_query(db, entity, q, active, sort, direction)
+def list_items(db: Session, entity: str, *, q="", active="", sort="", direction="asc", page=1, size=20,
+               can_cost=False, merchant_id: int | None = None) -> dict:
+    query, key = _filtered_query(db, entity, q, active, sort, direction, merchant_id)
 
     size = min(max(int(size or 20), 1), 100)
     total = query.order_by(None).count()
@@ -546,11 +562,14 @@ def _commit_md(db: Session, row: MdMaster, *, image_data: bytes | None = None,
 
 @_serialize_md_writes
 def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool = False,
-                *, image_data: bytes | None = None) -> dict:
+                *, image_data: bytes | None = None, merchant_id: int | None = None) -> dict:
+    _scoped_query(db, entity_config(entity)["model"], merchant_id)
     if entity == "md":
         _lock_md_images(db)
     cfg = entity_config(entity)
-    values = _validate_payload(db, entity, payload, None, can_cost)
+    values = _validate_payload(db, entity, payload, None, can_cost, merchant_id)
+    if entity != "md":
+        values["i_merchant_id"] = merchant_id
     for _ in range(5):
         if entity == "md":
             _lock_md_images(db)
@@ -596,12 +615,13 @@ def _yn(value) -> str:
     return "Yes" if value else "No"
 
 
-def export_table(db: Session, entity: str, *, q="", active="", sort="", direction="asc", can_cost=False) -> tuple[list[str], list[list[str]]]:
+def export_table(db: Session, entity: str, *, q="", active="", sort="", direction="asc", can_cost=False,
+                 merchant_id: int | None = None) -> tuple[list[str], list[list[str]]]:
     """Every row matching the current search/filter/sort (not just one page), as display strings.
 
     Cost is only included when can_cost is true; otherwise the column does not exist.
     """
-    query, _key = _filtered_query(db, entity, q, active, sort, direction)
+    query, _key = _filtered_query(db, entity, q, active, sort, direction, merchant_id)
     rows = query.all()
     status = lambda r: "Active" if r.b_active else "Inactive"
 
@@ -621,10 +641,10 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
         for r in rows:
             line = [r.c_category_code, r.c_category_name]
             if entity != "category1":
-                c1 = db.get(Category1, r.i_category1_id)
+                c1 = _scoped_parent(db, Category1, r.i_category1_id, r.i_merchant_id)
                 line += [c1.c_category_code if c1 else "", c1.c_category_name if c1 else ""]
             if entity == "category3":
-                c2 = db.get(Category2, r.i_category2_id)
+                c2 = _scoped_parent(db, Category2, r.i_category2_id, r.i_merchant_id)
                 line += [c2.c_category_code if c2 else "", c2.c_category_name if c2 else ""]
             line += [str(r.i_display_order), status(r), r.c_notes or ""]
             data.append(line)
@@ -673,12 +693,16 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
         data.append(line)
     return headers, data
 
-def _get(db: Session, entity: str, item_id: int):
+def _get(db: Session, entity: str, item_id: int, merchant_id: int | None = None):
     cfg = entity_config(entity)
     if entity == "md":
         row = db.query(MdMaster).filter(MdMaster.i_md_id == item_id).populate_existing().with_for_update().first()
     else:
-        row = db.get(cfg["model"], item_id)
+        row = _scoped_query(db, cfg["model"], merchant_id).filter(
+            getattr(cfg["model"], cfg["pk"]) == item_id,
+        ).first()
+    if entity == "md" and merchant_id is not None:
+        raise NotFound("Record not found.")
     if not row:
         raise NotFound("Record not found.")
     return row
@@ -686,11 +710,12 @@ def _get(db: Session, entity: str, item_id: int):
 
 @_serialize_md_writes
 def update_item(db: Session, entity: str, item_id: int, payload: dict, user_id, can_cost: bool = False,
-                *, image_data: bytes | None = None, remove_image: bool = False) -> dict:
+                *, image_data: bytes | None = None, remove_image: bool = False,
+                merchant_id: int | None = None) -> dict:
     if entity == "md":
         _lock_md_images(db)
-    row = _get(db, entity, item_id)
-    values = _validate_payload(db, entity, payload, row, can_cost)
+    row = _get(db, entity, item_id, merchant_id)
+    values = _validate_payload(db, entity, payload, row, can_cost, merchant_id)
     for key, value in values.items():
         setattr(row, key, value)  # the auto code is never part of values
     _stamp(row, user_id, created=False)
@@ -705,10 +730,10 @@ def update_item(db: Session, entity: str, item_id: int, payload: dict, user_id, 
 
 
 @_serialize_md_writes
-def delete_item(db: Session, entity: str, item_id: int) -> str | None:
+def delete_item(db: Session, entity: str, item_id: int, *, merchant_id: int | None = None) -> str | None:
     if entity == "md":
         _lock_md_images(db)
-    row = _get(db, entity, item_id)
+    row = _get(db, entity, item_id, merchant_id)
     if is_in_use(db, entity, row):
         raise Conflict("This record is in use and cannot be deleted. Deactivate it instead.")
     if entity == "md":
@@ -717,11 +742,11 @@ def delete_item(db: Session, entity: str, item_id: int) -> str | None:
     db.commit()
 
 
-def lookup_options(db: Session, can_cost: bool = False) -> dict:
+def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | None = None) -> dict:
     def cats1():
         return [
             {"id": r.i_category1_id, "code": r.c_category_code, "name": r.c_category_name, "active": bool(r.b_active)}
-            for r in db.query(Category1).order_by(Category1.i_display_order, Category1.i_category1_id)
+            for r in _scoped_query(db, Category1, merchant_id).order_by(Category1.i_display_order, Category1.i_category1_id)
         ]
 
     return {
@@ -729,16 +754,16 @@ def lookup_options(db: Session, can_cost: bool = False) -> dict:
         "category2": [
             {"id": r.i_category2_id, "category1_id": r.i_category1_id, "code": r.c_category_code,
              "name": r.c_category_name, "active": bool(r.b_active)}
-            for r in db.query(Category2).order_by(Category2.i_display_order, Category2.i_category2_id)
+            for r in _scoped_query(db, Category2, merchant_id).order_by(Category2.i_display_order, Category2.i_category2_id)
         ],
         "category3": [
             {"id": r.i_category3_id, "category1_id": r.i_category1_id, "category2_id": r.i_category2_id,
              "code": r.c_category_code, "name": r.c_category_name, "active": bool(r.b_active)}
-            for r in db.query(Category3).order_by(Category3.i_display_order, Category3.i_category3_id)
+            for r in _scoped_query(db, Category3, merchant_id).order_by(Category3.i_display_order, Category3.i_category3_id)
         ],
         "taxes": [
             {"id": r.i_tax_id, "code": r.c_tax_code, "name": r.c_tax_name, "rate": _dec(r.n_tax_rate), "active": bool(r.b_active)}
-            for r in db.query(Tax).order_by(Tax.c_tax_name)
+            for r in _scoped_query(db, Tax, merchant_id).order_by(Tax.c_tax_name)
         ],
         "can_view_cost": can_cost,
         "price_levels": list(PRICE_LEVELS),

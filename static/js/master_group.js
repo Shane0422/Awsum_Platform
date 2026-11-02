@@ -5,7 +5,7 @@
   if (!root) return;
   const entity = root.dataset.entity;
   const title = root.dataset.title;
-  const BASE = '/platform/api/master-group';
+  const BASE = root.dataset.apiBase;
 
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

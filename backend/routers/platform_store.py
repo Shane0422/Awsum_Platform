@@ -50,7 +50,11 @@ from backend.services.money import format_money
 from backend.services.business_contact import BusinessContactService
 from backend.services.business_code import generate_business_code
 from backend.services.license_email import load_company_branding
-from backend.services.agency_email import build_agency_registration_email
+from backend.services.registration_email import build_registration_email
+from backend.services.organization_users import (
+    get_registration_owner, initial_phone_password, organization_admin_query,
+    organization_user_query, registration_owner_config,
+)
 from backend.services.email_layout import AwsumEmailLayout
 from backend.services.mail_common import EmailConfigurationError, MailDeliveryError, validate_email_address
 from backend.services.system_settings import send_configured_email
@@ -643,7 +647,8 @@ def get_current_user(request: Request, db: Session):
 
 
 def require_platform_admin(user):
-    if user.login_role != 1 or getattr(user, "i_agency_id", None) is not None:
+    if (user.login_role != 1 or getattr(user, "i_agency_id", None) is not None
+            or getattr(user, "i_merchant_id", None) is not None):
         raise HTTPException(status_code=403, detail="Not authorized.")
 
 
@@ -1254,9 +1259,12 @@ def _create_store(request: Request, payload: dict, db: Session, *, image_data: b
         _stamp_created(store, user)
         db.add(store)
         try:
+            db.flush()
+            activation = _activate_organization(db, "STORE", store)
             warning = _commit_store_image(db, store, image_data=image_data)
             storage = AwsumStorageService(db).initialize_after_registration("STORE", next_id)
-            result = {"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq, **storage}
+            result = {"store_id": next_id, "store_code": generated_store_code, "store_seq": generated_seq,
+                      **storage, **activation}
             if image_data is not None:
                 result.update(image_path=store.c_logo_url, image_url=image_url(store.c_logo_url), image_warning=warning)
             return JSONResponse(result)
@@ -1276,8 +1284,7 @@ def _create_store(request: Request, payload: dict, db: Session, *, image_data: b
 
 @router.put("/platform/store/{store_id}")
 def update_store(store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
-    _update_store(store_id, payload, request, db)
-    return JSONResponse({"success": True})
+    return _update_store(store_id, payload, request, db)
 
 
 def _update_store(store_id: int, payload: dict, request: Request, db: Session,
@@ -1286,8 +1293,7 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
     require_platform_admin(user)
 
     store = _get_business_store(db, store_id)
-    if image_data is not None or remove_image:
-        db.refresh(store, with_for_update=True)
+    db.refresh(store, with_for_update=True)
 
     # Bulk-update allowed fields
     for key, value in {
@@ -1387,9 +1393,10 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
 
     _apply_store_license_and_options(db, store, payload, creating=False)
     _stamp_updated(store, user)
+    activation = _activate_organization(db, "STORE", store)
     warning = _commit_store_image(db, store, image_data=image_data, remove_image=remove_image)
     return JSONResponse({"success": True, "image_path": store.c_logo_url,
-                         "image_url": image_url(store.c_logo_url), "image_warning": warning})
+                         "image_url": image_url(store.c_logo_url), "image_warning": warning, **activation})
 
 
 @router.delete("/platform/store/{store_id}")
@@ -2160,37 +2167,51 @@ def _check_agency_lengths(payload: dict) -> None:
             raise HTTPException(status_code=400, detail=f"{key.replace('_', ' ').title()} must be {limit} characters or fewer.")
 
 def _agency_phone_password(phone: object) -> str | None:
-    digits = re.sub(r"[^0-9]", "", str(phone or ""))
-    return f"Awsum@{digits[-4:]}" if len(digits) >= 4 else None
+    return initial_phone_password(phone)
 
 
 def _activate_agency(db: Session, agency: Agency) -> dict:
-    if agency.c_status != "active":
+    return _activate_organization(db, "AGENCY", agency)
+
+
+def _activate_organization(db: Session, owner_type: str, owner) -> dict:
+    _, field, _, _, role_name = registration_owner_config(owner_type)
+    owner_id = getattr(owner, field)
+    label = owner_type.title()
+    if owner.c_status != "active":
         return {}
-    existing = db.query(PlatformUser).filter(PlatformUser.i_agency_id == agency.i_agency_id).first()
+    existing_query = organization_user_query(db, owner_type, owner_id) if owner_type == "AGENCY" else \
+        organization_admin_query(db, owner_type, owner_id)
+    existing = existing_query.first()
     if existing:
-        return {"agency_user_created": False, "login_email": existing.c_email}
-    contact = BusinessContactService(db).get_primary_contact("AGENCY", agency.i_agency_id)
+        return {f"{owner_type.lower()}_user_created": False, "login_email": existing.c_email}
+    contact = BusinessContactService(db).get_primary_contact(owner_type, owner_id)
     if not contact:
-        raise HTTPException(400, "Save the Agency as Inactive, add an active Primary Contact, then activate it.")
+        raise HTTPException(400, f"Save the {label} as Inactive, add an active Primary Contact, then activate it.")
     email = _platform_user_email(contact.c_email)
     first_name, last_name = _platform_user_name(
         {"first_name": contact.c_first_name, "last_name": contact.c_last_name}
     )
-    _require_unique_platform_user_email(db, email, agency_id=agency.i_agency_id)
-    role = db.query(Role).filter(Role.c_name == AGENCY_ADMIN_ROLE_NAME).first()
+    if organization_user_query(db, owner_type, owner_id).filter(
+        func.lower(func.trim(PlatformUser.c_email)) == email,
+    ).first():
+        raise HTTPException(409, f"A {label} User with the Primary Contact Email already exists. Review its Admin Role.")
+    role = db.query(Role).filter(Role.c_name == role_name).first()
     if not role or (role.c_status or "").lower() != "active":
-        raise HTTPException(400, "An active Agency Admin Role is required. Restart after applying the user migration.")
-    password = _agency_phone_password(contact.c_phone) or secrets.token_urlsafe(18)
+        raise HTTPException(400, f"An active {role_name} Role is required. Apply the registration user migration.")
+    password = initial_phone_password(contact.c_phone) or secrets.token_urlsafe(18)
+    scope = {field: owner_id}
+    if owner_type != "STORE":
+        scope["i_store_id"] = ADMIN_STORE_ID
     agency_user = PlatformUser(
-        i_store_id=ADMIN_STORE_ID, i_agency_id=agency.i_agency_id, i_role_id=role.i_role_id,
+        **scope, i_role_id=role.i_role_id,
         c_first_name=first_name, c_last_name=last_name, c_email=email, c_phone=contact.c_phone,
         c_password=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
         c_status="active", i_must_change_password=0,
     )
     db.add(agency_user)
     db.flush()
-    return {"agency_user_created": True, "login_email": email,
+    return {f"{owner_type.lower()}_user_created": True, "login_email": email,
             "temporary_password": password}
 
 
@@ -2379,20 +2400,19 @@ def _update_agent(agency_id: int, payload: dict, request: Request, db: Session,
         **({"image_warning": warning} if image_data is not None or remove_image else {})}))
 
 
-def _agency_registration_email(db: Session, agency_id: int, payload: dict, request: Request):
+def _registration_email(db: Session, owner_type: str, owner_id: int, payload: dict, request: Request):
     from backend.routers.auth import password_matches
 
-    agency = db.get(Agency, agency_id)
-    if not agency or agency.c_status != "active":
-        raise HTTPException(400, "An active Agency is required.")
-    agency_user = db.query(PlatformUser).join(Role, Role.i_role_id == PlatformUser.i_role_id).filter(
-        PlatformUser.i_agency_id == agency_id, Role.c_name == AGENCY_ADMIN_ROLE_NAME,
-    ).order_by(
+    _, _, code_field, name_field, _ = registration_owner_config(owner_type)
+    owner = get_registration_owner(db, owner_type, owner_id)
+    if owner.c_status != "active":
+        raise HTTPException(400, f"An active {owner_type.title()} is required.")
+    agency_user = organization_admin_query(db, owner_type, owner_id).order_by(
         (PlatformUser.c_status == "active").desc(), PlatformUser.i_platform_user_id,
     ).first()
     if not agency_user or agency_user.c_status != "active":
-        raise HTTPException(400, "An active Agency User is required.")
-    contact = BusinessContactService(db).get_primary_contact("AGENCY", agency_id)
+        raise HTTPException(400, f"An active {owner_type.title()} User is required.")
+    contact = BusinessContactService(db).get_primary_contact(owner_type, owner_id)
     if not contact:
         raise HTTPException(400, "No active Primary Contact is registered. Please designate a Primary Contact first.")
     if not (contact.c_email or "").strip():
@@ -2410,22 +2430,29 @@ def _agency_registration_email(db: Session, agency_id: int, payload: dict, reque
         raise HTTPException(400, "The temporary password is no longer valid. Reopen without it to send login information.")
     if not password and agency_user.dt_password_changed is None:
         # The User phone is the creation-time snapshot, not the current Contact phone.
-        candidate = _agency_phone_password(agency_user.c_phone)
+        candidate = initial_phone_password(agency_user.c_phone)
         if candidate and password_matches(agency_user, candidate):
             password = candidate
-    login_url = str(request.base_url).rstrip("/") + f"/login/agency/{agency.c_agency_code}"
+    code = getattr(owner, code_field)
+    login_url = str(request.base_url).rstrip("/") + f"/login/{owner_type.lower()}/{code}"
     company = load_company_branding(db)
-    return build_agency_registration_email(
-        recipient=recipient, company=company, agency_name=agency.c_company_name or agency.c_agency_name,
-        agency_code=agency.c_agency_code, login_email=agency_user.c_email,
+    return build_registration_email(
+        recipient=recipient, company=company, owner_type=owner_type,
+        name=(owner.c_company_name or owner.c_agency_name) if owner_type == "AGENCY" else getattr(owner, name_field),
+        code=code, login_email=agency_user.c_email,
         login_url=login_url, initial_password=password, must_change_password=agency_user.i_must_change_password == 1,
     )
 
 
 @router.post("/platform/agency/{agency_id}/registration-email/preview")
 def preview_agency_registration_email(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return preview_registration_email("AGENCY", agency_id, payload, request, db)
+
+
+@router.post("/platform/registration-email/{owner_type}/{owner_id}/preview")
+def preview_registration_email(owner_type: str, owner_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     require_platform_admin(get_current_user(request, db))
-    message = _agency_registration_email(db, agency_id, payload, request)
+    message = _registration_email(db, owner_type, owner_id, payload, request)
     return _set_no_cache_headers(JSONResponse({
         "html": AwsumEmailLayout.preview_message(message),
         "subject": str(message["Subject"]), "recipient": str(message["To"]),
@@ -2435,15 +2462,22 @@ def preview_agency_registration_email(agency_id: int, payload: dict, request: Re
 
 @router.post("/platform/agency/{agency_id}/registration-email")
 def send_agency_registration_email(agency_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return send_registration_email("AGENCY", agency_id, payload, request, db)
+
+
+@router.post("/platform/registration-email/{owner_type}/{owner_id}")
+def send_registration_email(owner_type: str, owner_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     require_platform_admin(get_current_user(request, db))
-    message = _agency_registration_email(db, agency_id, payload, request)
+    from backend.routers.system_settings import _validate_origin
+    _validate_origin(request)
+    message = _registration_email(db, owner_type, owner_id, payload, request)
     try:
         message_id, _ = send_configured_email(db, message)
     except EmailConfigurationError as exc:
-        logging.getLogger(__name__).warning("Agency registration email configuration failed: %s", exc)
+        logging.getLogger(__name__).warning("%s registration email configuration failed: %s", owner_type, exc)
         raise HTTPException(503, str(exc)) from exc
     except MailDeliveryError as exc:
-        logging.getLogger(__name__).warning("Agency registration email was not accepted: %s", exc)
+        logging.getLogger(__name__).warning("%s registration email was not accepted: %s", owner_type, exc)
         raise HTTPException(502, str(exc)) from exc
     return _set_no_cache_headers(JSONResponse({
         "accepted": True, "recipient": str(message["To"]), "message_id": message_id,
@@ -3632,6 +3666,8 @@ def _require_unique_platform_user_email(
         func.lower(func.trim(PlatformUser.c_email)) == email,
         PlatformUser.i_agency_id == agency_id if agency_id is not None else PlatformUser.i_agency_id.is_(None),
     )
+    if agency_id is None:
+        query = query.filter(PlatformUser.i_merchant_id.is_(None), PlatformUser.i_store_id == ADMIN_STORE_ID)
     if exclude_user_id is not None:
         query = query.filter(PlatformUser.i_platform_user_id != exclude_user_id)
     if query.first():
@@ -3658,6 +3694,7 @@ def _get_platform_user(db: Session, user_id: int) -> PlatformUser:
             PlatformUser.i_platform_user_id == user_id,
             PlatformUser.i_store_id == ADMIN_STORE_ID,
             PlatformUser.i_agency_id.is_(None),
+            PlatformUser.i_merchant_id.is_(None),
         )
         .first()
     )
@@ -3718,7 +3755,8 @@ def list_users(
     require_platform_admin(user)
 
     query = db.query(PlatformUser).filter(
-        PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None)
+        PlatformUser.i_store_id == ADMIN_STORE_ID, PlatformUser.i_agency_id.is_(None),
+        PlatformUser.i_merchant_id.is_(None),
     )
     normalized_status = _normalize_status(status, {"active", "inactive"})
     if status and not normalized_status:
@@ -4247,10 +4285,12 @@ def _create_merchant(payload: dict, request: Request, db: Session, *, image_data
         _stamp_created(item, user)
         db.add(item)
         try:
+            db.flush()
+            activation = _activate_organization(db, "MERCHANT", item)
             warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data)
             db.refresh(item)
             storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_merchant_id)
-            return JSONResponse({"id": item.i_merchant_id, "merchant_code": item.c_merchant_code, **storage,
+            return JSONResponse({"id": item.i_merchant_id, "merchant_code": item.c_merchant_code, **storage, **activation,
                                  **({"image_warning": warning} if image_data is not None else {})})
         except IntegrityError as exc:
             db.rollback()
@@ -4273,7 +4313,7 @@ def _update_merchant(merchant_id: int, payload: dict, request: Request, db: Sess
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    item = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).with_for_update().first()
     if not item:
         raise HTTPException(status_code=404, detail="Merchant not found.")
     if image_data is not None or remove_image:
@@ -4324,11 +4364,12 @@ def _update_merchant(merchant_id: int, payload: dict, request: Request, db: Sess
 
     _stamp_updated(item, user)
     try:
+        activation = _activate_organization(db, "MERCHANT", item)
         warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data, remove_image=remove_image)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
-    return JSONResponse({"success": True, "id": merchant_id,
+    return JSONResponse({"success": True, "id": merchant_id, **activation,
                          **({"image_warning": warning} if image_data is not None or remove_image else {})})
 
 

@@ -62,7 +62,8 @@ class StoreLogoTests(unittest.TestCase):
         self.assertEqual(self.db.get(Store, 2).c_phone, "555-1111")
 
     def test_create_save_uses_existing_store_creation_and_owner_path(self):
-        payload = {"store_name": "New Store", "merchant_id": 1, "installed_by_agency_id": 1}
+        payload = {"store_name": "New Store", "merchant_id": 1, "installed_by_agency_id": 1,
+                   "store_status": "inactive"}
         # Only the existing PostgreSQL ID/code generators and post-commit directory
         # initialization are substituted in this isolated SQLite fixture.
         with patch.object(routes, "_generate_merchant_store_code", return_value=("ST000001", 1)), \
@@ -131,6 +132,7 @@ class OrganizationLogoTests(unittest.TestCase):
         self.db.add(AgencyType(i_agency_type_id=1, c_agency_type_code="TEST", c_agency_type_name="Test"))
         row = self.db.get(Agency, 1)
         row.i_agency_type_id, row.c_status = 1, "inactive"
+        self.db.get(Merchant, 1).c_status = "inactive"
         self.db.commit()
 
     def test_agency_and_merchant_add_edit_replace_remove_with_same_service(self):
@@ -140,7 +142,8 @@ class OrganizationLogoTests(unittest.TestCase):
         self.db.commit()
         for endpoint, model, context, payload, expected in (
             ("agency", Agency, "agency", {"company_name": "New Agency", "agency_type_id": 1, "status": "inactive"}, None),
-            ("merchant", Merchant, "merchant", {"merchant_name": "New Merchant", "primary_agency_id": 1, "business_type": "Tuxedo Rental"}, "MER26A7K3"),
+            ("merchant", Merchant, "merchant", {"merchant_name": "New Merchant", "primary_agency_id": 1,
+                                               "business_type": "Tuxedo Rental", "status": "inactive"}, "MER26A7K3"),
         ):
             with self.subTest(endpoint=endpoint), \
                     patch.object(routes, "_generate_next_merchant_code", return_value="MER26A7K3"), \

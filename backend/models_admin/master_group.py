@@ -14,6 +14,7 @@ class Tax(PlatformBase, AuditMixin):
     __tablename__ = "tb_tax"
 
     i_tax_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
     c_tax_code = Column(String(20), nullable=False, unique=True, index=True)
     c_tax_name = Column(String(100), nullable=False)
     n_tax_rate = Column(Numeric(7, 4), nullable=False, default=0)
@@ -25,6 +26,7 @@ class Category1(PlatformBase, AuditMixin):
     __tablename__ = "tb_category1"
 
     i_category1_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
     c_category_code = Column(String(20), nullable=False, unique=True, index=True)
     c_category_name = Column(String(100), nullable=False)
     i_display_order = Column(Integer, nullable=False, default=100)
@@ -36,6 +38,7 @@ class Category2(PlatformBase, AuditMixin):
     __tablename__ = "tb_category2"
 
     i_category2_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
     i_category1_id = Column(Integer, ForeignKey("tb_category1.i_category1_id"), nullable=False, index=True)
     c_category_code = Column(String(20), nullable=False, unique=True, index=True)
     c_category_name = Column(String(100), nullable=False)
@@ -48,6 +51,7 @@ class Category3(PlatformBase, AuditMixin):
     __tablename__ = "tb_category3"
 
     i_category3_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
     i_category1_id = Column(Integer, ForeignKey("tb_category1.i_category1_id"), nullable=False, index=True)
     i_category2_id = Column(Integer, ForeignKey("tb_category2.i_category2_id"), nullable=False, index=True)
     c_category_code = Column(String(20), nullable=False, unique=True, index=True)

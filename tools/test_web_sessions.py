@@ -124,11 +124,18 @@ class WebSessionTests(unittest.TestCase):
             ("agency", {"agency_id": 1}, ("Test Agency", "Agency")),
         ):
             with self.subTest(context=context), self.factory() as db:
+                if context == "merchant":
+                    db.add(Role(i_role_id=98, c_name="Merchant Admin", c_status="active"))
+                    db.get(Merchant, 1).c_status = "active"
+                    user = db.get(PlatformUser, 3)
+                    user.i_role_id, user.i_merchant_id, user.i_store_id = 98, 1, ADMIN_STORE_ID
+                    db.commit()
                 if context == "agency":
                     db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
                     db.get(Agency, 1).c_status = "active"
                     user = db.get(PlatformUser, 3)
                     user.i_role_id, user.i_agency_id = 99, 1
+                    user.i_merchant_id, user.i_store_id = None, ADMIN_STORE_ID
                     db.commit()
                 token = svc.create_session(db, db.get(PlatformUser, 3), request(), {"scope_type": context, **extra})
                 row = db.query(SessionTbl).filter_by(i_platform_user_id=3, c_status="ACTIVE").one()

@@ -37,7 +37,7 @@
   }
   @media (max-width: 479.98px) { #mgModal .mg-price-row { grid-template-columns: 1fr; } }
 </style>
-<div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}">
+<div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}" data-api-base="{{ mg_api_base | default('/platform/api/master-group', true) }}">
   {% set subtitle %}<p class="mb-0" id="mgSubtitle"></p>{% endset %}
   {% call page_header(mg_title, subtitle) %}
       <div class="btn-group">
@@ -54,14 +54,12 @@
   <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
 
   {% call surface('filter') %}
-      <div class="row g-2">
-        <div class="col-12 col-md-6 col-lg-4">
+      <div class="row g-2 flex-nowrap">
+        <div class="col-6 col-lg-4">
           <label for="mgSearch" class="awsum-list-filter-label">Search</label>
           <input type="search" id="mgSearch" class="form-control" placeholder="Search code or name" aria-label="Search">
         </div>
-  {% endcall %}
-  {% call surface('table') %}
-        <div class="col-6 col-md-3 col-lg-2">
+        <div class="col-3 col-lg-2">
           <label for="mgActiveFilter" class="awsum-list-filter-label">Status</label>
           <select id="mgActiveFilter" class="form-select" aria-label="Status filter">
             <option value="">All status</option>
@@ -69,14 +67,17 @@
             <option value="inactive">Inactive</option>
           </select>
         </div>
-        <div class="col-6 col-md-3 col-lg-2">
+        <div class="col-3 col-lg-2">
           <label for="mgPageSize" class="awsum-list-filter-label">Rows per page</label>
           <select id="mgPageSize" class="form-select" aria-label="Rows per page">
             <option value="10">10 / page</option>
             <option value="20" selected>20 / page</option>
             <option value="50">50 / page</option>
           </select>
-      {% endcall %}
+        </div>
+      </div>
+  {% endcall %}
+  {% call surface('table') %}
       <div class="table-responsive awsum-list-table-wrap">
         <table class="table table-hover mg-table mb-0">
           <thead id="mgHead"></thead>
@@ -91,8 +92,7 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="mgNext">Next</button>
         </div>
       </div>
-    </div>
-  </div>
+  {% endcall %}
 </div>
 
 <div class="modal fade pm-modal{% if mg_entity == 'md' %} pm-modal-lg{% endif %}" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">

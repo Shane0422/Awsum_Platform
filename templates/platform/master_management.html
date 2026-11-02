@@ -5968,6 +5968,7 @@
       <div id="businessContactManager" class="brand-logo-upload-card">
         <div class="brand-logo-upload-head">
           <h6 class="brand-logo-upload-title">Contacts</h6>
+          ${['merchant', 'store'].includes(activeModule) ? '<button type="button" id="btnContactRegistrationEmail" class="btn btn-sm btn-outline-secondary role-action-btn d-none">Send Registration Email</button>' : ''}
           <button type="button" id="btnAddBusinessContact" class="btn btn-sm btn-outline-secondary role-action-btn">+ Add Contact</button>
         </div>
         <div id="businessContactHint" class="brand-logo-hint mb-2"></div>
@@ -6007,6 +6008,7 @@
     col.querySelector('#btnAddBusinessContact').addEventListener('click', () => openContactEditor(null));
     col.querySelector('#btnCancelBusinessContact').addEventListener('click', closeContactEditor);
     col.querySelector('#btnSaveBusinessContact').addEventListener('click', saveBusinessContact);
+    bindRegistrationEmailButton(col.querySelector('#btnContactRegistrationEmail'));
     col.querySelector('#businessContactEditor').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
         event.preventDefault();
@@ -6126,6 +6128,7 @@
   }
 
   async function refreshContactManager() {
+    syncRegistrationEmailButtons();
     if (!document.getElementById('businessContactManager')) return;
     const revision = ++businessContactRevision;
     closeContactEditor();
@@ -6173,10 +6176,16 @@
     document.getElementById('businessContactEditor')?.classList.add('d-none');
   }
 
-  async function runContactAction(action) {
+  const pendingContactActivations = new Set();
+
+  async function runContactAction(action, activatesOrganization = false) {
     const hint = document.getElementById('businessContactHint');
+    const owner = contactOwner();
     try {
       await action();
+      if (activatesOrganization && owner) {
+        pendingContactActivations.add(`${owner.ownerType}:${owner.ownerId}`);
+      }
       if (hint) hint.textContent = '';
       await refreshContactManager();
       return true;
@@ -6212,7 +6221,8 @@
     }
     await runContactAction(() => contactId
       ? contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
-      : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload));
+      : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload),
+      payload.is_primary || businessContacts.some(contact => String(contact.contact_id) === contactId && contact.is_primary));
   }
 
   function setPrimaryBusinessContact(contactId) {
@@ -6222,7 +6232,7 @@
       renderBusinessContacts();
       return;
     }
-    return runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'));
+    return runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'), true);
   }
 
   async function deleteBusinessContact(contact) {
@@ -7577,19 +7587,8 @@
     }
     bindUsDatePickers();
     if (activeModule === 'agency') {
-      document.getElementById('btnAgencyRegistrationEmail').onclick = async (event) => {
-        const button = event.currentTarget;
-        button.disabled = true;
-        const agencyId = selectedMasterId.value;
-        try {
-          await openAgencyRegistrationEmail(agencyId);
-        } catch (error) {
-          alert('Unable to open Registration Email: ' + error.message);
-        } finally {
-          button.disabled = false;
-        }
-      };
-      syncAgencyEmailButton();
+      bindRegistrationEmailButton(document.getElementById('btnAgencyRegistrationEmail'));
+      syncRegistrationEmailButtons();
       refreshOrgLogoPreview();
       refreshContactManager();
     }
@@ -7742,7 +7741,7 @@
     refreshStoreLogoPreview(item);
     refreshContactManager();
     if (activeModule === 'agency') {
-      syncAgencyEmailButton();
+      syncRegistrationEmailButtons();
     }
     updateListCentricActionButtons();
     syncStoreOptionScopes();
@@ -7791,7 +7790,7 @@
     refreshStoreLogoPreview();
     refreshContactManager();
     if (activeModule === 'agency') {
-      syncAgencyEmailButton();
+      syncRegistrationEmailButtons();
     }
     updateListCentricActionButtons();
     syncStoreOptionScopes();
@@ -8075,33 +8074,52 @@
     if (result.storage_warning) alert(result.storage_warning);
   }
 
-  const agencyRegistrationPasswords = new Map();
+  const registrationPasswords = new Map();
 
-  function syncAgencyEmailButton() {
-    const button = document.getElementById('btnAgencyRegistrationEmail');
-    if (!button) return;
-    // Saved Agency actions stay available; Preview/Send checks the current merchant.
-    // List metadata must not prevent resending after merchants change.
+  function syncRegistrationEmailButtons() {
     const saved = Boolean(selectedMasterId.value);
-    document.getElementById(button.id + 'Action').classList.toggle('d-none', !saved);
-    button.disabled = !saved;
-    const reason = document.getElementById(button.id + 'Reason');
-    reason.textContent = '';
-    reason.classList.add('d-none');
-    button.title = '';
+    ['btnAgencyRegistrationEmail', 'btnContactRegistrationEmail'].forEach(id => {
+      const button = document.getElementById(id);
+      if (!button) return;
+      (document.getElementById(id + 'Action') || button).classList.toggle('d-none', !saved);
+      button.disabled = !saved;
+      const reason = document.getElementById(id + 'Reason');
+      if (reason) {
+        reason.textContent = '';
+        reason.classList.add('d-none');
+      }
+      button.title = '';
+    });
   }
 
-  async function openAgencyRegistrationEmail(agencyId) {
-    const endpoint = `${apiBase}/agency/${encodeURIComponent(agencyId)}/registration-email`;
+  function bindRegistrationEmailButton(button) {
+    if (!button) return;
+    button.onclick = async () => {
+      if (savingStoreImage || document.getElementById('businessContactManager')?.inert) return;
+      button.disabled = true;
+      try {
+        await openRegistrationEmail(CONTACT_OWNER_TYPES[activeModule], selectedMasterId.value);
+      } catch (error) {
+        alert('Unable to open Registration Email: ' + error.message);
+      } finally {
+        syncRegistrationEmailButtons();
+      }
+    };
+  }
+
+  async function openRegistrationEmail(ownerType, ownerId) {
+    const endpoint = `${apiBase}/registration-email/${ownerType}/${encodeURIComponent(ownerId)}`;
+    const key = `${ownerType}:${ownerId}`;
+    const ownerLabel = ({AGENCY: 'Agency', MERCHANT: 'Merchant', STORE: 'Store'})[ownerType];
     const requestEmail = async (path, payload) => {
       const response = await fetch(path, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, temporary_password: agencyRegistrationPasswords.get(String(agencyId)) || '' }),
+        body: JSON.stringify({ ...payload, temporary_password: registrationPasswords.get(key) || '' }),
       });
       if (!response.ok) {
         const message = parseApiError(await response.text());
         if (message.startsWith('The temporary password is no longer valid.')) {
-          agencyRegistrationPasswords.delete(String(agencyId));
+          registrationPasswords.delete(key);
         }
         throw new Error(message);
       }
@@ -8116,14 +8134,14 @@
     }
     window.AwsumEmailPreview.open({
       title: 'Send Registration Email',
-      subtitle: 'Agency saved. Review To Email and first-login information before sending.',
+      subtitle: `${ownerLabel} saved. Review To Email and first-login information before sending.`,
       recipient: preview.recipient,
-      recipientNote: 'To Email applies only to this send. Primary Contact Email and Agency User Login Email are never changed.',
+      recipientNote: `To Email applies only to this send. Primary Contact Email and ${ownerLabel} User Login Email are never changed.`,
       subject: preview.subject, message: preview.message, readOnlyContent: true,
       note: 'Password change is optional. Mail-server acceptance is not recipient delivery.',
       preview: (payload) => requestEmail(endpoint + '/preview', payload),
       send: (payload) => requestEmail(endpoint, payload),
-      onAccepted: () => agencyRegistrationPasswords.delete(String(agencyId)),
+      onAccepted: () => registrationPasswords.delete(key),
     });
   }
 
@@ -8132,7 +8150,20 @@
   async function saveItem() {
     if (savingStoreImage || document.getElementById('businessContactManager')?.inert) return false;
     const dirty = isFormDirty();
-    if (!dirty && !(usesPremiumModal() && agencyModalMode === 'create')) {
+    const owner = contactOwner();
+    const activationKey = owner ? `${owner.ownerType}:${owner.ownerId}` : null;
+    const status = document.getElementById('field_store_status') || document.getElementById('field_status');
+    let needsContactActivation = false;
+    if (!dirty && owner && status?.value === 'active') {
+      try {
+        const contacts = await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
+        needsContactActivation = contacts.some(contact => contact.is_primary && contact.status === 'active');
+      } catch (error) {
+        showMasterModalError(error.message);
+        return false;
+      }
+    }
+    if (!dirty && !needsContactActivation && !(usesPremiumModal() && agencyModalMode === 'create')) {
       if (isListCentricModule) {
         closeMasterEditModal();
       }
@@ -8258,8 +8289,8 @@
       lastSavedId = savedId;
       selectedMasterId.value = savedId;
     }
-    if (activeModule === 'agency' && json.agency_user_created) {
-      agencyRegistrationPasswords.set(String(savedId), json.temporary_password);
+    if (CONTACT_OWNER_TYPES[activeModule] && json[`${activeModule}_user_created`]) {
+      registrationPasswords.set(`${CONTACT_OWNER_TYPES[activeModule]}:${savedId}`, json.temporary_password);
     }
 
     if (document.getElementById('businessContactManager')?.pendingContacts) {
@@ -8271,13 +8302,14 @@
         return false;
       }
     }
+    if (activationKey) pendingContactActivations.delete(activationKey);
     await loadList(lastSavedId);
     setBaselineSnapshot();
     updateListCentricActionButtons();
     notifyStorageWarning(json);
     if (json.image_warning) alert(json.image_warning);
-    if (activeModule === 'agency' && json.agency_user_created) {
-      alert('Agency Admin User created.');
+    if (CONTACT_OWNER_TYPES[activeModule] && json[`${activeModule}_user_created`]) {
+      alert(`${({agency: 'Agency', merchant: 'Merchant', store: 'Store'})[activeModule]} Admin User created.`);
     }
     return true;
   }

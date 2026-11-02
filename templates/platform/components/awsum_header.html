@@ -12,10 +12,15 @@
 </svg>
 {%- endmacro %}
 
-{% macro header(agency_portal=false) -%}
-{% set dashboard_url = '/agency/dashboard' if agency_portal else '/platform/dashboard' %}
-{% set settings_url = '/agency/settings' if agency_portal else '/settings' %}
-{% if agency_portal %}
+{% macro header(agency_portal=false, app_navigation=none) -%}
+{% set dashboard_url = app_navigation.dashboard_url if app_navigation else ('/agency/dashboard' if agency_portal else '/platform/dashboard') %}
+{% set settings_url = app_navigation.settings_url if app_navigation else ('/agency/settings' if agency_portal else '/settings') %}
+{% if app_navigation %}
+  {% set items = [('dashboard', 'Dashboard', 'dashboard', dashboard_url, active_page == 'dashboard')] %}
+  {% if app_navigation.master_items %}{% set items = items + [('master-group', 'Master Group', 'master-group', '', false)] %}{% endif %}
+  {% if app_navigation.business %}{% set items = items + [('business', 'Business', 'business', '', false)] %}{% endif %}
+  {% if app_navigation.reports %}{% set items = items + [('reports', 'Reports', 'reports', '', false)] %}{% endif %}
+{% elif agency_portal %}
   {% set items = [
     ('dashboard', 'Dashboard', 'dashboard', dashboard_url, section == 'dashboard'),
     ('merchants', 'Merchants', 'business', '/agency/merchants', section == 'merchants'),
@@ -55,7 +60,7 @@
       </div>
     </div>
   </div>
-  <nav class="platform-navigation" aria-label="{{ 'Agency' if agency_portal else 'Platform' }} navigation">
+  <nav class="platform-navigation" aria-label="{{ app_navigation.scope.title() if app_navigation else ('Agency' if agency_portal else 'Platform') }} navigation">
     <div class="platform-nav-row">
       {% for id, label, icon, url, selected in items %}
         {% if url %}

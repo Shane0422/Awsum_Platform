@@ -181,8 +181,7 @@ def authenticate(request: Request, db: Session, *, allow_password_change=False) 
     ):
         db.rollback()
         raise HTTPException(status_code=401, detail=SESSION_ENDED)
-    if expected_context in {"AGENCY", "PLATFORM"}:
-        login_identity(db, user, payload)
+    login_identity(db, user, payload)
     now = utcnow()
     if (
         row.dt_expires is None or row.dt_expires <= now

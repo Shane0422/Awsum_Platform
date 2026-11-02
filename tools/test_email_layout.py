@@ -4,7 +4,7 @@ import inspect
 import unittest
 from unittest.mock import patch
 
-from backend.services.agency_email import PASSWORD_GUIDANCE, build_agency_registration_email
+from backend.services.registration_email import PASSWORD_GUIDANCE, build_registration_email
 from backend.services.email_layout import AwsumEmailLayout
 from backend.services.license_email import (
     _license_content, build_license_email, render_license_email_html, render_license_email_preview,
@@ -24,7 +24,7 @@ class EmailLayoutTests(unittest.TestCase):
         }
         self.agency_values = {
             "recipient": "recipient@example.com", "company": self.company,
-            "agency_name": "Agency <One>", "agency_code": "AGT00001",
+            "owner_type": "AGENCY", "name": "Agency <One>", "code": "AGT00001",
             "login_email": "login@example.com", "login_url": "https://platform.example.com/login/agency/AGT00001",
             "initial_password": "Awsum@5858",
         }
@@ -45,7 +45,7 @@ class EmailLayoutTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(result.encode()).hexdigest(), expected)
 
     def test_agency_uses_standard_branding_sections_and_sign_in_button(self):
-        message = build_agency_registration_email(**self.agency_values)
+        message = build_registration_email(**self.agency_values)
         body = AwsumEmailLayout.preview_message(message)
         for value in (
             "Welcome to AWSUM Platform", "Agency Registration", "AGENCY INFORMATION", "ACCOUNT INFORMATION",
@@ -61,7 +61,7 @@ class EmailLayoutTests(unittest.TestCase):
         self.assertIn("Login Email: login@example.com", message.get_body(preferencelist=("plain",)).get_content())
 
     def test_resend_without_initial_password_omits_entire_password_row(self):
-        message = build_agency_registration_email(**dict(self.agency_values, initial_password=None))
+        message = build_registration_email(**dict(self.agency_values, initial_password=None))
         body = AwsumEmailLayout.preview_message(message)
         self.assertNotIn("Initial Password", body)
         self.assertNotIn("Awsum@5858", body)
@@ -76,7 +76,7 @@ class EmailLayoutTests(unittest.TestCase):
             license_message = build_license_email(
                 **self.license_values, recipient="license@example.com", subject="License", sender=None,
             )
-            agency_message = build_agency_registration_email(**self.agency_values)
+            agency_message = build_registration_email(**self.agency_values)
             agency_preview = AwsumEmailLayout.preview_message(agency_message)
             self.assertEqual(renderer.call_count, 3)
             self.assertEqual(
@@ -87,8 +87,8 @@ class EmailLayoutTests(unittest.TestCase):
         self.assertEqual(agency_preview, agency_message.get_body(preferencelist=("html",)).get_content())
         self.assertNotIn("style=", inspect.getsource(_license_content))
         self.assertNotIn("<table", inspect.getsource(_license_content))
-        self.assertNotIn("style=", inspect.getsource(build_agency_registration_email))
-        self.assertNotIn("<table", inspect.getsource(build_agency_registration_email))
+        self.assertNotIn("style=", inspect.getsource(build_registration_email))
+        self.assertNotIn("<table", inspect.getsource(build_registration_email))
 
     def test_preview_and_mime_share_html_with_only_logo_transport_difference(self):
         png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -101,7 +101,7 @@ class EmailLayoutTests(unittest.TestCase):
                     preview = render_license_email_preview(**values)
                     self.assertEqual(preview, AwsumEmailLayout.preview_message(message).rstrip("\n"))
                 else:
-                    message = build_agency_registration_email(**dict(self.agency_values, company=company))
+                    message = build_registration_email(**dict(self.agency_values, company=company))
                     preview = AwsumEmailLayout.preview_message(message)
                 sent = message.get_body(preferencelist=("html",)).get_content()
                 self.assertIn('src="cid:', sent)
@@ -114,8 +114,8 @@ class EmailLayoutTests(unittest.TestCase):
                 self.assertNotIn("localhost", sent)
 
     def test_content_escaping_and_button_url_validation_are_common(self):
-        message = build_agency_registration_email(**dict(
-            self.agency_values, agency_name="<script>bad</script>",
+        message = build_registration_email(**dict(
+            self.agency_values, name="<script>bad</script>",
             initial_password='Password<&">', login_url='https://example.com/?next="quoted"&a=1',
         ))
         body = AwsumEmailLayout.preview_message(message)

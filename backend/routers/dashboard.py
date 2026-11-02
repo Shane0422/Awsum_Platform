@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.database.pg_platform import PlatformSessionLocal
-from backend.models_admin.platform_user import PlatformUser
+from backend.models_admin.platform_user import PlatformUser, MERCHANT_ADMIN_ROLE_NAME, STORE_ADMIN_ROLE_NAME
 from backend.models_admin.store import Store
 from backend.models_admin.merchant import Merchant
 from backend.models_admin.business_type import BusinessType
@@ -344,8 +344,11 @@ def _merchant_dashboard_response(request: Request, db: Session, dashboard_type: 
     if redirect_resp:
         return redirect_resp
 
-    if user.login_role not in [2, 3]:
+    role = db.get(Role, user.i_role_id)
+    if user.login_role not in [2, 3] and (not role or role.c_name not in {MERCHANT_ADMIN_ROLE_NAME, STORE_ADMIN_ROLE_NAME, "StoreAdmin", "CustomerAdmin"}):
         return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
+    from backend.services.app_navigation import resolve_app_scope
+    scope = resolve_app_scope(request, db, user)
 
     template_map = {
         "STANDARD": "merchant/dashboard_standard.html",
@@ -356,17 +359,27 @@ def _merchant_dashboard_response(request: Request, db: Session, dashboard_type: 
     template_name = template_map.get((dashboard_type or "").upper(), "merchant/dashboard_standard.html")
 
     brand_info = _resolve_store_brand_info(db, user.login_store)
+    context_type = "store"
+    if user.i_merchant_id is not None:
+        merchant = db.get(Merchant, user.i_merchant_id)
+        brand_info = {
+            "brand_display_name": merchant.c_merchant_name,
+            "merchant_code": merchant.c_merchant_code, "store_code": None,
+        }
+        context_type = "merchant"
 
-    return _set_no_cache_headers(templates.TemplateResponse(template_name, {
+    return _set_no_cache_headers(templates.TemplateResponse(request, template_name, {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,
-        "role": "Store",
+        "role": context_type.title(),
         "login_store": user.login_store,
         "dashboard_type": (dashboard_type or "STANDARD").upper(),
         "active_menu": active_menu,
+        "active_page": "dashboard",
+        "app_navigation": scope.navigation(),
         **get_brand_context(
-            context_type="store",
+            context_type=context_type,
             brand_display_name=brand_info["brand_display_name"],
             merchant_code=brand_info["merchant_code"],
             store_code=brand_info["store_code"],
