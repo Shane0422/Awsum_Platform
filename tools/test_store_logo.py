@@ -9,8 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.models_admin.store import Store
 from backend.models_admin.agency import Agency
 from backend.models_admin.agency_type import AgencyType
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.business_contact import BusinessContact
+from backend.models_admin.business_type import BusinessType
 from backend.routers import platform_store as routes
 from backend.services import images
 from tools import test_image_components as browser, test_master_images
@@ -37,7 +38,7 @@ class StoreLogoTests(unittest.TestCase):
         self.assertEqual(item["image_path"], "/merchant/CLT11001/store/STR00002/images/logo/logo.webp")
         file = images.resolve_image_file(item["image_path"])
         original = file.read_bytes()
-        for endpoint in ("/platform/store/2", "/platform/client/1/stores/2"):
+        for endpoint in ("/platform/store/2", "/platform/merchant/1/stores/2"):
             result = self.client.get(endpoint)
             self.assertEqual(result.status_code, 200, result.text)
             self.assertEqual(result.json()["image_url"], item["image_url"])
@@ -61,11 +62,11 @@ class StoreLogoTests(unittest.TestCase):
         self.assertEqual(self.db.get(Store, 2).c_phone, "555-1111")
 
     def test_create_save_uses_existing_store_creation_and_owner_path(self):
-        payload = {"store_name": "New Store", "client_id": 1, "installed_by_agency_id": 1}
+        payload = {"store_name": "New Store", "merchant_id": 1, "installed_by_agency_id": 1}
         # Only the existing PostgreSQL ID/code generators and post-commit directory
         # initialization are substituted in this isolated SQLite fixture.
-        with patch.object(routes, "_generate_client_store_code", return_value=("ST000001", 1)), \
-                patch.object(routes, "get_next_client_store_id", return_value=3), \
+        with patch.object(routes, "_generate_merchant_store_code", return_value=("ST000001", 1)), \
+                patch.object(routes, "get_next_merchant_store_id", return_value=3), \
                 patch.object(routes.AwsumStorageService, "initialize_after_registration",
                              return_value={"storage_initialized": True}):
             saved = self.client.post("/platform/store/with-image", data={"payload": json.dumps(payload)},
@@ -77,7 +78,7 @@ class StoreLogoTests(unittest.TestCase):
         self.assertTrue(images.resolve_image_file(item["image_path"]).is_file())
         self.db.expire_all()
         record = self.db.get(Store, 3)
-        self.assertEqual((record.c_store_name, record.i_account_id, record.i_installed_by_agency_id),
+        self.assertEqual((record.c_store_name, record.i_merchant_id, record.i_installed_by_agency_id),
                          ("New Store", 1, 1))
 
     def test_invalid_upload_and_failed_commit_preserve_image_and_store(self):
@@ -134,12 +135,15 @@ class OrganizationLogoTests(unittest.TestCase):
 
     def test_agency_and_merchant_add_edit_replace_remove_with_same_service(self):
         self.prepare_agency()
+        self.db.add(BusinessType(i_business_type_id=1, c_business_code="TUXEDO_RENTAL",
+                                 c_name="Tuxedo Rental", c_status="active"))
+        self.db.commit()
         for endpoint, model, context, payload, expected in (
             ("agency", Agency, "agency", {"company_name": "New Agency", "agency_type_id": 1, "status": "inactive"}, None),
-            ("client", Account, "merchant", {"client_name": "New Merchant"}, "CLT11002"),
+            ("merchant", Merchant, "merchant", {"merchant_name": "New Merchant", "primary_agency_id": 1, "business_type": "Tuxedo Rental"}, "MER26A7K3"),
         ):
             with self.subTest(endpoint=endpoint), \
-                    patch.object(routes, "_generate_next_client_code", return_value="CLT11002"), \
+                    patch.object(routes, "_generate_next_merchant_code", return_value="MER26A7K3"), \
                     patch.object(routes.AwsumStorageService, "initialize_after_registration",
                                  return_value={"storage_initialized": True}), \
                     patch.object(images, "process_image", wraps=images.process_image) as processor:
@@ -169,7 +173,7 @@ class OrganizationLogoTests(unittest.TestCase):
                 self.assertEqual(replaced.status_code, 200, replaced.text)
                 self.assertEqual(replaced.json()["image_path"], path)
                 self.assertNotEqual(file.read_bytes(), original)
-                listed = self.client.get("/platform/agencies" if endpoint == "agency" else "/platform/clients")
+                listed = self.client.get("/platform/agencies" if endpoint == "agency" else "/platform/merchants")
                 self.assertEqual(listed.status_code, 200, listed.text)
                 self.assertEqual(next(row for row in listed.json() if row["id"] == identity)["image_url"],
                                  replaced.json()["image_url"])
@@ -181,7 +185,7 @@ class OrganizationLogoTests(unittest.TestCase):
 
     def test_invalid_images_and_failed_saves_preserve_both_fields_and_files(self):
         self.prepare_agency()
-        for endpoint, model in (("agency", Agency), ("client", Account)):
+        for endpoint, model in (("agency", Agency), ("merchant", Merchant)):
             with self.subTest(endpoint=endpoint):
                 initial = self.client.put(f"/platform/{endpoint}/1/with-image", data={"payload": "{}"},
                                           files={"image": ("initial.png", self.blue, "image/png")})
@@ -197,7 +201,7 @@ class OrganizationLogoTests(unittest.TestCase):
                     with self.factory() as db:
                         actor = db.get(routes.PlatformUser, 1)
                         actor.login_role = 1
-                        function = routes._update_agent if endpoint == "agency" else routes._update_client
+                        function = routes._update_agent if endpoint == "agency" else routes._update_merchant
                         old_memo = db.get(model, 1).c_memo
                         with patch.object(routes, "get_current_user", return_value=actor), \
                                 patch.object(db, "commit", side_effect=SQLAlchemyError("Commit failed")):
@@ -211,7 +215,7 @@ class OrganizationLogoTests(unittest.TestCase):
                                                  data={"payload": "{}"},
                                                  headers={"Origin": "https://foreign.example.test"}).status_code, 403)
         self.sign_in(3)
-        for endpoint in ("agency", "client"):
+        for endpoint in ("agency", "merchant"):
             self.assertEqual(self.client.put(f"/platform/{endpoint}/1/with-image",
                                              data={"payload": "{}"}).status_code, 403)
 
@@ -250,24 +254,24 @@ class StoreLogoBrowserTests(unittest.TestCase):
 
     def test_both_store_forms_use_common_pending_preview_cancel_and_save(self):
         source = (browser.ROOT / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
-        for old_id in ("btnUploadStoreLogo", "btnResetStoreLogo", "btnUploadClientStoreLogo",
-                       "btnResetClientStoreLogo", "btnBrowseClientStoreLogoFile"):
+        for old_id in ("btnUploadStoreLogo", "btnResetStoreLogo", "btnUploadMerchantStoreLogo",
+                       "btnResetMerchantStoreLogo", "btnBrowseMerchantStoreLogoFile"):
             self.assertNotIn(old_id, source)
         functions = "\n".join(re.search(
             rf"  (?:async )?function {name}\([^\n]*\) \{{.*?\n  \}}", source, re.DOTALL,
         ).group() for name in (
             "getStoreLogoUploader", "getOrganizationLogoUploader", "refreshOrgLogoPreview",
-            "refreshStoreLogoPreview", "refreshClientStoreModalLogoPreview",
-            "snapshotFormState", "isFormDirty", "getItemUrl", "saveItem", "saveClientLinkedStore",
+            "refreshStoreLogoPreview", "refreshMerchantStoreModalLogoPreview",
+            "snapshotFormState", "isFormDirty", "getItemUrl", "saveItem", "saveMerchantLinkedStore",
         ))
         setup = r"""
 let activeModule='store';
-const apiBase='/platform',config={fields:[],get endpoint(){return activeModule==='account'?'client':activeModule;}},isListCentricModule=true;
+const apiBase='/platform',config={fields:[],get endpoint(){return activeModule;}},isListCentricModule=true;
 const selectedMasterId={value:'2'},formBaselineSnapshot={id:'2'};
-let savingStoreImage=false,agencyModalMode='edit',lastSavedId=null,selectedClientStoreId=2,suppressClientStoreRowClickUntil=0;
-const getFormData=()=>({store_name:'Changed Store'}),collectClientStorePayload=getFormData;
+let savingStoreImage=false,agencyModalMode='edit',lastSavedId=null,selectedMerchantStoreId=2,suppressMerchantStoreRowClickUntil=0;
+const getFormData=()=>({store_name:'Changed Store'}),collectMerchantStorePayload=getFormData;
 const usesPremiumModal=()=>true;
-const getSelectedClientContext=()=>({clientId:1,isReadyForStoreRegistration:true});
+const getSelectedMerchantContext=()=>({merchantId:1,isReadyForStoreRegistration:true});
 const validateStoreForm=()=>[],jumpToStoreErrorTab=()=>{},closeMasterEditModal=()=>{};
 const validateAgencyForm=validateStoreForm,validateMerchantForm=validateStoreForm;
 let error='',requests=[],failNext=false;
@@ -284,11 +288,11 @@ window.fetch=async(path,options)=>{
 const canvas=document.createElement('canvas');canvas.width=20;canvas.height=30;
 canvas.getContext('2d').fillRect(0,0,20,30);
 const saved=canvas.toDataURL(),item={image_url:saved,image_path:'/existing-logo.webp'};
-const loadList=async()=>refreshStoreLogoPreview(item),loadClientStoresForSelectedClient=async()=>{};
+const loadList=async()=>refreshStoreLogoPreview(item),loadMerchantStoresForSelectedMerchant=async()=>{};
 const selectedOriginalRecord=item;
-const resetClientStoreEditor=()=>refreshClientStoreModalLogoPreview();
-const setClientStoreFormVisible=()=>{};
-document.getElementById('uploader').innerHTML='<div class="modal" id="master"><div id="storeLogoUploader"></div><div id="agencyLogoUploader"></div><div id="merchantLogoUploader"></div><div id="clientLogoUploader"></div></div><div class="modal" id="linked"><div id="clientStoreLogoUploader"></div></div>';
+const resetMerchantStoreEditor=()=>refreshMerchantStoreModalLogoPreview();
+const setMerchantStoreFormVisible=()=>{};
+document.getElementById('uploader').innerHTML='<div class="modal" id="master"><div id="storeLogoUploader"></div><div id="agencyLogoUploader"></div><div id="merchantLogoUploader"></div><div id="merchantLogoUploader"></div></div><div class="modal" id="linked"><div id="merchantStoreLogoUploader"></div></div>';
 """
         setup += functions
         setup += r"""
@@ -296,13 +300,13 @@ const assert=(ok,message)=>{if(!ok)throw Error(message);};
 const tick=()=>new Promise(resolve=>setTimeout(resolve,25));
 const wait=async check=>{for(let i=0;i<200;i++){if(check())return;await tick();}throw Error('Image processing timeout');};
 (async()=>{
- for(const module of ['store','agency','merchant','account']){
+ for(const module of ['store','agency','merchant']){
  activeModule=module;
  for(const linked of (module==='store'?[false,true]:[false])){
-  const prefix=linked?'clientStoreLogo':module==='account'?'clientLogo':module+'Logo';
+  const prefix=linked?'merchantStoreLogo':module==='merchant'?'merchantLogo':module+'Logo';
   const uploader=linked||module==='store'?getStoreLogoUploader(linked):getOrganizationLogoUploader();
-  const refresh=()=>linked?refreshClientStoreModalLogoPreview(item):refreshStoreLogoPreview(item);
-  const save=()=>linked?saveClientLinkedStore():saveItem();
+  const refresh=()=>linked?refreshMerchantStoreModalLogoPreview(item):refreshStoreLogoPreview(item);
+  const save=()=>linked?saveMerchantLinkedStore():saveItem();
   const modal=document.getElementById(linked?'linked':'master');
   refresh();await tick();
   assert(document.getElementById(prefix+'Preview').src===saved,'existing logo shown');
@@ -337,7 +341,7 @@ const wait=async check=>{for(let i=0;i<200;i++){if(check())return;await tick();}
   await save();await tick();
   assert(requests.length===2,'retry saves once');
   const request=requests.at(-1);
-  const endpoint=module==='agency'?'agency':module==='store'?'store':'client';
+  const endpoint=module==='agency'?'agency':module==='store'?'store':'merchant';
   assert(request.path==='/platform/'+endpoint+'/2/with-image'&&request.method==='PUT','shared multipart adapter');
   assert(request.body.get('image') instanceof File&&request.body.get('remove_image')==='false','common multipart replacement');
   assert(JSON.parse(request.body.get('payload')).store_name==='Changed Store','existing Store fields saved together');

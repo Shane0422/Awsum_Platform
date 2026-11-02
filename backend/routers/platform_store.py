@@ -18,13 +18,13 @@ from typing import Optional
 import csv
 import io
 
-from backend.database.pg_platform import PlatformSessionLocal, get_next_account_store_id
+from backend.database.pg_platform import PlatformSessionLocal, get_next_merchant_store_id
 from backend.core.data_paths import PROJECT_ROOT
 from backend.models_admin.store import Store
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
 from backend.models_admin.platform_user import PlatformUser, AGENCY_ADMIN_ROLE_NAME
-from backend.models_admin.account import Account, Client  # Client for legacy compatibility
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.device import Device
 from backend.models_admin.device_log import DeviceLog
@@ -68,7 +68,6 @@ DEVICE_ACTIVATION_TTL_MINUTES = 30
 PLATFORM_USER_ROLE_NAMES = {"superadmin", "admin", "staff"}
 MAX_BCRYPT_PASSWORD_BYTES = 72
 
-get_next_client_store_id = get_next_account_store_id
 
 
 def get_db():
@@ -295,7 +294,7 @@ def _serialize_invoice(invoice: Invoice, line_count: Optional[int] = None, lines
         "invoice_id": invoice.i_invoice_id,
         "invoice_no": invoice.c_invoice_no,
         "subscription_id": invoice.i_subscription_id,
-        "account_id": invoice.i_account_id,
+        "merchant_id": invoice.i_merchant_id,
         "store_id": invoice.i_store_id,
         "invoice_date": str(invoice.dt_invoice_date) if invoice.dt_invoice_date else None,
         "due_date": str(invoice.dt_due_date) if invoice.dt_due_date else None,
@@ -318,7 +317,7 @@ def _serialize_contract(contract: Contract) -> dict:
                 "id": contract.i_contract_id,
                 "contract_id": contract.i_contract_id,
                 "subscription_id": contract.i_subscription_id,
-                "account_id": contract.i_account_id,
+                "merchant_id": contract.i_merchant_id,
                 "store_id": contract.i_store_id,
                 "pricing_plan_id": contract.i_pricing_plan_id,
                 "contract_start_date": str(contract.dt_contract_start_date) if contract.dt_contract_start_date else None,
@@ -357,7 +356,7 @@ def _contract_html(contract: Contract) -> str:
             <body>
                 <h2>Service Contract #{contract.i_contract_id}</h2>
                 <div class='meta'>
-                    Subscription: {contract.i_subscription_id} | Account: {contract.i_account_id} | Store: {contract.i_store_id} | Status: {contract.c_status}
+                    Subscription: {contract.i_subscription_id} | Merchant: {contract.i_merchant_id} | Store: {contract.i_store_id} | Status: {contract.c_status}
                     <br />
                     Period: {contract.dt_contract_start_date or '-'} ~ {contract.dt_contract_end_date or '-'}
                 </div>
@@ -394,7 +393,7 @@ def _build_contract_pdf_bytes(contract: Contract, context: ReportPrintContext) -
                 y -= step
 
         write_line(f"Service Contract #{contract.i_contract_id}", bold=True, step=22)
-        write_line(f"Subscription: {contract.i_subscription_id}   Account: {contract.i_account_id}   Store: {contract.i_store_id}")
+        write_line(f"Subscription: {contract.i_subscription_id}   Merchant: {contract.i_merchant_id}   Store: {contract.i_store_id}")
         write_line(f"Status: {contract.c_status}")
         write_line(f"Period: {contract.dt_contract_start_date or '-'} ~ {contract.dt_contract_end_date or '-'}")
         y -= 8
@@ -414,7 +413,7 @@ def _build_contract_pdf_bytes(contract: Contract, context: ReportPrintContext) -
         return buffer.read()
 
 
-def _generate_client_store_code(db: Session) -> tuple[str, int]:
+def _generate_merchant_store_code(db: Session) -> tuple[str, int]:
     code = generate_business_code(db, "STORE")
     max_seq = db.query(func.max(Store.i_store_seq)).scalar()
     return code, int(max_seq or 0) + 1
@@ -430,7 +429,7 @@ def _get_business_store(db: Session, store_id: int) -> Store:
     return store
 
 
-def _generate_next_client_code(db: Session) -> str:
+def _generate_next_merchant_code(db: Session) -> str:
     return generate_business_code(db, "MERCHANT")
 
 
@@ -440,7 +439,7 @@ def _generate_agency_code(db: Session) -> str:
 
 def _save_organization_logo(db, organization, file, context, code, *, merchant_code=None):
     from backend.services import images
-    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_client_id", "STORE": "i_store_id"}[context]
+    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_merchant_id", "STORE": "i_store_id"}[context]
     owner = AwsumStorageService(db).resolve_owner(context, getattr(organization, identity_field))
     if owner != images.AwsumPathResolver.for_owner(context, code, merchant_code=merchant_code):
         raise HTTPException(409, "Logo owner does not match the saved organization relationship.")
@@ -457,7 +456,7 @@ def _save_organization_logo(db, organization, file, context, code, *, merchant_c
 
 
 def _remove_organization_logo(db, organization, context):
-    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_client_id", "STORE": "i_store_id"}[context]
+    identity_field = {"AGENCY": "i_agency_id", "MERCHANT": "i_merchant_id", "STORE": "i_store_id"}[context]
     owner = AwsumStorageService(db).resolve_owner(context, getattr(organization, identity_field))
     with image_operation_lock(owner, "logo"):
         db.refresh(organization, with_for_update=True)
@@ -469,20 +468,20 @@ def _remove_organization_logo(db, organization, context):
                          "image_warning": warning})
 
 
-def _ensure_client_store(db: Session, client_id: int, store_id: int) -> tuple[Client, Store]:
-    client = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found.")
+def _ensure_merchant_store(db: Session, merchant_id: int, store_id: int) -> tuple[Merchant, Store]:
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
 
     store = (
         db.query(Store)
-        .filter(Store.i_store_id == store_id, Store.i_account_id == client_id)
+        .filter(Store.i_store_id == store_id, Store.i_merchant_id == merchant_id)
         .first()
     )
     if not store:
-        raise HTTPException(status_code=404, detail="Store not found for this client.")
+        raise HTTPException(status_code=404, detail="Store not found for this merchant.")
 
-    return client, store
+    return merchant, store
 
 
 def _generate_store_device_code(db: Session, store_id: int) -> str:
@@ -589,8 +588,8 @@ def _resolve_request_ip(request: Optional[Request], payload: Optional[dict] = No
     explicit_ip = str(payload.get("ip_address") or payload.get("last_ip") or "").strip()
     if explicit_ip:
         return explicit_ip
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None)
+    merchant = getattr(request, "merchant", None)
+    host = getattr(merchant, "host", None)
     host = str(host or "").strip()
     return host or None
 
@@ -686,7 +685,7 @@ STORE_LIST_MAX_PAGE_SIZE = 100
 
 def _store_list_order_by(sort_key: str, merchant, agency):
     """Order-by clauses for the store list; Store ID is always the final tie-breaker."""
-    merchant_name = func.lower(merchant.c_client_name)
+    merchant_name = func.lower(merchant.c_merchant_name)
     store_name = func.lower(Store.c_store_name)
     agency_name = func.lower(agency.c_agency_name)
     if sort_key == "merchant_asc":
@@ -718,7 +717,7 @@ def list_stores(
     operation_type: Optional[str] = None,
     channel_type: Optional[str] = None,
     device_type: Optional[str] = None,
-    client_id: Optional[int] = None,
+    merchant_id: Optional[int] = None,
     agency_id: Optional[int] = None,
     sort: Optional[str] = None,
     page: Optional[int] = Query(None, ge=1),
@@ -768,11 +767,11 @@ def list_stores(
     if grid_mode and sort_key not in STORE_LIST_SORT_OPTIONS:
         raise HTTPException(status_code=400, detail="Invalid sort option.")
 
-    merchant_alias = aliased(Account)
+    merchant_alias = aliased(Merchant)
     agency_alias = aliased(Agency)
     query = (
         db.query(Store)
-        .outerjoin(merchant_alias, merchant_alias.i_client_id == Store.i_account_id)
+        .outerjoin(merchant_alias, merchant_alias.i_merchant_id == Store.i_merchant_id)
         .outerjoin(agency_alias, agency_alias.i_agency_id == Store.i_installed_by_agency_id)
         .filter(Store.i_store_id != ADMIN_STORE_ID)
     )
@@ -798,9 +797,9 @@ def list_stores(
                     agency_alias.c_agency_name.ilike(term),
                     agency_alias.c_agency_code.ilike(term),
                     agency_alias.c_agency_code.ilike(code_term),
-                    merchant_alias.c_client_name.ilike(term),
-                    merchant_alias.c_client_code.ilike(term),
-                    merchant_alias.c_client_code.ilike(code_term),
+                    merchant_alias.c_merchant_name.ilike(term),
+                    merchant_alias.c_merchant_code.ilike(term),
+                    merchant_alias.c_merchant_code.ilike(code_term),
                     Store.c_store_name.ilike(term),
                     Store.c_store_code.ilike(term),
                     Store.c_store_code.ilike(code_term),
@@ -817,8 +816,8 @@ def list_stores(
                 )
             )
 
-    if client_id is not None:
-        query = query.filter(Store.i_account_id == client_id)
+    if merchant_id is not None:
+        query = query.filter(Store.i_merchant_id == merchant_id)
 
     if agency_id is not None:
         query = query.filter(Store.i_installed_by_agency_id == agency_id)
@@ -859,7 +858,7 @@ def list_stores(
     results = []
     for s in stores:
         bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == s.i_business_type).first()
-        client = db.query(Client).filter(Client.i_account_id == s.i_account_id).first() if s.i_account_id else None
+        merchant = db.query(Merchant).filter(Merchant.i_merchant_id == s.i_merchant_id).first() if s.i_merchant_id else None
         store_agency = db.query(Agency).filter(Agency.i_agency_id == s.i_installed_by_agency_id).first() if s.i_installed_by_agency_id else None
         results.append({
             "store_id": s.i_store_id,
@@ -868,9 +867,9 @@ def list_stores(
             "image_path": s.c_logo_url,
             "image_url": image_url(s.c_logo_url),
             "store_name": s.c_store_name,
-            "client_id": s.i_account_id,
-            "client_name": client.c_account_name if client else None,
-            "client_code": client.c_client_code if client else None,
+            "merchant_id": s.i_merchant_id,
+            "merchant_name": merchant.c_merchant_name if merchant else None,
+            "merchant_code": merchant.c_merchant_code if merchant else None,
             "is_test": s.c_is_test,
             "dashboard_type": s.c_dashboard_type,
             "business_type": bt.c_name if bt else None,
@@ -927,7 +926,7 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
     store = _get_business_store(db, store_id)
 
     bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
-    client = db.query(Client).filter(Client.i_account_id == store.i_account_id).first() if store.i_account_id else None
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first() if store.i_merchant_id else None
     store_agency = db.query(Agency).filter(Agency.i_agency_id == store.i_installed_by_agency_id).first() if store.i_installed_by_agency_id else None
 
     data = {
@@ -937,9 +936,9 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
         "image_path": store.c_logo_url,
         "image_url": image_url(store.c_logo_url),
         "store_name": store.c_store_name,
-        "client_id": store.i_account_id,
-        "client_name": client.c_account_name if client else None,
-        "client_code": client.c_client_code if client else None,
+        "merchant_id": store.i_merchant_id,
+        "merchant_name": merchant.c_merchant_name if merchant else None,
+        "merchant_code": merchant.c_merchant_code if merchant else None,
         "is_test": store.c_is_test,
         "dashboard_type": store.c_dashboard_type,
         "business_type": bt.c_name if bt else None,
@@ -987,9 +986,9 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
     return _set_no_cache_headers(JSONResponse(data))
 
 
-@router.post("/platform/client/{client_id}/logo")
-def upload_client_logo(
-    client_id: int,
+@router.post("/platform/merchant/{merchant_id}/logo")
+def upload_merchant_logo(
+    merchant_id: int,
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -997,13 +996,13 @@ def upload_client_logo(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    client = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found.")
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
 
     from backend.routers.system_settings import _validate_origin
     _validate_origin(request)
-    return _save_organization_logo(db, client, file, "MERCHANT", client.c_client_code)
+    return _save_organization_logo(db, merchant, file, "MERCHANT", merchant.c_merchant_code)
 
 
 @router.post("/platform/store/{store_id}/logo")
@@ -1019,30 +1018,30 @@ def upload_store_logo(
     store = db.query(Store).filter(Store.i_store_id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found.")
-    if not store.i_account_id:
-        raise HTTPException(status_code=400, detail="Store must be linked to a Client before uploading a logo.")
+    if not store.i_merchant_id:
+        raise HTTPException(status_code=400, detail="Store must be linked to a Merchant before uploading a logo.")
 
-    client = db.query(Client).filter(Client.i_account_id == store.i_account_id).first()
-    if not client:
-        raise HTTPException(status_code=400, detail="Linked Client not found.")
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=400, detail="Linked Merchant not found.")
 
     from backend.routers.system_settings import _validate_origin
     _validate_origin(request)
-    return _save_organization_logo(db, store, file, "STORE", store.c_store_code, merchant_code=client.c_client_code)
+    return _save_organization_logo(db, store, file, "STORE", store.c_store_code, merchant_code=merchant.c_merchant_code)
 
 
-@router.delete("/platform/client/{client_id}/logo")
-def reset_client_logo(client_id: int, request: Request, db: Session = Depends(get_db)):
+@router.delete("/platform/merchant/{merchant_id}/logo")
+def reset_merchant_logo(merchant_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    client = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found")
 
     from backend.routers.system_settings import _validate_origin
     _validate_origin(request)
-    return _remove_organization_logo(db, client, "MERCHANT")
+    return _remove_organization_logo(db, merchant, "MERCHANT")
 
 
 @router.delete("/platform/store/{store_id}/logo")
@@ -1053,12 +1052,12 @@ def reset_store_logo(store_id: int, request: Request, db: Session = Depends(get_
     store = db.query(Store).filter(Store.i_store_id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found.")
-    if not store.i_account_id:
-        raise HTTPException(status_code=400, detail="Store must be linked to a Client before resetting a logo.")
+    if not store.i_merchant_id:
+        raise HTTPException(status_code=400, detail="Store must be linked to a Merchant before resetting a logo.")
 
-    client = db.query(Client).filter(Client.i_account_id == store.i_account_id).first()
-    if not client:
-        raise HTTPException(status_code=400, detail="Linked Client not found.")
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=400, detail="Linked Merchant not found.")
 
     from backend.routers.system_settings import _validate_origin
     _validate_origin(request)
@@ -1179,33 +1178,33 @@ def _create_store(request: Request, payload: dict, db: Session, *, image_data: b
     if not store_name:
         raise HTTPException(status_code=400, detail="Store name is required.")
 
-    client_id_raw = payload.get("client_id")
-    client_id = _parse_optional_int(client_id_raw, "client_id")
-    if client_id is None:
+    merchant_id_raw = payload.get("merchant_id")
+    merchant_id = _parse_optional_int(merchant_id_raw, "merchant_id")
+    if merchant_id is None:
         raise HTTPException(status_code=400, detail="Merchant is required.")
 
-    client = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not client:
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    if not merchant:
         raise HTTPException(status_code=400, detail="Selected Merchant does not exist.")
 
     agency_id_new = _parse_optional_int(payload.get("installed_by_agency_id"), "installed_by_agency_id")
-    # The legacy Accounts > Stores tab has no Agency field, so it stays optional there.
+    # The Merchant > Stores tab has no Agency field, so it stays optional there.
     if agency_id_new is None and not payload.get("_agency_optional"):
         raise HTTPException(status_code=400, detail="Agency is required.")
     if agency_id_new is not None and not db.query(Agency.i_agency_id).filter(Agency.i_agency_id == agency_id_new).first():
         raise HTTPException(status_code=400, detail="Selected Agency does not exist.")
 
     for _ in range(5):
-        generated_store_code, generated_seq = _generate_client_store_code(db)
+        generated_store_code, generated_seq = _generate_merchant_store_code(db)
 
-        next_id = get_next_client_store_id(db)
+        next_id = get_next_merchant_store_id(db)
 
         store = Store(
             i_store_id=next_id,
             i_store_seq=generated_seq,
             c_store_code=generated_store_code,
             c_store_name=store_name,
-            i_account_id=client_id,
+            i_merchant_id=merchant_id,
             c_contact_name=payload.get("contact_name"),
             c_owner_name=payload.get("owner_name"),
             c_address_line1=payload.get("address_line1") or payload.get("address"),
@@ -1358,23 +1357,23 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
             raise HTTPException(status_code=400, detail="Notes is too long.")
         store.c_notes = notes_val or None
 
-    if "client_id" in payload:
-        client_id_raw = payload.get("client_id")
-        client_id = _parse_optional_int(client_id_raw, "client_id")
-        if client_id is None:
+    if "merchant_id" in payload:
+        merchant_id_raw = payload.get("merchant_id")
+        merchant_id = _parse_optional_int(merchant_id_raw, "merchant_id")
+        if merchant_id is None:
             raise HTTPException(status_code=400, detail="Merchant cannot be empty.")
-        client = db.query(Client).filter(Client.i_account_id == client_id).first()
-        if not client:
+        merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+        if not merchant:
             raise HTTPException(status_code=400, detail="Selected Merchant does not exist.")
-        if store.i_account_id != client.i_account_id:
+        if store.i_merchant_id != merchant.i_merchant_id:
             from backend.services.paths import AwsumPathResolver, resource_storage_path
             from backend.services import images
-            previous_merchant = db.get(Client, store.i_account_id)
+            previous_merchant = db.get(Merchant, store.i_merchant_id)
             if store.c_logo_url or store.c_db_path:
                 raise HTTPException(409, "Store has owned resources. Use a reviewed resource transfer before changing its Merchant.")
             if previous_merchant:
                 try:
-                    old_owner = AwsumPathResolver("STORE", merchant_code=previous_merchant.c_client_code,
+                    old_owner = AwsumPathResolver("STORE", merchant_code=previous_merchant.c_merchant_code,
                                                   store_code=store.c_store_code)
                 except ValueError as exc:
                     raise HTTPException(409, "Store owner requires review before transfer.") from exc
@@ -1384,7 +1383,7 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
                 )
                 if any(root.is_dir() and any(file.is_file() for file in root.rglob("*")) for root in roots):
                     raise HTTPException(409, "Store has image/data files. Transfer resources before changing its Merchant.")
-        store.i_account_id = client.i_account_id
+        store.i_merchant_id = merchant.i_merchant_id
 
     _apply_store_license_and_options(db, store, payload, creating=False)
     _stamp_updated(store, user)
@@ -1409,18 +1408,18 @@ def delete_store(store_id: int, request: Request, db: Session = Depends(get_db))
     return JSONResponse({"success": True})
 
 
-@router.get("/platform/client/{client_id}/stores")
-def list_client_stores(client_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/platform/merchant/{merchant_id}/stores")
+def list_merchant_stores(merchant_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    client = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found.")
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
 
     stores = (
         db.query(Store)
-        .filter(Store.i_account_id == client_id)
+        .filter(Store.i_merchant_id == merchant_id)
         .order_by(Store.i_store_id)
         .all()
     )
@@ -1433,9 +1432,9 @@ def list_client_stores(client_id: int, request: Request, db: Session = Depends(g
             "store_seq": s.i_store_seq,
             "store_code": s.c_store_code,
             "store_name": s.c_store_name,
-            "client_id": s.i_account_id,
-            "client_name": client.c_account_name,
-            "client_code": client.c_client_code,
+            "merchant_id": s.i_merchant_id,
+            "merchant_name": merchant.c_merchant_name,
+            "merchant_code": merchant.c_merchant_code,
             "business_type": bt.c_name if bt else None,
             "operation_type": s.c_operation_type,
             "status": s.c_status,
@@ -1462,12 +1461,12 @@ def list_client_stores(client_id: int, request: Request, db: Session = Depends(g
     return _set_no_cache_headers(JSONResponse(results))
 
 
-@router.get("/platform/client/{client_id}/stores/{store_id}")
-def get_client_store(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/platform/merchant/{merchant_id}/stores/{store_id}")
+def get_merchant_store(merchant_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    client, store = _ensure_client_store(db, client_id, store_id)
+    merchant, store = _ensure_merchant_store(db, merchant_id, store_id)
     bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
 
     data = {
@@ -1477,9 +1476,9 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
         "image_path": store.c_logo_url,
         "image_url": image_url(store.c_logo_url),
         "store_name": store.c_store_name,
-        "client_id": store.i_account_id,
-        "client_name": client.c_account_name,
-        "client_code": client.c_client_code,
+        "merchant_id": store.i_merchant_id,
+        "merchant_name": merchant.c_merchant_name,
+        "merchant_code": merchant.c_merchant_code,
         "business_type": bt.c_name if bt else None,
         "operation_type": store.c_operation_type,
         "store_purpose": store.c_operation_type,
@@ -1512,38 +1511,38 @@ def get_client_store(client_id: int, store_id: int, request: Request, db: Sessio
     return _set_no_cache_headers(JSONResponse(data))
 
 
-@router.post("/platform/client/{client_id}/stores")
-def create_client_store(client_id: int, request: Request, payload: dict, db: Session = Depends(get_db)):
+@router.post("/platform/merchant/{merchant_id}/stores")
+def create_merchant_store(merchant_id: int, request: Request, payload: dict, db: Session = Depends(get_db)):
     payload = dict(payload or {})
-    payload["client_id"] = client_id
+    payload["merchant_id"] = merchant_id
     payload["_agency_optional"] = True
     return create_store(request, payload, db)
 
 
-@router.put("/platform/client/{client_id}/stores/{store_id}")
-def update_client_store(client_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.put("/platform/merchant/{merchant_id}/stores/{store_id}")
+def update_merchant_store(merchant_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     payload = dict(payload or {})
-    payload.pop("client_id", None)
+    payload.pop("merchant_id", None)
     return update_store(store_id, payload, request, db)
 
 
-@router.delete("/platform/client/{client_id}/stores/{store_id}")
-def delete_client_store(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+@router.delete("/platform/merchant/{merchant_id}/stores/{store_id}")
+def delete_merchant_store(merchant_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
     return delete_store(store_id, request, db)
 
 
-@router.get("/platform/client/{client_id}/stores/{store_id}/devices")
-def list_store_devices(client_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/platform/merchant/{merchant_id}/stores/{store_id}/devices")
+def list_store_devices(merchant_id: int, store_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     devices = (
         db.query(Device)
@@ -1568,11 +1567,11 @@ def list_store_devices(client_id: int, store_id: int, request: Request, db: Sess
     ]))
 
 
-@router.get("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
-def get_store_device_detail(client_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/platform/merchant/{merchant_id}/stores/{store_id}/devices/{device_id}")
+def get_store_device_detail(merchant_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     device = (
         db.query(Device)
@@ -1597,11 +1596,11 @@ def get_store_device_detail(client_id: int, store_id: int, device_id: int, reque
     }))
 
 
-@router.post("/platform/client/{client_id}/stores/{store_id}/devices")
-def create_store_device(client_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.post("/platform/merchant/{merchant_id}/stores/{store_id}/devices")
+def create_store_device(merchant_id: int, store_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     device_name = str(payload.get("device_name") or "").strip()
     if not device_name:
@@ -1666,11 +1665,11 @@ def create_store_device(client_id: int, store_id: int, payload: dict, request: R
     return JSONResponse(_serialize_device(device, license_obj, installed_agent))
 
 
-@router.put("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
-def update_store_device(client_id: int, store_id: int, device_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.put("/platform/merchant/{merchant_id}/stores/{store_id}/devices/{device_id}")
+def update_store_device(merchant_id: int, store_id: int, device_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     device = (
         db.query(Device)
@@ -1765,11 +1764,11 @@ def update_store_device(client_id: int, store_id: int, device_id: int, payload: 
     return JSONResponse(_serialize_device(device, license_obj, installed_agent))
 
 
-@router.delete("/platform/client/{client_id}/stores/{store_id}/devices/{device_id}")
-def delete_store_device(client_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
+@router.delete("/platform/merchant/{merchant_id}/stores/{store_id}/devices/{device_id}")
+def delete_store_device(merchant_id: int, store_id: int, device_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
-    _ensure_client_store(db, client_id, store_id)
+    _ensure_merchant_store(db, merchant_id, store_id)
 
     device = (
         db.query(Device)
@@ -2201,14 +2200,14 @@ def create_agent(payload: dict, request: Request, db: Session = Depends(get_db))
 
 
 def _commit_organization_image(
-    db: Session, item: Agency | Client, context: str, *,
+    db: Session, item: Agency | Merchant, context: str, *,
     image_data: bytes | None = None, remove_image: bool = False,
 ) -> str | None:
     if image_data is None and not remove_image:
         db.commit()
         return None
     db.flush()
-    identity = item.i_agency_id if context == "AGENCY" else item.i_account_id
+    identity = item.i_agency_id if context == "AGENCY" else item.i_merchant_id
     owner = AwsumStorageService(db).resolve_owner(context, identity)
     with image_operation_lock(owner, "logo"):
         return commit_entity_image(db, item, owner, "logo", category="logo",
@@ -2218,8 +2217,8 @@ def _commit_organization_image(
 
 @router.post("/platform/agency/with-image")
 @router.put("/platform/agency/{record_id}/with-image")
-@router.post("/platform/client/with-image")
-@router.put("/platform/client/{record_id}/with-image")
+@router.post("/platform/merchant/with-image")
+@router.put("/platform/merchant/{record_id}/with-image")
 def save_organization_with_image(
     request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
     remove_image: bool = Form(False), record_id: int | None = None,
@@ -2231,7 +2230,7 @@ def save_organization_with_image(
     if request.method == "POST" and record_id is not None:
         raise HTTPException(422, "Record ID cannot be supplied when creating an organization.")
     agency = request.url.path.startswith("/platform/agency/")
-    model, key = (Agency, Agency.i_agency_id) if agency else (Client, Client.i_account_id)
+    model, key = (Agency, Agency.i_agency_id) if agency else (Merchant, Merchant.i_merchant_id)
     if record_id is not None and not db.query(model).filter(key == record_id).first():
         raise HTTPException(404, "Organization not found.")
     values, data = image_mutation_form(payload, remove_image, image)
@@ -2239,8 +2238,8 @@ def save_organization_with_image(
         response = (_create_agent(values, request, db, image_data=data) if record_id is None else
                     _update_agent(record_id, values, request, db, image_data=data, remove_image=remove_image))
     else:
-        response = (_create_client(values, request, db, image_data=data) if record_id is None else
-                    _update_client(record_id, values, request, db, image_data=data, remove_image=remove_image))
+        response = (_create_merchant(values, request, db, image_data=data) if record_id is None else
+                    _update_merchant(record_id, values, request, db, image_data=data, remove_image=remove_image))
     result = json.loads(response.body)
     item = db.query(model).filter(key == (record_id or result["id"])).one()
     result.update(image_path=item.c_logo_url, image_url=image_url(item.c_logo_url))
@@ -2497,17 +2496,17 @@ def list_licenses(
     items = query.order_by(License.i_license_id.desc()).all()
 
     store_ids = [item.i_store_id for item in items if item.i_store_id is not None]
-    client_ids = [item.i_client_id for item in items if item.i_client_id is not None]
+    merchant_ids = [item.i_merchant_id for item in items if item.i_merchant_id is not None]
     agency_ids = [item.i_agency_id for item in items if item.i_agency_id is not None]
 
     store_map = {
         row.i_store_id: row.c_store_name
         for row in db.query(Store).filter(Store.i_store_id.in_(store_ids)).all()
     } if store_ids else {}
-    client_map = {
-        row.i_client_id: row.c_client_name
-        for row in db.query(Client).filter(Client.i_client_id.in_(client_ids)).all()
-    } if client_ids else {}
+    merchant_map = {
+        row.i_merchant_id: row.c_merchant_name
+        for row in db.query(Merchant).filter(Merchant.i_merchant_id.in_(merchant_ids)).all()
+    } if merchant_ids else {}
     agency_map = {
         row.i_agency_id: row.c_agency_name
         for row in db.query(Agency).filter(Agency.i_agency_id.in_(agency_ids)).all()
@@ -2521,8 +2520,8 @@ def list_licenses(
             "license_type": item.c_license_type,
             "store_id": item.i_store_id,
             "store_name": store_map.get(item.i_store_id),
-            "client_id": item.i_client_id,
-            "client_name": client_map.get(item.i_client_id),
+            "merchant_id": item.i_merchant_id,
+            "merchant_name": merchant_map.get(item.i_merchant_id),
             "agency_id": item.i_agency_id,
             "agent_name": agency_map.get(item.i_agency_id),
             "max_devices": item.i_max_devices,
@@ -2555,11 +2554,11 @@ def create_license(payload: dict, request: Request, db: Session = Depends(get_db
     if not store:
         raise HTTPException(status_code=400, detail="Invalid store_id")
 
-    client_id = _parse_optional_int(payload.get("client_id"), "client_id")
-    if client_id is not None:
-        client = db.query(Client).filter(Client.i_client_id == client_id).first()
-        if not client:
-            raise HTTPException(status_code=400, detail="Invalid client_id")
+    merchant_id = _parse_optional_int(payload.get("merchant_id"), "merchant_id")
+    if merchant_id is not None:
+        merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+        if not merchant:
+            raise HTTPException(status_code=400, detail="Invalid merchant_id")
 
     agency_id = _parse_optional_int(payload.get("agency_id"), "agency_id")
     if agency_id is not None:
@@ -2572,7 +2571,7 @@ def create_license(payload: dict, request: Request, db: Session = Depends(get_db
         c_plan_name=str(payload.get("plan_name") or "").strip() or None,
         c_license_type=str(payload.get("license_type") or "").strip() or None,
         i_store_id=store_id,
-        i_client_id=client_id,
+        i_merchant_id=merchant_id,
         i_agency_id=agency_id,
         i_max_devices=_parse_optional_int(payload.get("max_devices"), "max_devices"),
         i_max_users=_parse_optional_int(payload.get("max_users"), "max_users"),
@@ -2622,13 +2621,13 @@ def update_license(license_id: int, payload: dict, request: Request, db: Session
         if not store:
             raise HTTPException(status_code=400, detail="Invalid store_id")
         item.i_store_id = store_id
-    if "client_id" in payload:
-        client_id = _parse_optional_int(payload.get("client_id"), "client_id")
-        if client_id is not None:
-            client = db.query(Client).filter(Client.i_client_id == client_id).first()
-            if not client:
-                raise HTTPException(status_code=400, detail="Invalid client_id")
-        item.i_client_id = client_id
+    if "merchant_id" in payload:
+        merchant_id = _parse_optional_int(payload.get("merchant_id"), "merchant_id")
+        if merchant_id is not None:
+            merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+            if not merchant:
+                raise HTTPException(status_code=400, detail="Invalid merchant_id")
+        item.i_merchant_id = merchant_id
     if "agency_id" in payload:
         agency_id = _parse_optional_int(payload.get("agency_id"), "agency_id")
         if agency_id is not None:
@@ -2712,17 +2711,17 @@ def list_payment_methods(
         )
 
     items = query.order_by(PaymentMethod.i_payment_id.desc()).all()
-    client_ids = [item.i_client_id for item in items if item.i_client_id is not None]
-    client_map = {
-        row.i_client_id: row.c_client_name
-        for row in db.query(Client).filter(Client.i_client_id.in_(client_ids)).all()
-    } if client_ids else {}
+    merchant_ids = [item.i_merchant_id for item in items if item.i_merchant_id is not None]
+    merchant_map = {
+        row.i_merchant_id: row.c_merchant_name
+        for row in db.query(Merchant).filter(Merchant.i_merchant_id.in_(merchant_ids)).all()
+    } if merchant_ids else {}
 
     return JSONResponse([
         {
             "id": item.i_payment_id,
-            "client_id": item.i_client_id,
-            "client_name": client_map.get(item.i_client_id),
+            "merchant_id": item.i_merchant_id,
+            "merchant_name": merchant_map.get(item.i_merchant_id),
             "payment_type": item.c_payment_type,
             "card_token": item.c_card_token,
             "bank_account": item.c_bank_account,
@@ -2743,14 +2742,14 @@ def create_payment_method(payload: dict, request: Request, db: Session = Depends
     if not payment_type:
         raise HTTPException(status_code=400, detail="payment_type is required")
 
-    client_id = _parse_optional_int(payload.get("client_id"), "client_id")
-    if client_id is not None:
-        client = db.query(Client).filter(Client.i_client_id == client_id).first()
-        if not client:
-            raise HTTPException(status_code=400, detail="Invalid client_id")
+    merchant_id = _parse_optional_int(payload.get("merchant_id"), "merchant_id")
+    if merchant_id is not None:
+        merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+        if not merchant:
+            raise HTTPException(status_code=400, detail="Invalid merchant_id")
 
     item = PaymentMethod(
-        i_client_id=client_id,
+        i_merchant_id=merchant_id,
         c_payment_type=payment_type,
         c_card_token=str(payload.get("card_token") or "").strip() or None,
         c_bank_account=str(payload.get("bank_account") or "").strip() or None,
@@ -2773,13 +2772,13 @@ def update_payment_method(payment_id: int, payload: dict, request: Request, db: 
     if not item:
         raise HTTPException(status_code=404, detail="Payment method not found")
 
-    if "client_id" in payload:
-        client_id = _parse_optional_int(payload.get("client_id"), "client_id")
-        if client_id is not None:
-            client = db.query(Client).filter(Client.i_client_id == client_id).first()
-            if not client:
-                raise HTTPException(status_code=400, detail="Invalid client_id")
-        item.i_client_id = client_id
+    if "merchant_id" in payload:
+        merchant_id = _parse_optional_int(payload.get("merchant_id"), "merchant_id")
+        if merchant_id is not None:
+            merchant = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
+            if not merchant:
+                raise HTTPException(status_code=400, detail="Invalid merchant_id")
+        item.i_merchant_id = merchant_id
     if "payment_type" in payload:
         payment_type = str(payload.get("payment_type") or "").strip()
         if not payment_type:
@@ -2815,11 +2814,11 @@ def delete_payment_method(payment_id: int, request: Request, db: Session = Depen
 
 
 @router.get("/platform/store-next-id")
-def next_client_store_id(request: Request, db: Session = Depends(get_db)):
+def next_merchant_store_id(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    next_code, next_seq = _generate_client_store_code(db)
+    next_code, next_seq = _generate_merchant_store_code(db)
     return JSONResponse({"next_store_code": next_code, "next_store_seq": next_seq})
 
 
@@ -3299,7 +3298,7 @@ def list_contracts(
             or_(
                 cast(Contract.i_contract_id, String).ilike(term),
                 cast(Contract.i_subscription_id, String).ilike(term),
-                cast(Contract.i_account_id, String).ilike(term),
+                cast(Contract.i_merchant_id, String).ilike(term),
                 cast(Contract.i_store_id, String).ilike(term),
                 Contract.c_status.ilike(term),
             )
@@ -3379,10 +3378,10 @@ def download_contract_pdf(contract_id: int, request: Request, db: Session = Depe
     from backend.services.paths import AwsumPathResolver, validate_owner
     from backend.services.resource_storage import write_data
     store = db.get(Store, contract.i_store_id)
-    merchant = db.get(Client, contract.i_account_id)
-    if store is None or merchant is None or store.i_account_id != merchant.i_client_id:
+    merchant = db.get(Merchant, contract.i_merchant_id)
+    if store is None or merchant is None or store.i_merchant_id != merchant.i_merchant_id:
         raise HTTPException(409, "Contract Store does not belong to its Merchant.")
-    owner = AwsumPathResolver("STORE", merchant_code=merchant.c_client_code, store_code=store.c_store_code)
+    owner = AwsumPathResolver("STORE", merchant_code=merchant.c_merchant_code, store_code=store.c_store_code)
     validate_owner(db, owner)
     file_name = f"contract_{contract.i_contract_id}.pdf"
     logical = owner.get_data_path("common", f"contract-{contract.i_contract_id}-{uuid4().hex}.pdf")
@@ -3507,7 +3506,7 @@ def download_invoice_html(invoice_id: int, request: Request, db: Session = Depen
         <div class='meta'>
           Invoice Date: {invoice.dt_invoice_date} &nbsp;|&nbsp; Due Date: {invoice.dt_due_date or '-'} &nbsp;|&nbsp; Status: {invoice.c_status}
           <br/>
-          Subscription: {invoice.i_subscription_id} &nbsp;|&nbsp; Account: {invoice.i_account_id} &nbsp;|&nbsp; Store: {invoice.i_store_id}
+          Subscription: {invoice.i_subscription_id} &nbsp;|&nbsp; Merchant: {invoice.i_merchant_id} &nbsp;|&nbsp; Store: {invoice.i_store_id}
         </div>
         <table>
           <thead>
@@ -3690,7 +3689,7 @@ def _guard_platform_user_change(
     next_role: Role | None,
 ) -> None:
     if target.i_platform_user_id == actor.i_platform_user_id and next_status == "inactive":
-        raise HTTPException(status_code=400, detail="You cannot deactivate your own Platform User account.")
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own Platform User merchant.")
 
     current_role = db.query(Role).filter(Role.i_role_id == target.i_role_id).first() if target.i_role_id else None
     is_active_superadmin = (
@@ -3942,111 +3941,17 @@ def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
     return JSONResponse({"success": True, "status": target.c_status})
 
 
-# Clients
+# Merchants
 
-@router.get("/platform/clients")
-def list_clients(
-    request: Request,
-    db: Session = Depends(get_db),
-    search: Optional[str] = Query(None, alias="q"),
-    status: Optional[str] = None,
-):
+
+
+@router.get("/platform/merchants-tree/data")
+def list_merchants_tree_data(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(Client)
-
-    normalized_status = _normalize_status(status, {"active", "inactive"})
-    if normalized_status:
-        query = query.filter(Client.c_status == normalized_status)
-
-    if search:
-        term = f"%{search.strip()}%"
-        code_term = f"%{search.strip().replace('_', '')}%"
-        query = query.filter(
-            or_(
-                Client.c_client_code.ilike(term),
-                Client.c_client_code.ilike(code_term),
-                Client.c_account_name.ilike(term),
-                Client.c_first_name.ilike(term),
-                Client.c_last_name.ilike(term),
-                Client.c_email.ilike(term),
-                Client.c_phone.ilike(term),
-                Client.c_address_line1.ilike(term),
-            )
-        )
-
-    items = query.order_by(Client.i_account_id).all()
-
-    bt_name_map = {
-        row.i_business_type_id: row.c_name
-        for row in db.query(BusinessType).all()
-    }
-
-    client_business_map: dict[int, str | None] = {}
-    client_store_rows = (
-        db.query(Store.i_account_id, Store.i_business_type)
-        .filter(Store.i_account_id.is_not(None))
-        .order_by(Store.i_account_id.asc(), Store.i_store_id.asc())
-        .all()
-    )
-    for account_id, business_type_id in client_store_rows:
-        if account_id in client_business_map:
-            continue
-        if business_type_id is None:
-            client_business_map[account_id] = None
-            continue
-        client_business_map[account_id] = bt_name_map.get(business_type_id)
-
-    agent_name_map = {
-        row.i_agency_id: (row.c_contact_name or row.c_agency_name)
-        for row in db.query(Agency).all()
-    }
-
-    return JSONResponse([
-        {
-            "id": i.i_account_id,
-            "image_path": i.c_logo_url,
-            "image_url": image_url(i.c_logo_url),
-            "account_id": i.i_account_id,
-            "account_code": i.c_client_code,
-            "c_account_code": i.c_client_code,  # legacy
-            "account_name": i.c_account_name,
-            "client_name": i.c_account_name,  # legacy
-            "business_type": (
-                bt_name_map.get(i.i_business_type)
-                if getattr(i, "i_business_type", None)
-                else client_business_map.get(i.i_account_id)
-            ),
-            "channel_type": i.c_channel_type,
-            "i_agency_id": i.i_agency_id,
-            "primary_agency_id": i.i_agency_id,
-            "primary_agency_name": agent_name_map.get(i.i_agency_id),
-            "first_name": i.c_first_name,
-            "last_name": i.c_last_name,
-            "email": i.c_email,
-            "phone": i.c_phone,
-            "address": i.c_address_line1,
-            "address_line1": i.c_address_line1,
-            "address_line2": i.c_address_line2,
-            "city": i.c_city,
-            "state": i.c_state,
-            "zip": i.c_zip,
-            "country": i.c_country,
-            "memo": i.c_memo,
-            "status": i.c_status,
-        }
-        for i in items
-    ])
-
-
-@router.get("/platform/accounts-tree/data")
-def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
-
-    accounts = db.query(Client).order_by(Client.i_account_id.asc()).all()
-    if not accounts:
+    merchants = db.query(Merchant).order_by(Merchant.i_merchant_id.asc()).all()
+    if not merchants:
         return _set_no_cache_headers(JSONResponse([]))
 
     business_type_map = {
@@ -4059,15 +3964,15 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
         for row in db.query(Agency).all()
     }
 
-    account_ids = [account.i_account_id for account in accounts]
+    merchant_ids = [merchant.i_merchant_id for merchant in merchants]
     stores = (
         db.query(Store)
-        .filter(Store.i_account_id.in_(account_ids))
-        .order_by(Store.i_account_id.asc(), Store.i_store_id.asc())
+        .filter(Store.i_merchant_id.in_(merchant_ids))
+        .order_by(Store.i_merchant_id.asc(), Store.i_store_id.asc())
         .all()
     )
 
-    stores_by_account_id: dict[int, list[dict]] = defaultdict(list)
+    stores_by_merchant_id: dict[int, list[dict]] = defaultdict(list)
     store_ids = [store.i_store_id for store in stores]
 
     devices_by_store_id: dict[int, list[dict]] = defaultdict(list)
@@ -4096,12 +4001,12 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
 
     for store in stores:
         store_agency = agency_map.get(store.i_installed_by_agency_id)
-        stores_by_account_id[store.i_account_id].append({
+        stores_by_merchant_id[store.i_merchant_id].append({
             "store_id": store.i_store_id,
             "store_seq": store.i_store_seq,
             "store_code": store.c_store_code,
             "store_name": store.c_store_name,
-            "client_id": store.i_account_id,
+            "merchant_id": store.i_merchant_id,
             "dashboard_type": store.c_dashboard_type,
             "business_type": business_type_map.get(store.i_business_type),
             "operation_type": store.c_operation_type,
@@ -4128,245 +4033,66 @@ def list_accounts_tree_data(request: Request, db: Session = Depends(get_db)):
         })
 
     result = []
-    for account in accounts:
+    for merchant in merchants:
         result.append({
-            "id": account.i_account_id,
-            "account_id": account.i_account_id,
-            "account_code": account.c_client_code,
-            "c_account_code": account.c_client_code,
-            "account_name": account.c_account_name,
-            "client_name": account.c_account_name,
-            "business_type": business_type_map.get(account.i_business_type),
-            "channel_type": account.c_channel_type,
-            "i_agency_id": account.i_agency_id,
-            "primary_agency_id": account.i_agency_id,
-            "primary_agency_name": (agency_map.get(account.i_agency_id).c_contact_name or agency_map.get(account.i_agency_id).c_agency_name) if agency_map.get(account.i_agency_id) else None,
-            "first_name": account.c_first_name,
-            "last_name": account.c_last_name,
-            "email": account.c_email,
-            "phone": account.c_phone,
-            "address": account.c_address_line1,
-            "address_line1": account.c_address_line1,
-            "address_line2": account.c_address_line2,
-            "city": account.c_city,
-            "state": account.c_state,
-            "zip": account.c_zip,
-            "country": account.c_country,
-            "memo": account.c_memo,
-            "status": account.c_status,
-            "stores": stores_by_account_id.get(account.i_account_id, []),
+            "id": merchant.i_merchant_id,
+            "merchant_id": merchant.i_merchant_id,
+            "merchant_code": merchant.c_merchant_code,
+            "merchant_name": merchant.c_merchant_name,
+            "business_type": business_type_map.get(merchant.i_business_type),
+            "channel_type": merchant.c_channel_type,
+            "i_agency_id": merchant.i_agency_id,
+            "primary_agency_id": merchant.i_agency_id,
+            "primary_agency_name": (agency_map.get(merchant.i_agency_id).c_contact_name or agency_map.get(merchant.i_agency_id).c_agency_name) if agency_map.get(merchant.i_agency_id) else None,
+            "first_name": merchant.c_first_name,
+            "last_name": merchant.c_last_name,
+            "email": merchant.c_email,
+            "phone": merchant.c_phone,
+            "address": merchant.c_address_line1,
+            "address_line1": merchant.c_address_line1,
+            "address_line2": merchant.c_address_line2,
+            "city": merchant.c_city,
+            "state": merchant.c_state,
+            "zip": merchant.c_zip,
+            "country": merchant.c_country,
+            "memo": merchant.c_memo,
+            "status": merchant.c_status,
+            "stores": stores_by_merchant_id.get(merchant.i_merchant_id, []),
         })
 
     return _set_no_cache_headers(JSONResponse(result))
 
 
-@router.post("/platform/client")
-def create_client(payload: dict, request: Request, db: Session = Depends(get_db)):
-    return _create_client(payload, request, db)
 
 
-def _create_client(payload: dict, request: Request, db: Session, *, image_data: bytes | None = None):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
-
-    client_name = (payload.get("client_name") or "").strip()
-    if not client_name:
-        raise HTTPException(status_code=400, detail="client_name is required")
-
-    requested_bt_name = (payload.get("business_type") or "").strip()
-    target_bt_id = None
-    if requested_bt_name:
-        bt_obj = db.query(BusinessType).filter(BusinessType.c_name == requested_bt_name).first()
-        if not bt_obj:
-            raise HTTPException(status_code=400, detail="invalid business_type")
-        target_bt_id = bt_obj.i_business_type_id
-
-    primary_agency_raw = payload.get("primary_agency_id") if "primary_agency_id" in payload else payload.get("i_agency_id")
-    primary_agency_id = _parse_optional_int(primary_agency_raw, "primary_agency_id")
-    if primary_agency_id is not None:
-        primary_agency = db.query(Agency).filter(Agency.i_agency_id == primary_agency_id).first()
-        if not primary_agency:
-            raise HTTPException(status_code=400, detail="invalid primary_agency_id")
-
-    address_line1 = (
-        payload.get("address_line1")
-        or payload.get("address")
-        or payload.get("c_address_line1")
-    )
-
-    for _ in range(5):
-        generated_client_code = _generate_next_client_code(db)
-
-        item = Client(
-            c_client_code=generated_client_code,
-            c_account_name=client_name,
-            i_business_type=target_bt_id,
-            i_agency_id=primary_agency_id,
-            c_channel_type=payload.get("channel_type"),
-            c_first_name=payload.get("first_name"),
-            c_last_name=payload.get("last_name"),
-            c_email=payload.get("email"),
-            c_phone=payload.get("phone"),
-            c_address_line1=address_line1,
-            c_address_line2=payload.get("address_line2"),
-            c_city=payload.get("city"),
-            c_state=payload.get("state"),
-            c_zip=payload.get("zip"),
-            c_country=_normalize_country(payload.get("country")),
-            c_memo=payload.get("memo"),
-            c_status=_normalize_status(payload.get("status"), {"active", "inactive"}) or "active",
-        )
-        _stamp_created(item, user)
-        db.add(item)
-
-        try:
-            warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data)
-            db.refresh(item)
-            storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_account_id)
-            return JSONResponse({"id": item.i_account_id, "c_client_code": item.c_client_code, **storage,
-                                 **({"image_warning": warning} if image_data is not None else {})})
-        except IntegrityError as exc:
-            db.rollback()
-            lowered = str(exc).lower()
-            if (
-                "c_client_code" in lowered
-                or "uq_tb_client_c_client_code" in lowered
-                or "tb_client_c_client_code_key" in lowered
-            ):
-                continue
-            if "c_client_name" in lowered or "tb_client_c_client_name_key" in lowered:
-                raise HTTPException(status_code=409, detail="client_name already exists")
-            raise
-
-    raise HTTPException(status_code=409, detail="failed to generate unique client_code")
 
 
-@router.put("/platform/client/{client_id}")
-def update_client(client_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
-    return _update_client(client_id, payload, request, db)
 
 
-def _update_client(client_id: int, payload: dict, request: Request, db: Session,
-                    *, image_data: bytes | None = None, remove_image: bool = False):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
-
-    item = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Client not found")
-    if image_data is not None or remove_image:
-        db.refresh(item, with_for_update=True)
-
-    if "client_name" in payload:
-        client_name = (payload.get("client_name") or "").strip()
-        if not client_name:
-            raise HTTPException(status_code=400, detail="client_name is required")
-        item.c_account_name = client_name
-    if "first_name" in payload:
-        item.c_first_name = payload.get("first_name")
-    if "last_name" in payload:
-        item.c_last_name = payload.get("last_name")
-    if "email" in payload:
-        item.c_email = payload.get("email")
-    if "phone" in payload:
-        item.c_phone = payload.get("phone")
-    if "address_line1" in payload or "address" in payload or "c_address_line1" in payload:
-        item.c_address_line1 = (
-            payload.get("address_line1")
-            or payload.get("address")
-            or payload.get("c_address_line1")
-        )
-    if "address_line2" in payload:
-        item.c_address_line2 = payload.get("address_line2")
-    if "city" in payload:
-        item.c_city = payload.get("city")
-    if "state" in payload:
-        item.c_state = payload.get("state")
-    if "zip" in payload:
-        item.c_zip = payload.get("zip")
-    if "country" in payload:
-        item.c_country = _normalize_country(payload.get("country"))
-    if "memo" in payload:
-        item.c_memo = payload.get("memo")
-    if "status" in payload:
-        item.c_status = _normalize_status(payload.get("status"), {"active", "inactive"})
-    if "channel_type" in payload:
-        item.c_channel_type = payload.get("channel_type") or None
-    if "primary_agency_id" in payload or "i_agency_id" in payload:
-        primary_agency_raw = payload.get("primary_agency_id") if "primary_agency_id" in payload else payload.get("i_agency_id")
-        primary_agency_id = _parse_optional_int(primary_agency_raw, "primary_agency_id")
-        if primary_agency_id is not None:
-            primary_agency = db.query(Agency).filter(Agency.i_agency_id == primary_agency_id).first()
-            if not primary_agency:
-                raise HTTPException(status_code=400, detail="invalid primary_agency_id")
-        item.i_agency_id = primary_agency_id
-
-    if "business_type" in payload:
-        requested_bt_name = (payload.get("business_type") or "").strip()
-        target_bt_id = None
-        if requested_bt_name:
-            bt_obj = db.query(BusinessType).filter(BusinessType.c_name == requested_bt_name).first()
-            if not bt_obj:
-                raise HTTPException(status_code=400, detail="invalid business_type")
-            target_bt_id = bt_obj.i_business_type_id
-
-        item.i_business_type = target_bt_id
-
-        linked_stores = db.query(Store).filter(Store.i_account_id == item.i_account_id).all()
-        for linked_store in linked_stores:
-            linked_store.i_business_type = target_bt_id
-            _stamp_updated(linked_store, user)
-
-    _stamp_updated(item, user)
-    try:
-        warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data, remove_image=remove_image)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="client_name already exists")
-
-    return JSONResponse({"success": True,
-                         **({"image_warning": warning} if image_data is not None or remove_image else {})})
 
 
-@router.delete("/platform/client/{client_id}")
-def delete_client(client_id: int, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
-
-    item = db.query(Client).filter(Client.i_account_id == client_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Client not found")
-
-    item.c_status = "inactive"
-    _stamp_updated(item, user)
-    db.commit()
-    return JSONResponse({"success": True})
 
 
-# Merchants (backed by the existing tb_client table; no schema change)
+# Merchants (backed by the existing tb_merchant table; no schema change)
 
 MERCHANT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
 MERCHANT_TEXT_LIMITS = {
     "first_name": 120, "last_name": 120, "email": 255, "phone": 50,
     "address_line1": 255, "address_line2": 255, "city": 120, "state": 120, "zip": 20, "country": 120, "website": 1000, "notes": 5000, "timezone": 64,
     }
-def _generate_next_merchant_code(db: Session) -> str:
-    return generate_business_code(db, "MERCHANT")
-
-
 def _merchant_agency_label(agency: Optional[Agency]) -> str:
     if not agency:
         return ""
     return f"{agency.c_agency_code} - {agency.c_company_name or agency.c_agency_name}"
 
 
-def _serialize_merchant(item: Client, agency_map: dict, bt_name_map: dict) -> dict:
+def _serialize_merchant(item: Merchant, agency_map: dict, bt_name_map: dict) -> dict:
     return {
-        "id": item.i_account_id,
+        "id": item.i_merchant_id,
         "image_path": item.c_logo_url,
         "image_url": image_url(item.c_logo_url),
-        "merchant_code": item.c_client_code,
-        "merchant_name": item.c_account_name,
+        "merchant_code": item.c_merchant_code,
+        "merchant_name": item.c_merchant_name,
         "primary_agency_id": str(item.i_agency_id) if item.i_agency_id is not None else "",
         "primary_agency_name": _merchant_agency_label(agency_map.get(item.i_agency_id)),
         "business_type": bt_name_map.get(item.i_business_type) or "",
@@ -4448,33 +4174,37 @@ def list_merchants(
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    query = db.query(Client)
+    query = db.query(Merchant)
     normalized_status = _normalize_status(status, {"active", "inactive"})
     if normalized_status:
-        query = query.filter(Client.c_status == normalized_status)
+        query = query.filter(Merchant.c_status == normalized_status)
     if search and search.strip():
         term = f"%{search.strip()}%"
         code_term = f"%{search.strip().replace('_', '')}%"
         query = query.filter(
             or_(
-                Client.c_client_code.ilike(term),
-                Client.c_client_code.ilike(code_term),
-                Client.c_client_name.ilike(term),
-                Client.c_first_name.ilike(term),
-                Client.c_last_name.ilike(term),
-                Client.c_email.ilike(term),
-                Client.c_phone.ilike(term),
+                Merchant.c_merchant_code.ilike(term),
+                Merchant.c_merchant_code.ilike(code_term),
+                Merchant.c_merchant_name.ilike(term),
+                Merchant.c_first_name.ilike(term),
+                Merchant.c_last_name.ilike(term),
+                Merchant.c_email.ilike(term),
+                Merchant.c_phone.ilike(term),
             )
         )
 
     agency_map = {a.i_agency_id: a for a in db.query(Agency).all()}
     bt_name_map = {b.i_business_type_id: b.c_name for b in db.query(BusinessType).all()}
-    items = query.order_by(Client.i_client_id).all()
+    items = query.order_by(Merchant.i_merchant_id).all()
     return _set_no_cache_headers(JSONResponse([_serialize_merchant(i, agency_map, bt_name_map) for i in items]))
 
 
 @router.post("/platform/merchant")
 def create_merchant(payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _create_merchant(payload, request, db)
+
+
+def _create_merchant(payload: dict, request: Request, db: Session, *, image_data: bytes | None = None):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
@@ -4487,14 +4217,14 @@ def create_merchant(payload: dict, request: Request, db: Session = Depends(get_d
     business_type_id = _merchant_resolve_business_type(db, payload.get("business_type"))
     email = _merchant_validate_email(payload)
     status_value = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
-    if db.query(Client.i_client_id).filter(func.lower(Client.c_client_name) == name.lower()).first():
+    if db.query(Merchant.i_merchant_id).filter(func.lower(Merchant.c_merchant_name) == name.lower()).first():
         raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
 
-    # Merchant code is always server-generated; any client-supplied code is ignored.
+    # Merchant code is always server-generated; any merchant-supplied code is ignored.
     for _ in range(5):
-        item = Client(
-            c_client_code=_generate_next_merchant_code(db),
-            c_account_name=name,
+        item = Merchant(
+            c_merchant_code=_generate_next_merchant_code(db),
+            c_merchant_name=name,
             i_business_type=business_type_id,
             i_agency_id=agency_id,
             c_first_name=_merchant_clean_text(payload, "first_name"),
@@ -4510,21 +4240,24 @@ def create_merchant(payload: dict, request: Request, db: Session = Depends(get_d
             c_zip=_merchant_clean_text(payload, "zip"),
             c_country=_normalize_country(_merchant_clean_text(payload, "country")),
             c_timezone=_merchant_clean_text(payload, "timezone"),
+            c_channel_type=payload.get("channel_type"),
+            c_memo=payload.get("memo"),
             c_status=status_value,
         )
         _stamp_created(item, user)
         db.add(item)
         try:
-            db.commit()
+            warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data)
             db.refresh(item)
-            storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_account_id)
-            return JSONResponse({"id": item.i_account_id, "merchant_code": item.c_client_code, **storage})
+            storage = AwsumStorageService(db).initialize_after_registration("MERCHANT", item.i_merchant_id)
+            return JSONResponse({"id": item.i_merchant_id, "merchant_code": item.c_merchant_code, **storage,
+                                 **({"image_warning": warning} if image_data is not None else {})})
         except IntegrityError as exc:
             db.rollback()
             lowered = str(exc).lower()
-            if "c_client_name" in lowered:
+            if "c_merchant_name" in lowered:
                 raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
-            if "c_client_code" in lowered:
+            if "c_merchant_code" in lowered:
                 continue
             raise HTTPException(status_code=400, detail="Unable to save the merchant. Please check the entered values.")
     raise HTTPException(status_code=409, detail="Could not generate a unique merchant code. Please try again.")
@@ -4532,12 +4265,19 @@ def create_merchant(payload: dict, request: Request, db: Session = Depends(get_d
 
 @router.put("/platform/merchant/{merchant_id}")
 def update_merchant(merchant_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    return _update_merchant(merchant_id, payload, request, db)
+
+
+def _update_merchant(merchant_id: int, payload: dict, request: Request, db: Session,
+                     *, image_data: bytes | None = None, remove_image: bool = False):
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(Client).filter(Client.i_client_id == merchant_id).first()
+    item = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Merchant not found.")
+    if image_data is not None or remove_image:
+        db.refresh(item, with_for_update=True)
 
     # Merchant code is immutable; Store agencies are intentionally never touched here.
     if "merchant_name" in payload:
@@ -4547,13 +4287,13 @@ def update_merchant(merchant_id: int, payload: dict, request: Request, db: Sessi
         if len(name) > 255:
             raise HTTPException(status_code=400, detail="Merchant Name is too long.")
         duplicate = (
-            db.query(Client.i_client_id)
-            .filter(func.lower(Client.c_client_name) == name.lower(), Client.i_client_id != merchant_id)
+            db.query(Merchant.i_merchant_id)
+            .filter(func.lower(Merchant.c_merchant_name) == name.lower(), Merchant.i_merchant_id != merchant_id)
             .first()
         )
         if duplicate:
             raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
-        item.c_account_name = name
+        item.c_merchant_name = name
     if "primary_agency_id" in payload:
         item.i_agency_id = _merchant_resolve_agency(db, payload.get("primary_agency_id"))
     if "business_type" in payload:
@@ -4568,6 +4308,10 @@ def update_merchant(merchant_id: int, payload: dict, request: Request, db: Sessi
         item.c_website = _merchant_validate_website(payload)
     if "notes" in payload:
         item.c_notes = _merchant_clean_text(payload, "notes")
+    if "channel_type" in payload:
+        item.c_channel_type = payload.get("channel_type") or None
+    if "memo" in payload:
+        item.c_memo = payload.get("memo")
     for key, column in (
         ("first_name", "c_first_name"), ("last_name", "c_last_name"), ("phone", "c_phone"),
         ("address_line1", "c_address_line1"), ("address_line2", "c_address_line2"),
@@ -4580,11 +4324,12 @@ def update_merchant(merchant_id: int, payload: dict, request: Request, db: Sessi
 
     _stamp_updated(item, user)
     try:
-        db.commit()
+        warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data, remove_image=remove_image)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
-    return JSONResponse({"success": True, "id": merchant_id})
+    return JSONResponse({"success": True, "id": merchant_id,
+                         **({"image_warning": warning} if image_data is not None or remove_image else {})})
 
 
 @router.delete("/platform/merchant/{merchant_id}")
@@ -4592,7 +4337,7 @@ def delete_merchant(merchant_id: int, request: Request, db: Session = Depends(ge
     user = get_current_user(request, db)
     require_platform_admin(user)
 
-    item = db.query(Client).filter(Client.i_client_id == merchant_id).first()
+    item = db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Merchant not found.")
 
@@ -4603,7 +4348,7 @@ def delete_merchant(merchant_id: int, request: Request, db: Session = Depends(ge
             SELECT c.conrelid::regclass::text AS tbl, a.attname AS col
             FROM pg_constraint c
             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
-            WHERE c.contype = 'f' AND c.confrelid = 'tb_client'::regclass
+            WHERE c.contype = 'f' AND c.confrelid = 'tb_merchant'::regclass
             """
         )
     ).all()
@@ -4680,8 +4425,8 @@ def list_sessions(
                 "organization_name": organization,
                 "context_label": context_label,
                 "store_name": context_label if sess.c_login_context == "STORE" else None,
-                "client_id": sess.i_account_id,
-                "client_name": organization,
+                "merchant_id": sess.i_merchant_id,
+                "merchant_name": organization,
                 "device_id": sess.c_client_id,
                 "browser_client_id": sess.c_client_id,
                 "device_uuid": sess.c_device_uuid,

@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.contract import Contract
@@ -161,7 +161,7 @@ def _serialize_license_row(lic: License, link: Optional[LicenseDeviceLink], devi
 
 def _build_workspace(db: Session, store: Store) -> dict:
     store_id = store.i_store_id
-    merchant = db.query(Account).filter(Account.i_client_id == store.i_account_id).first() if store.i_account_id else None
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first() if store.i_merchant_id else None
     agency = db.query(Agency).filter(Agency.i_agency_id == store.i_installed_by_agency_id).first() if store.i_installed_by_agency_id else None
     business_type = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first() if store.i_business_type else None
 
@@ -227,8 +227,8 @@ def _build_workspace(db: Session, store: Store) -> dict:
             "store_id": store_id,
             "store_name": store.c_store_name,
             "store_code": store.c_store_code,
-            "merchant_id": store.i_account_id,
-            "merchant_name": merchant.c_client_name if merchant else None,
+            "merchant_id": store.i_merchant_id,
+            "merchant_name": merchant.c_merchant_name if merchant else None,
             "agency_id": store.i_installed_by_agency_id,
             "agency_name": agency.c_agency_name if agency else None,
             "agency_code": agency.c_agency_code if agency else None,
@@ -275,7 +275,7 @@ def _email_context(db: Session, store_id: int, raw_ids: list[int]) -> tuple[dict
     if len(licenses_by_id) != len(raw_ids):
         raise HTTPException(status_code=400, detail="One or more selected licenses do not belong to this store.")
 
-    merchant = db.query(Account).filter(Account.i_client_id == store.i_account_id).first() if store.i_account_id else None
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first() if store.i_merchant_id else None
     agency = (
         db.query(Agency)
         .filter(Agency.i_agency_id == store.i_installed_by_agency_id)
@@ -302,7 +302,7 @@ def _email_context(db: Session, store_id: int, raw_ids: list[int]) -> tuple[dict
         and selected_devices[link.i_device_id].c_device_name
     }
     store_info = {
-        "merchant_name": merchant.c_client_name if merchant else "—",
+        "merchant_name": merchant.c_merchant_name if merchant else "—",
         "store_name": store.c_store_name or "—",
         "agency_name": agency.c_agency_name if agency else "—",
         # Existing Store License values only; nothing is generated here.
@@ -574,7 +574,7 @@ def issue_store_licenses(store_id: int, payload: dict, request: Request, db: Ses
     for i in range(quantity):
         lic = License(
             i_store_id=store_id,
-            i_account_id=store.i_account_id,
+            i_merchant_id=store.i_merchant_id,
             i_agency_id=store.i_installed_by_agency_id,
             c_license_key=_new_license_key(db, ltype),
             c_license_type=ltype,

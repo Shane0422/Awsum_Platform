@@ -262,6 +262,7 @@ class AgencyActivationTests(unittest.TestCase):
             first_user = db.query(PlatformUser).filter_by(i_agency_id=1).one()
             first_id, first_hash = first_user.i_platform_user_id, first_user.c_password
             second_id = db.query(PlatformUser).filter_by(i_agency_id=2).one().i_platform_user_id
+        browser_ids = {}
         for agency_id, code, password, expected_id in (
             (1, "AGT00001", first["temporary_password"], first_id),
             (2, "AGT00002", second["temporary_password"], second_id),
@@ -271,10 +272,12 @@ class AgencyActivationTests(unittest.TestCase):
                     "store_code": code, "email": "JANE@example.test", "password": password,
                 }, follow_redirects=False)
                 self.assertEqual(login.status_code, 303, login.text)
+                browser_ids[agency_id] = client.cookies.get("awsum_web_client")
                 with self.factory() as db:
                     row = db.query(SessionTbl).filter_by(c_status="ACTIVE", i_agency_id=agency_id).one()
                     self.assertEqual(row.i_platform_user_id, expected_id)
         with TestClient(self.app) as client:
+            client.cookies.set("awsum_web_client", browser_ids[1])
             response = self.login_agency(client, first["temporary_password"])
             self.assertEqual(response.status_code, 303, response.text)
             with self.factory() as db:
@@ -433,7 +436,7 @@ class AgencyActivationTests(unittest.TestCase):
                 self.assertEqual(response.json()["detail"], "An active Agency User is required.")
             smtp.assert_not_called()
 
-    def test_resend_after_password_change_omits_password_without_modifying_account(self):
+    def test_resend_after_password_change_omits_password_without_modifying_merchant(self):
         self.activate()
         changed_hash = bcrypt.hashpw(b"ChangedPassword!42", bcrypt.gensalt(rounds=4)).decode()
         with self.factory() as db:
@@ -591,7 +594,7 @@ class AgencyActivationTests(unittest.TestCase):
                 session = db.query(SessionTbl).filter_by(c_login_context="AGENCY", c_status="ACTIVE").one()
                 self.assertEqual(session.i_agency_id, 1)
                 self.assertIsNone(session.i_store_id)
-                self.assertIsNone(session.i_account_id)
+                self.assertIsNone(session.i_merchant_id)
             page = client.get("/auth/change-password")
             self.assertEqual(page.status_code, 200, page.text)
             new_password = "TestOnly!Changed42"

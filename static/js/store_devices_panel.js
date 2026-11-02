@@ -80,7 +80,7 @@
 
   function renderLoading(item) {
     panel().innerHTML = headerHtml(item ? {
-      merchant_name: item.merchant_name || item.client_name, store_name: item.store_name, agency_name: item.installed_by_agency_name,
+      merchant_name: item.merchant_name || item.merchant_name, store_name: item.store_name, agency_name: item.installed_by_agency_name,
     } : {}) + '<div class="text-muted py-4">Loading...</div>';
   }
 

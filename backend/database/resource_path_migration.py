@@ -27,8 +27,8 @@ def migrate_resource_paths(engine, *, dry_run=False) -> dict:
         if conn.dialect.name == "postgresql":
             conn.execute(text("SELECT pg_advisory_xact_lock(781962146)"))
         stores = conn.execute(text("""
-            SELECT s.i_store_id,s.c_store_code,c.c_client_code,s.c_db_path
-            FROM tb_store s JOIN tb_client c ON c.i_client_id=s.i_account_id
+            SELECT s.i_store_id,s.c_store_code,c.c_merchant_code,s.c_db_path
+            FROM tb_store s JOIN tb_merchant c ON c.i_merchant_id=s.i_merchant_id
         """)).all() if inspect(conn).has_table("tb_store") else []
         owners = {}
 
@@ -136,11 +136,11 @@ def migrate_resource_paths(engine, *, dry_run=False) -> dict:
 
         if inspect(conn).has_table("tb_contract"):
             for identifier, store_id, merchant_id, reference in conn.execute(text("""
-                SELECT i_contract_id,i_store_id,i_account_id,c_contract_pdf_path
+                SELECT i_contract_id,i_store_id,i_merchant_id,c_contract_pdf_path
                 FROM tb_contract WHERE c_contract_pdf_path IS NOT NULL AND c_contract_pdf_path<>''
             """)).all():
                 owner = owners.get(store_id)
-                actual = conn.execute(text("SELECT i_account_id FROM tb_store WHERE i_store_id=:id"),
+                actual = conn.execute(text("SELECT i_merchant_id FROM tb_store WHERE i_store_id=:id"),
                                       {"id": store_id}).scalar()
                 if owner is None or actual != merchant_id:
                     raise RuntimeError(f"Contract {identifier} has mismatched Merchant/Store ownership.")

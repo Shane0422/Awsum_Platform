@@ -234,9 +234,9 @@
 .awsum-list .table .btn-sm { padding: 0.3rem 0.55rem; font-size: 0.75rem; }
 .awsum-list .table td.text-nowrap .btn + .btn { margin-left: 0.2rem; }
 .awsum-list .mg-code { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; color: #496486; }
-.awsum-list .table :is(.badge, .platform-user-status, .store-status-badge, .client-status-badge, .module-status-badge, .sd-badge) { padding: 0.4rem 0.65rem; border-radius: 99px; font-size: 0.7rem; font-weight: 600; }
-.awsum-list .table :is(.text-bg-success, .bg-success, .platform-user-status.active, .store-status-badge.active, .client-status-badge.active, .module-status-badge.active, .sd-badge.active, .sd-badge.activated) { background: #dcf8e8 !important; color: #147747 !important; }
-.awsum-list .table :is(.text-bg-secondary, .bg-secondary, .platform-user-status.inactive, .store-status-badge.inactive, .client-status-badge.inactive, .module-status-badge.inactive) { background: #edf1f7 !important; color: #586b85 !important; }
+.awsum-list .table :is(.badge, .platform-user-status, .store-status-badge, .merchant-status-badge, .module-status-badge, .sd-badge) { padding: 0.4rem 0.65rem; border-radius: 99px; font-size: 0.7rem; font-weight: 600; }
+.awsum-list .table :is(.text-bg-success, .bg-success, .platform-user-status.active, .store-status-badge.active, .merchant-status-badge.active, .module-status-badge.active, .sd-badge.active, .sd-badge.activated) { background: #dcf8e8 !important; color: #147747 !important; }
+.awsum-list .table :is(.text-bg-secondary, .bg-secondary, .platform-user-status.inactive, .store-status-badge.inactive, .merchant-status-badge.inactive, .module-status-badge.inactive) { background: #edf1f7 !important; color: #586b85 !important; }
 .awsum-list .mg-thumbnail { display: inline-flex; position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border: 1px solid #e1e7ef; border-radius: 6px; background: #f7f9fc; color: #8a97a8; }
 .awsum-list .mg-thumbnail img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #f7f9fc; border-radius: 6px; }
 

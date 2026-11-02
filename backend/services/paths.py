@@ -197,20 +197,20 @@ def _contained_path(logical_path: str, root: Path | None) -> Path:
 def validate_owner(db: Session, owner: AwsumPathResolver):
     """Validate actual DB relationships even for public images and Platform operators."""
     from backend.models_admin.agency import Agency
-    from backend.models_admin.account import Account
+    from backend.models_admin.merchant import Merchant
     from backend.models_admin.store import Store
     if owner.context_type == "PLATFORM":
         return None
     if owner.context_type == "AGENCY":
         row = db.query(Agency).filter(Agency.c_agency_code == owner.agency_code).one_or_none()
     else:
-        merchant = db.query(Account).filter(Account.c_client_code == owner.merchant_code).one_or_none()
+        merchant = db.query(Merchant).filter(Merchant.c_merchant_code == owner.merchant_code).one_or_none()
         if merchant is None:
             raise HTTPException(404, "Resource Merchant not found.")
         if owner.context_type == "MERCHANT":
             return merchant
         row = db.query(Store).filter(Store.c_store_code == owner.store_code,
-                                     Store.i_account_id == merchant.i_client_id).one_or_none()
+                                     Store.i_merchant_id == merchant.i_merchant_id).one_or_none()
     if row is None:
         raise HTTPException(404, "Resource owner or Merchant/Store relationship not found.")
     return row
@@ -230,8 +230,8 @@ def authorize_resource(request, db: Session, owner: AwsumPathResolver):
             return user
         raise HTTPException(403, "Platform resource management permission required.")
     if row.c_login_context == owner.context_type and organization is not None:
-        identity = {"AGENCY": row.i_agency_id, "MERCHANT": row.i_account_id, "STORE": row.i_store_id}
-        key = {"AGENCY": "i_agency_id", "MERCHANT": "i_client_id", "STORE": "i_store_id"}[owner.context_type]
+        identity = {"AGENCY": row.i_agency_id, "MERCHANT": row.i_merchant_id, "STORE": row.i_store_id}
+        key = {"AGENCY": "i_agency_id", "MERCHANT": "i_merchant_id", "STORE": "i_store_id"}[owner.context_type]
         role = db.get(Role, user.i_role_id)
         if (getattr(organization, key) == identity[owner.context_type]
                 and role and role.c_name.casefold() in {"superadmin", "admin", "customeradmin", "storeadmin"}):

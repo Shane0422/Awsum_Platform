@@ -16,8 +16,9 @@ from sqlalchemy.pool import StaticPool
 from backend.config import templates as template_config
 from backend.database.pg_platform import PlatformBase
 from backend.main import app
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
+from backend.models_admin.role import Role
 from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.store import Store
@@ -59,8 +60,8 @@ class BrandingTests(unittest.TestCase):
         with self.factory() as db:
             db.get(SystemSettings, 1).c_logo_url = "/static/images/brands/platform/logo.png"
             db.get(Agency, 1).c_logo_url = "/static/images/brands/agency/logo.png"
-            db.get(Account, 1).c_logo_url = "/static/images/brands/merchant/logo.png"
-            db.get(Account, 1).i_agency_id = 1
+            db.get(Merchant, 1).c_logo_url = "/static/images/brands/merchant/logo.png"
+            db.get(Merchant, 1).i_agency_id = 1
             db.get(Store, 2).c_logo_url = "/static/images/brands/store/logo.png"
             db.commit()
         def dependency():
@@ -100,7 +101,7 @@ class BrandingTests(unittest.TestCase):
             db.get(Store, 2).c_logo_url = None
             db.flush()
             self.assertIn("/merchant/", branding.resolve_branding(db, "STORE", store_id=2).logo_url)
-            db.get(Account, 1).c_logo_url = None
+            db.get(Merchant, 1).c_logo_url = None
             db.flush()
             self.assertIn("/agency/", branding.resolve_branding(db, "STORE", store_id=2).logo_url)
             self.assertIn("/agency/", branding.resolve_branding(db, "MERCHANT", merchant_id=1).logo_url)
@@ -172,7 +173,7 @@ class BrandingTests(unittest.TestCase):
         self.assertEqual(self.client.get("/auth/branding?access_code=CLT11001").status_code, 409)
         self.assertEqual(self.client.get("/auth/branding?access_code=CLT11001&context_type=MERCHANT").status_code, 200)
         with self.factory() as db:
-            db.get(Account, 1).c_status = "inactive"
+            db.get(Merchant, 1).c_status = "inactive"
             db.commit()
         self.assertEqual(self.client.get("/login/merchant/CLT11001").status_code, 404)
         self.assertEqual(self.client.get("/login/platform/ADMIN").status_code, 404)
@@ -210,6 +211,15 @@ class BrandingTests(unittest.TestCase):
         ):
             with self.subTest(context=context):
                 with self.factory() as db:
+                    user = db.get(PlatformUser, 3)
+                    if context == "agency":
+                        if db.get(Role, 99) is None:
+                            db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
+                        db.get(Agency, 1).c_status = "active"
+                        user.i_role_id, user.i_agency_id = 99, 1
+                    else:
+                        user.i_role_id, user.i_agency_id = 2, None
+                    db.commit()
                     token = web_sessions.create_session(db, db.get(PlatformUser, 3), request(),
                                                         {"scope_type": context, **claims})
                     row = db.query(SessionTbl).filter_by(c_status="ACTIVE").one()
@@ -240,7 +250,7 @@ class BrandingTests(unittest.TestCase):
         image = BytesIO()
         Image.new("RGB", (120, 40), "blue").save(image, format="PNG")
         with patch.object(images, "image_storage_root", return_value=self.static / "media"):
-            for route, model, key in (("client/1", Account, 1), ("store/2", Store, 2), ("agency/1", Agency, 1)):
+            for route, model, key in (("merchant/1", Merchant, 1), ("store/2", Store, 2), ("agency/1", Agency, 1)):
                 response = self.client.post(f"/platform/{route}/logo",
                     files={"file": ("logo.png", image.getvalue(), "image/png")},
                     headers={"Origin": "http://testserver"})
@@ -248,7 +258,7 @@ class BrandingTests(unittest.TestCase):
                 with self.factory() as db:
                     self.assertEqual(db.get(model, key).c_logo_url, response.json()["image_path"])
                     self.assertTrue(branding.versioned_logo(db.get(model, key).c_logo_url))
-            for route, model, key in (("store/2", Store, 2), ("client/1", Account, 1), ("agency/1", Agency, 1)):
+            for route, model, key in (("store/2", Store, 2), ("merchant/1", Merchant, 1), ("agency/1", Agency, 1)):
                 response = self.client.delete(f"/platform/{route}/logo", headers={"Origin": "http://testserver"})
                 self.assertEqual(response.status_code, 200, response.text)
                 with self.factory() as db:

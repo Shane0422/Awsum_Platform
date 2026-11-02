@@ -141,14 +141,14 @@ def resolve_legacy_store_image(reference: str, db: Session) -> ImagePath | None:
     parts = reference.split("/")
     if len(parts) < 3 or legacy_store_image_path(reference, "LEGACY") is None:
         return None
-    from backend.models_admin.account import Account
+    from backend.models_admin.merchant import Merchant
     from backend.models_admin.store import Store
-    row = db.query(Store, Account).join(Account, Store.i_account_id == Account.i_client_id).filter(
+    row = db.query(Store, Merchant).join(Merchant, Store.i_merchant_id == Merchant.i_merchant_id).filter(
         Store.c_store_code == parts[2]).one_or_none()
     if row is None:
         return None
     store, merchant = row
-    return legacy_store_image_path(reference, merchant.c_client_code)
+    return legacy_store_image_path(reference, merchant.c_merchant_code)
 
 
 def resolve_image_file(reference: str | None) -> Path | None:

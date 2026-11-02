@@ -20,7 +20,7 @@ from starlette.datastructures import Headers
 from backend.database.pg_platform import PlatformBase
 from backend.database.image_storage_migration import migrate_image_storage
 from backend.main import app
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.role import Role
@@ -267,7 +267,7 @@ class ImageStorageTests(unittest.TestCase):
         old = "/static/images/brands/clients/CLT11001/logo.png"
         source = self.legacy("brands/clients/CLT11001/logo.png")
         with self.factory() as db:
-            db.get(Account, 1).c_logo_url = old
+            db.get(Merchant, 1).c_logo_url = old
             db.commit()
         return old, source
 
@@ -282,11 +282,11 @@ class ImageStorageTests(unittest.TestCase):
         manifest = json.loads(Path(plan["manifest"]).read_text())
         self.assertEqual(manifest["references"][0]["before"], old)
         with self.factory() as db:
-            client = db.get(Account, 1)
-            self.assertEqual(client.c_logo_url, "/merchant/CLT11001/images/logo/logo.png")
-            self.assertEqual(client.i_client_id, 1)
-            self.assertEqual(db.get(Store, 2).i_account_id, 1)
-            self.assertEqual(images.resolve_image_file(client.c_logo_url).read_bytes(), before)
+            merchant = db.get(Merchant, 1)
+            self.assertEqual(merchant.c_logo_url, "/merchant/CLT11001/images/logo/logo.png")
+            self.assertEqual(merchant.i_merchant_id, 1)
+            self.assertEqual(db.get(Store, 2).i_merchant_id, 1)
+            self.assertEqual(images.resolve_image_file(merchant.c_logo_url).read_bytes(), before)
             self.assertTrue(branding.resolve_branding(db).logo_url.startswith("/images/platform/logo/"))
             self.assertIsNotNone(license_email.load_company_branding(db)["logo_bytes"])
         self.assertEqual(source.read_bytes(), before)
@@ -303,7 +303,7 @@ class ImageStorageTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "destination conflict"):
             migrate_image_storage(self.engine)
         with self.factory() as db:
-            self.assertEqual(db.get(Account, 1).c_logo_url, old)
+            self.assertEqual(db.get(Merchant, 1).c_logo_url, old)
         self.assertEqual(source.read_bytes(), self.png)
         self.assertEqual(images.physical_image_path(target).read_bytes(), b"different owner image")
         self.assertFalse((self.media / "platform-admin/data/audit/image-migrations").exists())
@@ -311,7 +311,7 @@ class ImageStorageTests(unittest.TestCase):
     def test_migration_database_failure_records_recovery_and_retry(self):
         old, source = self.migration_fixture()
         def fail_update(conn, cursor, statement, params, context, many):
-            if statement.lstrip().startswith("UPDATE tb_client"):
+            if statement.lstrip().startswith("UPDATE tb_merchant"):
                 raise RuntimeError("injected DB update failure")
         event.listen(self.engine, "before_cursor_execute", fail_update)
         try:
@@ -320,7 +320,7 @@ class ImageStorageTests(unittest.TestCase):
         finally:
             event.remove(self.engine, "before_cursor_execute", fail_update)
         with self.factory() as db:
-            self.assertEqual(db.get(Account, 1).c_logo_url, old)
+            self.assertEqual(db.get(Merchant, 1).c_logo_url, old)
         manifest = next((self.media / "platform-admin/data/audit/image-migrations").glob("*.json"))
         self.assertEqual(json.loads(manifest.read_text())["status"], "FAILED_DB_ROLLBACK_FILES_RETAINED")
         self.assertTrue(source.exists())
@@ -364,10 +364,10 @@ class ImageStorageTests(unittest.TestCase):
         from backend.models_admin.system_settings import SystemSettings
         owners = (("PLATFORM", None, SystemSettings, 1),
                   ("AGENCY", "AGT00001", Agency, 1),
-                  ("MERCHANT", "CLT11001", Account, 1),
+                  ("MERCHANT", "CLT11001", Merchant, 1),
                   ("STORE", "STR00002", Store, 2))
         with self.factory() as db:
-            db.get(Account, 1).i_agency_id = 1
+            db.get(Merchant, 1).i_agency_id = 1
             for context, code, model, key in owners:
                 image = images.logo_image_path(context, code, "logo.png", merchant_code="CLT11001" if context == "STORE" else None)
                 images.write_image(image, self.png)
@@ -384,7 +384,7 @@ class ImageStorageTests(unittest.TestCase):
 
     def test_authenticated_management_preview_preserves_inactive_organization_images(self):
         with self.factory() as db:
-            merchant = db.get(Account, 1)
+            merchant = db.get(Merchant, 1)
             merchant.c_status = "inactive"
             image = images.logo_image_path("MERCHANT", "CLT11001", "logo.png")
             images.write_image(image, self.png)

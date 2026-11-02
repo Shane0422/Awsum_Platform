@@ -13,11 +13,11 @@ if DB_URL.startswith("postgresql+psycopg://"):
 
 def main() -> int:
     out = {
-        "scope": "B2B client schema inspection",
+        "scope": "B2B merchant schema inspection",
         "tables": {},
     }
 
-    target_tables = ("tb_client", "tb_store", "tb_user", "tb_session")
+    target_tables = ("tb_merchant", "tb_store", "tb_user", "tb_session")
 
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:

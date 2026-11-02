@@ -17,12 +17,12 @@ login = s.post(
 print("login_status=", login.status_code)
 
 payload = {
-    "client_name": "SaveCheck Client",
+    "merchant_name": "SaveCheck Merchant",
     "business_type": "Tuxedo Rental",
     "status": "active",
     "first_name": "John",
     "last_name": "Doe",
-    "email": "savecheck-client@example.com",
+    "email": "savecheck-merchant@example.com",
     "phone": "5551234567",
     "address_line1": "123 Main St",
     "address_line2": "Suite 200",
@@ -31,11 +31,11 @@ payload = {
     "zip": "75001",
     "country": "USA",
 }
-create = s.post(f"{BASE}/platform/client", json=payload, timeout=20)
+create = s.post(f"{BASE}/platform/merchant", json=payload, timeout=20)
 print("create_status=", create.status_code)
 print("create_body=", create.text[:300])
 
-lst = s.get(f"{BASE}/platform/clients?q=SaveCheck", timeout=20)
+lst = s.get(f"{BASE}/platform/merchants?q=SaveCheck", timeout=20)
 print("list_status=", lst.status_code)
 if lst.ok:
     rows = lst.json()

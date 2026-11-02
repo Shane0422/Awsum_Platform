@@ -59,7 +59,7 @@ def main() -> int:
         "active_dashboard_menu": active_link_present(dash.text if dash.status_code == 200 else "", "/platform/dashboard"),
     }
 
-    modules = ["client", "store", "user", "session"]
+    modules = ["merchant", "store", "user", "session"]
     report["master_menu"] = {}
     for module in modules:
         resp = s.get(f"{BASE_URL}/platform/master/{module}", timeout=20)

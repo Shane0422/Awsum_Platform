@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.config.templates import templates, get_brand_context
 from backend.database.pg_platform import ADMIN_STORE_ID, PlatformSessionLocal
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.device import Device
 from backend.models_admin.device_type import DeviceType
@@ -124,7 +124,7 @@ def fields(kind):
 
 def serialize(record, kind):
     if kind == "merchants":
-        return {"id": record.i_account_id, "code": record.c_account_code, "name": record.c_account_name,
+        return {"id": record.i_merchant_id, "code": record.c_merchant_code, "name": record.c_merchant_name,
                 "email": record.c_email or "", "phone": record.c_phone or "", "status": record.c_status}
     if kind == "stores":
         return {"id": record.i_store_id, "code": record.c_store_code, "name": record.c_store_name,
@@ -143,7 +143,7 @@ def serialize(record, kind):
 def context(db, user, section, **extra):
     agency = db.get(Agency, user.i_agency_id)
     return {
-        **get_brand_context(context_type="agency", client_code=agency.c_agency_code),
+        **get_brand_context(context_type="agency", merchant_code=agency.c_agency_code),
         "user": user, "role": AGENCY_ADMIN_ROLE_NAME, "agency": agency,
         "active_page": "agency-portal", "section": section,
         "permissions": AgencyPortalPermissions(user),
@@ -239,13 +239,13 @@ def list_records(kind: Literal["merchants", "stores", "users"], request: Request
                  page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100),
                  db: Session = Depends(get_db), user: PlatformUser = Depends(agency_user)):
     query, model, pk, name = {
-        "merchants": (merchants(db, user), Account, Account.i_account_id, Account.c_account_name),
+        "merchants": (merchants(db, user), Merchant, Merchant.i_merchant_id, Merchant.c_merchant_name),
         "stores": (stores(db, user), Store, Store.i_store_id, Store.c_store_name),
         "users": (users(db, user), PlatformUser, PlatformUser.i_platform_user_id, PlatformUser.c_first_name),
     }[kind]
     if q:
         extra_search = {
-            "merchants": Account.c_account_code, "stores": Store.c_store_code,
+            "merchants": Merchant.c_merchant_code, "stores": Store.c_store_code,
             "users": PlatformUser.c_last_name,
         }[kind]
         query = query.filter(or_(name.ilike(f"%{q}%"), model.c_email.ilike(f"%{q}%"),

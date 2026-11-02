@@ -16,14 +16,14 @@ class MasterFormModalTests(unittest.TestCase):
         functions = "\n".join(re.search(
             rf"  (?:async )?function {name}\([^\n]*\) \{{.*?\n  \}}", source, re.DOTALL,
         ).group() for name in (
-            "createBrandLogoUploadPanel", "createImageFormLayout", "createClientTabs", "renderForm",
+            "createBrandLogoUploadPanel", "createImageFormLayout", "createMerchantTabs", "renderForm",
         ))
         css = "\n".join((browser.ROOT / path).read_text(encoding="utf-8") for path in (
             r"static\bootstrap\css\bootstrap.min.css", r"static\css\platform-modal.css",
             r"static\components\image-uploader\image-uploader.css",
         ))
         pages = []
-        for module in ("agency", "merchant", "store", "account"):
+        for module in ("agency", "merchant", "store"):
             html = render_admin("master_management.html", "master", module)
             html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.DOTALL)
             html = re.sub(r"<link\b[^>]*>", "", html).replace("</head>", f"<style>{css}</style></head>")
@@ -33,12 +33,12 @@ const activeModule=MODULE,isListCentricModule=true;
 const masterFormModal=document.getElementById('masterFormModal'),masterForm=null;
 const fields=Array.from({length:6},(_,i)=>({name:'input'+i}));
 fields.splice(4,0,{type:'section',name:'contact',label:'Primary Contact'});
-if(activeModule==='agency'||activeModule==='account')fields.unshift({type:'section',name:'information',label:'Information'});
+if(activeModule==='agency')fields.unshift({type:'section',name:'information',label:'Information'});
 const config={fields};
 if(activeModule!=='agency')config.tabs=[{id:'overview',title:'Basic Information',fields:fields.map(f=>f.name)}];
 const CONTACT_OWNER_TYPES={};
-const noop=()=>{},bindUsDatePickers=noop,refreshClientLogoPreview=noop,refreshStoreLogoPreview=noop,
-refreshContactManager=noop,initClientStorePanelHandlers=noop,loadClientStoresForSelectedClient=noop,
+const noop=()=>{},bindUsDatePickers=noop,refreshMerchantLogoPreview=noop,refreshStoreLogoPreview=noop,
+refreshContactManager=noop,initMerchantStorePanelHandlers=noop,loadMerchantStoresForSelectedMerchant=noop,
 syncAgencyEmailButton=noop,refreshOrgLogoPreview=noop,bindScopedStoreSelect=noop,applyEditFieldRules=noop;
 const createIdField=()=>{const el=document.createElement('input');el.type='hidden';return el;};
 const createContactManagerPanel=()=>{const el=document.createElement('div');el.className='col-12';el.textContent='Contact manager';return el;};
@@ -57,10 +57,10 @@ renderForm();
 const modal=document.getElementById('masterEditModal');
 modal.style.display='block';
 modal.classList.add('show','agency-modal');
-if(activeModule!=='agency')modal.classList.add(activeModule==='account'?'client-modal':activeModule+'-modal');
+if(activeModule!=='agency')modal.classList.add(activeModule+'-modal');
 window.imageLayouts=[masterFormModal.querySelector('.awsum-image-form')];
-if(activeModule==='account'){
- const linked=document.getElementById('clientStoreModal');linked.style.display='block';linked.classList.add('show');
+if(activeModule==='merchant'){
+ const linked=document.getElementById('merchantStoreModal');linked.style.display='block';linked.classList.add('show');
  window.imageLayouts.push(linked.querySelector('.awsum-image-form'));
 }
 """

@@ -103,7 +103,7 @@ def create_session(
     token = create_access_token({
         **claims, "sid": session_key, "login_context": identity["c_login_context"],
         "login_entry": login_entry,
-        "merchant_id": identity["i_account_id"], "agency_id": identity["i_agency_id"],
+        "merchant_id": identity["i_merchant_id"], "agency_id": identity["i_agency_id"],
         "uid": locked_user.i_platform_user_id, "user_id": locked_user.i_platform_user_id,
         "store": locked_user.i_store_id, "role_id": locked_user.i_role_id,
         "principal_type": "platform_user",
@@ -173,7 +173,7 @@ def authenticate(request: Request, db: Session, *, allow_password_change=False) 
         or (row.c_login_context == "STORE" and row.i_store_id != user.i_store_id)
         or (row.c_login_context != "STORE" and row.i_store_id is not None)
         or (row.c_login_context == "MERCHANT" and (
-            row.i_account_id is None or row.i_account_id != payload.get("merchant_id")
+            row.i_merchant_id is None or row.i_merchant_id != payload.get("merchant_id")
         ))
         or (row.c_login_context == "AGENCY" and (
             row.i_agency_id is None or row.i_agency_id != payload.get("agency_id")

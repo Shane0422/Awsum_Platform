@@ -16,8 +16,8 @@ class Subscription(PlatformBase, AuditMixin):
     # Primary key
     i_subscription_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
 
-    # Account & Store (Store 기준 계약)
-    i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=False, index=True)
+    # Merchant & Store (Store 기준 계약)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=False, index=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=False, index=True)
     i_plan_id = Column(Integer, ForeignKey("tb_pricing_plan.i_plan_id"), nullable=True, index=True)
 

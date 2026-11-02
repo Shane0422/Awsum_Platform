@@ -2,7 +2,7 @@ import json
 import requests
 
 BASE = "http://127.0.0.1:8001"
-CLIENT_ID = 12
+MERCHANT_ID = 12
 
 s = requests.Session()
 login = s.post(
@@ -27,11 +27,11 @@ payload = {
     "country": "USA",
     "status": "active",
 }
-upd = s.put(f"{BASE}/platform/client/{CLIENT_ID}", json=payload, timeout=20)
+upd = s.put(f"{BASE}/platform/merchant/{MERCHANT_ID}", json=payload, timeout=20)
 print("update_status=", upd.status_code)
 print("update_body=", upd.text[:300])
 
-lst = s.get(f"{BASE}/platform/clients?q=SaveCheck", timeout=20)
+lst = s.get(f"{BASE}/platform/merchants?q=SaveCheck", timeout=20)
 print("list_status=", lst.status_code)
 if lst.ok:
     rows = lst.json()

@@ -6,14 +6,14 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.models_admin.account import Client
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.business_contact import BusinessContact
 from backend.models_admin.store import Store
 
 OWNER_MODELS = {
     "AGENCY": (Agency, "i_agency_id"),
-    "MERCHANT": (Client, "i_client_id"),
+    "MERCHANT": (Merchant, "i_merchant_id"),
     "STORE": (Store, "i_store_id"),
 }
 CONTACT_ROLES = ("PRIMARY", "OPERATIONS", "BILLING", "TECHNICAL", "OTHER")

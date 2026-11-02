@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.database.pg_platform import ADMIN_STORE_ID, PlatformBase
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.device import Device
 from backend.models_admin.platform_user import PlatformUser, AGENCY_ADMIN_ROLE_NAME
@@ -45,17 +45,17 @@ class AgencyPortalTests(unittest.TestCase):
                 Agency(i_agency_id=1, c_agency_code="AGT00001", c_agency_name="One", c_status="active"),
                 Agency(i_agency_id=2, c_agency_code="AGT00002", c_agency_name="Two", c_status="active"),
                 SystemSettings(i_settings_id=1, c_company_name="Test Platform"),
-                Account(i_client_id=1, c_client_code="M00001", c_client_name="Merchant One", i_agency_id=1),
-                Account(i_client_id=2, c_client_code="M00002", c_client_name="Merchant Two", i_agency_id=2),
+                Merchant(i_merchant_id=1, c_merchant_code="M00001", c_merchant_name="Merchant One", i_agency_id=1),
+                Merchant(i_merchant_id=2, c_merchant_code="M00002", c_merchant_name="Merchant Two", i_agency_id=2),
             ])
             db.flush()
             db.add_all([
                 Store(i_store_id=ADMIN_STORE_ID, c_store_name="HQ", c_store_code="HQ"),
                 Store(i_store_id=1, c_store_name="Direct One", c_store_code="S00001",
-                      i_account_id=2, i_installed_by_agency_id=1),
+                      i_merchant_id=2, i_installed_by_agency_id=1),
                 Store(i_store_id=2, c_store_name="Excluded Store", c_store_code="S00002",
-                      i_account_id=1, i_installed_by_agency_id=2),
-                Store(i_store_id=3, c_store_name="Unassigned Store", c_store_code="S00003", i_account_id=1),
+                      i_merchant_id=1, i_installed_by_agency_id=2),
+                Store(i_store_id=3, c_store_name="Unassigned Store", c_store_code="S00003", i_merchant_id=1),
             ])
             db.flush()
             db.add_all([
@@ -311,8 +311,8 @@ class AgencyPortalTests(unittest.TestCase):
         with self.factory() as db:
             self.assertEqual(db.get(Store, 1).i_installed_by_agency_id, 1)
             self.assertEqual(db.get(Store, 1).c_store_name, "Direct One")
-            self.assertEqual(db.get(Account, 1).i_agency_id, 1)
-            self.assertEqual(db.get(Account, 1).c_account_name, "Merchant One")
+            self.assertEqual(db.get(Merchant, 1).i_agency_id, 1)
+            self.assertEqual(db.get(Merchant, 1).c_merchant_name, "Merchant One")
             self.assertEqual(db.get(Store, 2).c_store_name, "Excluded Store")
 
     def test_common_policy_controls_backend_and_page_actions(self):
@@ -524,7 +524,7 @@ class AgencyPortalTests(unittest.TestCase):
         rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
         self.assertEqual(rows, [["Metric", "Count"], ["Merchants", "1"], ["Stores", "1"], ["Devices", "1"]])
         self.assertEqual(self.client.put("/agency/stores/1/devices", json={}).status_code, 405)
-        self.assertEqual(self.client.put("/platform/client/2/stores/1/devices/1", json={}).status_code, 403)
+        self.assertEqual(self.client.put("/platform/merchant/2/stores/1/devices/1", json={}).status_code, 403)
         self.assertEqual(self.client.post("/platform/store/1/licenses/issue", json={}).status_code, 403)
         self.assertEqual(self.client.get("/platform/users").status_code, 403)
 

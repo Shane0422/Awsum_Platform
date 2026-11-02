@@ -1,10 +1,10 @@
-{% extends "client/client_base.html" %}
+{% extends "merchant/merchant_base.html" %}
 
 {% block page_title %}Standard Dashboard{% endblock %}
 
 {% block dashboard_heading %}Standard Dashboard{% endblock %}
 
-{% block dashboard_subheading %}Default client dashboard for general operations{% endblock %}
+{% block dashboard_subheading %}Default merchant dashboard for general operations{% endblock %}
 
 {% block content %}
 <div class="card-clean shadow-sm p-3 p-lg-4">
@@ -12,17 +12,17 @@
     <div class="col-md-4">
       {% set card_title = "Today Sales" %}
       {% set card_value = "$0.00" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
     <div class="col-md-4">
       {% set card_title = "Open Tasks" %}
       {% set card_value = "0" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
     <div class="col-md-4">
       {% set card_title = "Active Staff" %}
       {% set card_value = "0" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
   </div>
 </div>

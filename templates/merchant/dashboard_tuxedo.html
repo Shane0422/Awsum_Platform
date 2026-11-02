@@ -1,10 +1,10 @@
-{% extends "client/client_base.html" %}
+{% extends "merchant/merchant_base.html" %}
 
 {% block page_title %}Tuxedo Dashboard{% endblock %}
 
 {% block dashboard_heading %}Tuxedo Rental Dashboard{% endblock %}
 
-{% block dashboard_subheading %}Client dashboard configured for tuxedo rental operations{% endblock %}
+{% block dashboard_subheading %}Merchant dashboard configured for tuxedo rental operations{% endblock %}
 
 {% block content %}
 <div class="card-clean shadow-sm p-3 p-lg-4">
@@ -12,17 +12,17 @@
     <div class="col-md-4">
       {% set card_title = "Active Rentals" %}
       {% set card_value = "0" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
     <div class="col-md-4">
       {% set card_title = "Upcoming Fittings" %}
       {% set card_value = "0" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
     <div class="col-md-4">
       {% set card_title = "Returns Due" %}
       {% set card_value = "0" %}
-      {% include "client/components/card_stat.html" %}
+      {% include "merchant/components/card_stat.html" %}
     </div>
   </div>
 </div>

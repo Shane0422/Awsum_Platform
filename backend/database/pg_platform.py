@@ -9,7 +9,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 # Keep credentials aligned with the default local dev policy.
 DEFAULT_PLATFORM_DB_URL = "postgresql+psycopg://postgres:Awsum123!@127.0.0.1:5432/awsum_platform"
 ADMIN_STORE_ID = 1000001
-ACCOUNT_STORE_ID_START = 1100001
+MERCHANT_STORE_ID_START = 1100001
 
 
 def _resolve_platform_db_url_raw() -> tuple[str, str]:
@@ -89,13 +89,8 @@ AdminSessionLocal = PlatformSessionLocal
 admin_engine = platform_engine
 
 
-def get_next_account_store_id(db):
+def get_next_merchant_store_id(db):
     from backend.models_admin.store import Store
 
-    max_id = db.query(func.max(Store.i_store_id)).filter(Store.i_store_id >= ACCOUNT_STORE_ID_START).scalar()
-    return ACCOUNT_STORE_ID_START if not max_id else max_id + 1
-
-
-def get_next_customer_store_id(db):
-    # Backward-compatible alias for older imports.
-    return get_next_account_store_id(db)
+    max_id = db.query(func.max(Store.i_store_id)).filter(Store.i_store_id >= MERCHANT_STORE_ID_START).scalar()
+    return MERCHANT_STORE_ID_START if not max_id else max_id + 1

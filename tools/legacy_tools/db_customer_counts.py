@@ -13,12 +13,12 @@ if url.startswith("postgresql+psycopg://"):
 out = {}
 with psycopg.connect(url) as conn:
     with conn.cursor() as cur:
-        for tbl in ("tb_customer", "tb_customer_auth", "tb_account", "tb_store"):
+        for tbl in ("tb_customer", "tb_customer_auth", "tb_merchant", "tb_store"):
             cur.execute(f"select count(*) from {tbl}")
             out[tbl] = cur.fetchone()[0]
         cur.execute("select count(*) from tb_store where i_customer_id is not null")
         out["tb_store_i_customer_id_not_null"] = cur.fetchone()[0]
-        cur.execute("select count(*) from tb_store where i_account_id is not null")
-        out["tb_store_i_account_id_not_null"] = cur.fetchone()[0]
+        cur.execute("select count(*) from tb_store where i_merchant_id is not null")
+        out["tb_store_i_merchant_id_not_null"] = cur.fetchone()[0]
 
 print(json.dumps(out, ensure_ascii=True, indent=2))

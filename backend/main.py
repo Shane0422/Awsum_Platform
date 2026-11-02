@@ -23,7 +23,7 @@ from backend.database.db_init_platform import init_platform_db
 from backend.config.messages import popup_multi_choice
 from backend.config.settings import APP_NAME
 from backend.config.templates import templates, get_brand_context
-from backend.models_admin.account import Client
+from backend.models_admin.merchant import Merchant
 from backend.routers import auth, store, dashboard, common, subscription
 from backend.routers import platform_store
 from backend.routers import platform_store_license
@@ -179,47 +179,47 @@ async def home(request: Request):
     return _set_no_cache_headers(resp)
 
 
-def _normalize_client_code(value: str) -> str:
+def _normalize_merchant_code(value: str) -> str:
     return "".join(ch.lower() for ch in value if ch.isalnum())
 
 
-@app.get("/client/{client_code}", response_class=HTMLResponse)
-async def client_home(request: Request, client_code: str):
+@app.get("/merchant/{merchant_code}", response_class=HTMLResponse)
+async def merchant_home(request: Request, merchant_code: str):
     db: Session = PlatformSessionLocal()
     try:
-        clients = db.query(Client).all()
+        merchants = db.query(Merchant).all()
 
-        matched_client = next(
+        matched_merchant = next(
             (
-                client
-                for client in clients
-                if _normalize_client_code(client.c_client_code or "") == _normalize_client_code(client_code)
-                or _normalize_client_code(client.c_client_name or "") == _normalize_client_code(client_code)
+                merchant
+                for merchant in merchants
+                if _normalize_merchant_code(merchant.c_merchant_code or "") == _normalize_merchant_code(merchant_code)
+                or _normalize_merchant_code(merchant.c_merchant_name or "") == _normalize_merchant_code(merchant_code)
             ),
             None,
         )
 
-        if not matched_client:
+        if not matched_merchant:
             return templates.TemplateResponse(
-                "shared/client_not_found.html",
-                {"request": request, "client_code": client_code},
+                "shared/merchant_not_found.html",
+                {"request": request, "merchant_code": merchant_code},
                 status_code=404,
             )
 
-        client_name = matched_client.c_client_name or APP_NAME
+        merchant_name = matched_merchant.c_merchant_name or APP_NAME
         return templates.TemplateResponse(
-            "shared/client_home.html",
+            "shared/merchant_home.html",
             {
                 "request": request,
-                "client_name": client_name,
-                "hero_title": f"Elegance. Style. {client_name}",
+                "merchant_name": merchant_name,
+                "hero_title": f"Elegance. Style. {merchant_name}",
                 "hero_subtitle": "Premium formalwear rentals for your most memorable moments.",
-                "contact_email": matched_client.c_email or "support@awsumsolution.com",
-                "contact_phone": matched_client.c_phone or "+1 (000) 000-0000",
+                "contact_email": matched_merchant.c_email or "support@awsumsolution.com",
+                "contact_phone": matched_merchant.c_phone or "+1 (000) 000-0000",
                 **get_brand_context(
-                    context_type="client",
-                    brand_display_name=client_name,
-                    client_code=matched_client.c_client_code,
+                    context_type="merchant",
+                    brand_display_name=merchant_name,
+                    merchant_code=matched_merchant.c_merchant_code,
                 ),
             },
         )

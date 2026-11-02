@@ -9,7 +9,7 @@ class Invoice(PlatformBase, AuditMixin):
 
     i_invoice_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     i_subscription_id = Column(Integer, ForeignKey("tb_subscription.i_subscription_id"), nullable=False, index=True)
-    i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=False, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=False, index=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=False, index=True)
 
     c_invoice_no = Column(String(40), nullable=False, unique=True, index=True)

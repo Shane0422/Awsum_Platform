@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.store import Store
 
@@ -14,7 +14,7 @@ from backend.models_admin.store import Store
 BUSINESS_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _ENTITIES = {
     "AGENCY": ("AGT", Agency.c_agency_code, 11001004),
-    "MERCHANT": ("MER", Account.c_client_code, 11001002),
+    "MERCHANT": ("MER", Merchant.c_merchant_code, 11001002),
     "STORE": ("STR", Store.c_store_code, 11001003),
 }
 

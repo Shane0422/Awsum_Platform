@@ -351,7 +351,7 @@ class MasterImageTests(unittest.TestCase):
         self.assertIsNone(result["image_path"])
         self.assert_clean()
 
-    def test_json_updates_and_arbitrary_client_paths_cannot_change_image(self):
+    def test_json_updates_and_arbitrary_merchant_paths_cannot_change_image(self):
         item = self.create()
         response = self.client.put(
             f'/platform/api/master-group/md/{item["id"]}',

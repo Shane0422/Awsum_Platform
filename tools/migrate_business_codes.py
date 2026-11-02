@@ -26,7 +26,7 @@ from backend.database.pg_platform import get_platform_db_url
 
 
 CODE_COLUMNS = {
-    "tb_client": ("i_client_id", "c_client_code", ("CLT", "MER")),
+    "tb_merchant": ("i_merchant_id", "c_merchant_code", ("CLT", "MER")),
     "tb_store": ("i_store_id", "c_store_code", ("CLT", "STR", "CUST")),
     "tb_agency": ("i_agency_id", "c_agency_code", ("AGT",)),
 }
@@ -192,23 +192,23 @@ def _build_plan(
         namespace_root = brands_root / namespace
         if not namespace_root.is_dir():
             continue
-        for client_dir in sorted(namespace_root.iterdir()):
-            new_client_code = transform_code(client_dir.name, ("CLT", "MER"))
-            if not new_client_code or not client_dir.is_dir():
+        for merchant_dir in sorted(namespace_root.iterdir()):
+            new_merchant_code = transform_code(merchant_dir.name, ("CLT", "MER"))
+            if not new_merchant_code or not merchant_dir.is_dir():
                 continue
             add_move(
-                client_dir,
-                namespace_root / new_client_code,
+                merchant_dir,
+                namespace_root / new_merchant_code,
             )
 
-        for client_dir in sorted(namespace_root.iterdir()):
-            if not client_dir.is_dir():
+        for merchant_dir in sorted(namespace_root.iterdir()):
+            if not merchant_dir.is_dir():
                 continue
-            target_client_code = transform_code(client_dir.name, ("CLT", "MER")) or client_dir.name
-            stores_dir = client_dir / "stores"
+            target_merchant_code = transform_code(merchant_dir.name, ("CLT", "MER")) or merchant_dir.name
+            stores_dir = merchant_dir / "stores"
             if not stores_dir.is_dir():
                 continue
-            target_stores_dir = namespace_root / target_client_code / "stores"
+            target_stores_dir = namespace_root / target_merchant_code / "stores"
             for store_dir in sorted(stores_dir.iterdir()):
                 new_store_code = transform_code(store_dir.name, ("CLT", "STR", "CUST"))
                 if new_store_code and store_dir.is_dir():

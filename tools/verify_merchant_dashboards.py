@@ -7,22 +7,22 @@ import requests
 
 
 BASE_URL = os.getenv("AWSUM_BASE_URL", "http://127.0.0.1:8001")
-CLIENT_STORE_CODE = os.getenv("AWSUM_CLIENT_STORE_CODE", "CUST00001")
-CLIENT_EMAIL = os.getenv("AWSUM_CLIENT_EMAIL", "owner@cust00001.local")
-CLIENT_PASSWORD = os.getenv("AWSUM_CLIENT_PASSWORD", "Cust00001")
+MERCHANT_STORE_CODE = os.getenv("AWSUM_MERCHANT_STORE_CODE", "CUST00001")
+MERCHANT_EMAIL = os.getenv("AWSUM_MERCHANT_EMAIL", "owner@cust00001.local")
+MERCHANT_PASSWORD = os.getenv("AWSUM_MERCHANT_PASSWORD", "Cust00001")
 
 
-def login_client_admin(session: requests.Session) -> None:
+def login_merchant_admin(session: requests.Session) -> None:
     payload = {
-        "store_code": CLIENT_STORE_CODE,
-        "email": CLIENT_EMAIL,
-        "password": CLIENT_PASSWORD,
+        "store_code": MERCHANT_STORE_CODE,
+        "email": MERCHANT_EMAIL,
+        "password": MERCHANT_PASSWORD,
     }
     resp = session.post(f"{BASE_URL}/auth/login", data=payload, allow_redirects=False, timeout=20)
     if resp.status_code not in (302, 303):
         raise RuntimeError(
-            f"Client admin login failed: {resp.status_code} {resp.text[:200]} "
-            f"(store_code={CLIENT_STORE_CODE}, email={CLIENT_EMAIL})"
+            f"Merchant admin login failed: {resp.status_code} {resp.text[:200]} "
+            f"(store_code={MERCHANT_STORE_CODE}, email={MERCHANT_EMAIL})"
         )
 
 
@@ -47,13 +47,13 @@ def validate_dashboard(
 def main() -> int:
     session = requests.Session()
     session.get(f"{BASE_URL}/", timeout=20)
-    login_client_admin(session)
+    login_merchant_admin(session)
 
     cases: List[Tuple[str, str, str]] = [
-        ("/client/dashboard/standard", "STANDARD", "Standard Dashboard"),
-        ("/client/dashboard/restaurant", "RESTAURANT", "Restaurant Dashboard"),
-        ("/client/dashboard/deli", "DELI", "Deli Dashboard"),
-        ("/client/dashboard/tuxedo", "TUXEDO_RENTAL", "Tuxedo Rental Dashboard"),
+        ("/merchant/dashboard/standard", "STANDARD", "Standard Dashboard"),
+        ("/merchant/dashboard/restaurant", "RESTAURANT", "Restaurant Dashboard"),
+        ("/merchant/dashboard/deli", "DELI", "Deli Dashboard"),
+        ("/merchant/dashboard/tuxedo", "TUXEDO_RENTAL", "Tuxedo Rental Dashboard"),
     ]
 
     ok = True

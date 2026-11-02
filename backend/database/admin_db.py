@@ -33,12 +33,12 @@ AdminBase = declarative_base()
 
 # Store ID rules
 ADMIN_STORE_ID = 1000001
-CUSTOMER_STORE_ID_START = 1100001
+MERCHANT_STORE_ID_START = 1100001
 
 
 def init_admin_db():
     """AdminDB 테이블 생성 및 기본 Seed 데이터 삽입"""
-    from backend.models_admin import account, business_type, store, platform_user, session, role
+    from backend.models_admin import merchant, business_type, store, platform_user, session, role
 
     # 테이블 생성
     AdminBase.metadata.create_all(bind=admin_engine)
@@ -47,19 +47,19 @@ def init_admin_db():
     db = Session(bind=admin_engine)
 
     # ===============================
-    # Account Seed
+    # Merchant Seed
     # ===============================
-    from backend.models_admin.account import Account
-    default_accounts = [
-        {"c_account_name": "SystemAccount"},
+    from backend.models_admin.merchant import Merchant
+    default_merchants = [
+        {"c_merchant_name": "SystemMerchant"},
     ]
-    for acc in default_accounts:
-        if not db.query(Account).filter_by(c_account_name=acc["c_account_name"]).first():
-            db.add(Account(
-                c_account_name=acc["c_account_name"],
+    for merchant_seed in default_merchants:
+        if not db.query(Merchant).first():
+            db.add(Merchant(
+                c_merchant_name=merchant_seed["c_merchant_name"],
                 c_first_name="System",
                 c_last_name="Owner",
-                c_email="account@system.local",
+                c_email="merchant@system.local",
                 c_status="active",
             ))
 
@@ -217,7 +217,7 @@ def init_admin_db():
 
     db.flush()
 
-    # Fill missing codes according to platform/client prefix rule.
+    # Fill missing codes according to platform/merchant prefix rule.
     for s in stores:
         if s.c_store_code:
             continue
@@ -229,13 +229,13 @@ def init_admin_db():
 
     db.commit()
 
-    # Ensure auto-increment for customer stores starts at CUSTOMER_STORE_ID_START
+    # Ensure auto-increment for customer stores starts at MERCHANT_STORE_ID_START
     try:
         with admin_engine.begin() as conn:
             current_seq = conn.execute(
                 text("SELECT seq FROM sqlite_sequence WHERE name = 'tb_store' LIMIT 1")
             ).scalar()
-            desired_seq = CUSTOMER_STORE_ID_START - 1
+            desired_seq = MERCHANT_STORE_ID_START - 1
             if current_seq is None or current_seq < desired_seq:
                 conn.execute(
                     text(
@@ -256,7 +256,7 @@ def init_admin_db():
     default_admin_password = "Awsum123!"
     default_admin_hash = bcrypt.hashpw(default_admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    # Bootstrap only: never modify an existing SuperAdmin / bootstrap account.
+    # Bootstrap only: never modify an existing SuperAdmin / bootstrap merchant.
     from backend.models_admin.role import Role
 
     superadmin_role = db.query(Role).filter_by(c_name="SuperAdmin").first()
@@ -291,12 +291,12 @@ def init_admin_db():
 # ==========================================
 # 📌 Store ID helper
 # ==========================================
-def get_next_customer_store_id(db):
-    """Returns the next store ID for customer stores (>= CUSTOMER_STORE_ID_START)."""
+def get_next_merchant_store_id(db):
+    """Returns the next store ID for merchant stores (>= MERCHANT_STORE_ID_START)."""
     from backend.models_admin.store import Store
 
-    max_id = db.query(func.max(Store.i_store_id)).filter(Store.i_store_id >= CUSTOMER_STORE_ID_START).scalar()
-    return CUSTOMER_STORE_ID_START if not max_id else max_id + 1
+    max_id = db.query(func.max(Store.i_store_id)).filter(Store.i_store_id >= MERCHANT_STORE_ID_START).scalar()
+    return MERCHANT_STORE_ID_START if not max_id else max_id + 1
 
 
 # ==========================================

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 import bcrypt
 
-from backend.database.pg_platform import PlatformSessionLocal, get_next_customer_store_id
+from backend.database.pg_platform import PlatformSessionLocal, get_next_merchant_store_id
 from backend.models_admin.store import Store
 from backend.models_admin.business_type import BusinessType
 
@@ -37,7 +37,7 @@ def create_store(
         if not business_type:
             raise HTTPException(status_code=400, detail="Invalid business type code")
 
-        next_id = get_next_customer_store_id(db)
+        next_id = get_next_merchant_store_id(db)
 
         if len(store_pw.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
             raise HTTPException(

@@ -115,7 +115,7 @@ class FinalStorageTests(unittest.TestCase):
             migration.cleanup_plan(plan, self.engine, app_verified=True)
         new.unlink()
         with self.engine.begin() as conn:
-            conn.execute(text("UPDATE tb_client SET c_client_name='changed' WHERE i_client_id=1"))
+            conn.execute(text("UPDATE tb_merchant SET c_merchant_name='changed' WHERE i_merchant_id=1"))
         with self.assertRaisesRegex(RuntimeError, "DB changed"):
             migration.cleanup_plan(plan, self.engine, app_verified=True)
         self.assertTrue(original.exists())
@@ -168,7 +168,7 @@ class FinalStorageTests(unittest.TestCase):
             self.assertEqual(storage_layout.validate_runtime_references(self.engine), 1)
             reference = "/merchant/CLT11001/images/logo/logo.png"
             with self.engine.begin() as conn:
-                conn.execute(text("UPDATE tb_client SET c_logo_url=:reference WHERE i_client_id=1"), {"reference": reference})
+                conn.execute(text("UPDATE tb_merchant SET c_logo_url=:reference WHERE i_merchant_id=1"), {"reference": reference})
             self.assertEqual(storage_layout.validate_runtime_references(self.engine), 2)
             resource_storage_path(reference).unlink()
             with self.assertRaisesRegex(RuntimeError, "missing"):

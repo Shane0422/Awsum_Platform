@@ -13,7 +13,7 @@ if url.startswith("postgresql+psycopg://"):
 out = {}
 with psycopg.connect(url) as conn:
     with conn.cursor() as cur:
-        for tbl in ("tb_customer", "tb_customer_auth", "tb_account", "tb_store"):
+        for tbl in ("tb_customer", "tb_customer_auth", "tb_merchant", "tb_store"):
             cur.execute(
                 """
                 select column_name

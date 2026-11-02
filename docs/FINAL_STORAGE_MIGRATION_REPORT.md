@@ -27,7 +27,7 @@ inserts `media`. Examples:
 | MD image | `data/media/platform-admin/images/master/MD00001.png` | `platform-admin/images/master/MD00001.png` |
 | Historical SQLite | `data/platform-admin/data/master/admin.db` | `platform-admin/data/master/admin.db` |
 
-No schema, business-code, Account ID, password, permission, internal-ID or
+No schema, business-code, Merchant ID, password, permission, internal-ID or
 foreign-key changes were needed for this cutover. PostgreSQL business/security
 table fingerprints matched before and after application startup and cleanup.
 Session audit rows alone are intentionally excluded from those fingerprints.

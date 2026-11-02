@@ -13,11 +13,11 @@ if DB_URL.startswith("postgresql+psycopg://"):
 
 def main() -> int:
     out = {
-        "scope": "B2B client schema keyword scan",
-        "client_tables": [],
+        "scope": "B2B merchant schema keyword scan",
+        "merchant_tables": [],
         "legacy_customer_tables": [],
         "legacy_account_tables": [],
-        "client_columns": [],
+        "merchant_columns": [],
         "legacy_customer_columns": [],
         "legacy_account_columns": [],
     }
@@ -34,7 +34,7 @@ def main() -> int:
             )
             tables = [row[0] for row in cur.fetchall()]
 
-            out["client_tables"] = [t for t in tables if "client" in t.lower()]
+            out["merchant_tables"] = [t for t in tables if "merchant" in t.lower()]
             out["legacy_customer_tables"] = [t for t in tables if "customer" in t.lower()]
             out["legacy_account_tables"] = [t for t in tables if "account" in t.lower()]
 
@@ -49,11 +49,11 @@ def main() -> int:
             for table_name, column_name in cur.fetchall():
                 item = {"table": table_name, "column": column_name}
                 lowered = column_name.lower()
-                if "client" in lowered:
-                    out["client_columns"].append(item)
+                if "merchant" in lowered:
+                    out["merchant_columns"].append(item)
                 if "customer" in lowered or column_name == "i_customer_id":
                     out["legacy_customer_columns"].append(item)
-                if "account" in lowered or column_name == "i_account_id":
+                if "account" in lowered:
                     out["legacy_account_columns"].append(item)
 
     print(json.dumps(out, ensure_ascii=True, indent=2))

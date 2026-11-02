@@ -22,8 +22,7 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     dt_pw_expire = Column(DateTime, nullable=True)    # 업체 비밀번호 만료일자 (optional)
 
     # ✅ 관계 (계정/구분/업종)
-    i_account_id       = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=True)            # account (1:N, Account -> Store)
-    i_client_id        = synonym("i_account_id")  # Legacy compatibility
+    i_merchant_id       = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True)            # merchant (1:N, Merchant -> Store)
 
     # 관계 (업종)
     i_business_type_id = Column(Integer, ForeignKey("tb_business_type.i_business_type_id"), nullable=True) # 업종 (세탁소/웨딩/꽃집 등)

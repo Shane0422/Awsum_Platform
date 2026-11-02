@@ -1,6 +1,6 @@
 {% extends "platform/platform_base.html" %}
 
-{% block page_title %}Accounts Tree{% endblock %}
+{% block page_title %}Merchants Tree{% endblock %}
 
 {% block content %}
 <style>
@@ -172,7 +172,7 @@
     background: #e2e8f0;
   }
 
-  .detail-type.account { background: #dbeafe; color: #1e3a8a; }
+  .detail-type.merchant { background: #dbeafe; color: #1e3a8a; }
   .detail-type.store { background: #dcfce7; color: #166534; }
   .detail-type.device { background: #ede9fe; color: #5b21b6; }
 
@@ -208,8 +208,8 @@
   <section class="tree-card">
     <div class="panel-head">
       <div>
-        <h3 class="panel-title">Accounts Tree</h3>
-        <p class="panel-sub">Account -> Store -> Device hierarchy</p>
+        <h3 class="panel-title">Merchants Tree</h3>
+        <p class="panel-sub">Merchant -> Store -> Device hierarchy</p>
       </div>
       <button id="btnTreeRefresh" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
     </div>
@@ -222,7 +222,7 @@
     <div class="panel-head">
       <div>
         <h3 class="panel-title">Detail</h3>
-        <p class="panel-sub">Select an account, store, or device from the tree.</p>
+        <p class="panel-sub">Select an merchant, store, or device from the tree.</p>
       </div>
     </div>
     <div id="detailContainer" class="detail-scroll">
@@ -253,7 +253,7 @@
   }
 
   function openByDefault(type) {
-    return type === 'account';
+    return type === 'merchant';
   }
 
   function createNode(type, label, payload, children = []) {
@@ -270,7 +270,7 @@
 
     const icon = document.createElement('span');
     icon.className = 'tree-icon';
-    icon.textContent = type === 'account' ? 'A' : (type === 'store' ? 'S' : 'D');
+    icon.textContent = type === 'merchant' ? 'A' : (type === 'store' ? 'S' : 'D');
 
     const text = document.createElement('span');
     text.className = 'tree-label';
@@ -307,17 +307,17 @@
   }
 
   function renderDetail(type, payload) {
-    const badgeClass = type === 'account' ? 'account' : (type === 'store' ? 'store' : 'device');
-    const title = type === 'account'
-      ? safeValue(payload.account_name || payload.client_name || payload.name)
+    const badgeClass = type === 'merchant' ? 'merchant' : (type === 'store' ? 'store' : 'device');
+    const title = type === 'merchant'
+      ? safeValue(payload.merchant_name)
       : (type === 'store'
         ? safeValue(payload.store_name || payload.name)
         : safeValue(payload.device_name || payload.name));
 
     const details = [];
-    if (type === 'account') {
-      details.push(['Account ID', safeValue(payload.account_id || payload.id)]);
-      details.push(['Account Code', safeValue(payload.account_code || payload.c_account_code)]);
+    if (type === 'merchant') {
+      details.push(['Merchant ID', safeValue(payload.merchant_id || payload.id)]);
+      details.push(['Merchant Code', safeValue(payload.merchant_code)]);
       details.push(['Email', safeValue(payload.email)]);
       details.push(['Phone', safeValue(payload.phone)]);
       details.push(['Status', safeValue(payload.status)]);
@@ -372,18 +372,18 @@
     selectedNodeEl = null;
 
     try {
-      const accounts = await fetchJson('/platform/accounts-tree/data');
-      if (!Array.isArray(accounts) || accounts.length === 0) {
-        treeContainer.innerHTML = '<div class="tree-empty">No accounts found.</div>';
+      const merchants = await fetchJson('/platform/merchants-tree/data');
+      if (!Array.isArray(merchants) || merchants.length === 0) {
+        treeContainer.innerHTML = '<div class="tree-empty">No merchants found.</div>';
         return;
       }
 
       const root = document.createElement('ul');
       root.className = 'tree-root';
 
-      for (const account of accounts) {
-        const accountId = account.account_id || account.id;
-        const stores = Array.isArray(account.stores) ? account.stores : [];
+      for (const merchant of merchants) {
+        const merchantId = merchant.merchant_id || merchant.id;
+        const stores = Array.isArray(merchant.stores) ? merchant.stores : [];
 
         const storeNodes = [];
         for (const store of stores) {
@@ -399,8 +399,8 @@
           storeNodes.push(createNode('store', storeLabel, store, deviceNodes));
         }
 
-        const accountLabel = account.account_name || account.client_name || `Account #${accountId}`;
-        root.appendChild(createNode('account', accountLabel, account, storeNodes));
+        const merchantLabel = merchant.merchant_name || `Merchant #${merchantId}`;
+        root.appendChild(createNode('merchant', merchantLabel, merchant, storeNodes));
       }
 
       treeContainer.innerHTML = '';

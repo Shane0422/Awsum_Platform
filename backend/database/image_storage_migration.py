@@ -37,9 +37,9 @@ def migrate_image_storage(engine, *, dry_run=False) -> dict:
                     for asset in record["assets"]
                 )
         store_merchants = dict(conn.execute(text("""
-            SELECT s.c_store_code,c.c_client_code FROM tb_store s
-            JOIN tb_client c ON c.i_client_id=s.i_account_id
-        """)).all()) if inspect(conn).has_table("tb_store") and inspect(conn).has_table("tb_client") else {}
+            SELECT s.c_store_code,c.c_merchant_code FROM tb_store s
+            JOIN tb_merchant c ON c.i_merchant_id=s.i_merchant_id
+        """)).all()) if inspect(conn).has_table("tb_store") and inspect(conn).has_table("tb_merchant") else {}
 
         def source_file(source_url):
             source = images.legacy_physical_path(source_url)
@@ -111,7 +111,7 @@ def migrate_image_storage(engine, *, dry_run=False) -> dict:
         tables = (
             ("tb_system_settings", "i_settings_id", None, "PLATFORM"),
             ("tb_agency", "i_agency_id", "c_agency_code", "AGENCY"),
-            ("tb_client", "i_client_id", "c_client_code", "MERCHANT"),
+            ("tb_merchant", "i_merchant_id", "c_merchant_code", "MERCHANT"),
             ("tb_store", "i_store_id", "c_store_code", "STORE"),
         )
         for table, key, code_column, context in tables:

@@ -30,7 +30,7 @@ Platform navigation
   than duplicating them per entity; list behavior and edit-modal styles are unchanged.
 - List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
 - The same stylesheet is attached by `platform_base.html` for existing management,
-  Users, Sessions, Store Management, Accounts Tree, and System Settings pages.
+  Users, Sessions, Store Management, Merchants Tree, and System Settings pages.
   `.awsum-admin` maps legacy cards, tables, controls, and tabs to the common palette;
   page-specific layout, visibility, responsive scrolling, and validation remain intact.
   Dashboard and authentication pages do not opt in.
@@ -64,17 +64,45 @@ Platform Admin Policy (fixed)
 
 ## New registration business codes
 
-Agency, Merchant (including legacy Client registration), and Store creation use
+Agency, Merchant, and Store creation use
 `backend/services/business_code.py::generate_business_code`:
 `AGT` / `MER` / `STR` + registration year `YY` + four random characters.
 The alphabet is `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no `0`, `O`, `1`, `I`).
 Existing codes in the corresponding entity table are checked and collisions
 regenerated. PostgreSQL transaction advisory locks serialize same-entity
-generation (Client and Merchant share the lock); DB unique constraints remain.
+generation; DB unique constraints remain.
 Store sequence allocation and all numeric PK/FK rules are unchanged.
 Existing codes are not rewritten; storage, images, auth and licenses still use
 the saved codes and relationships. No migration is required for this generator.
 Focused checks: `py -m unittest tools.test_business_codes.BusinessCodeTests`.
+
+## Merchant model and API naming
+
+Merchant business entities use `backend/models_admin/merchant.py::Merchant`,
+`tb_merchant`, `i_merchant_id`, `c_merchant_code`, and `c_merchant_name`.
+The Merchant FK column is `i_merchant_id` in Store, Billing, Contract, Invoice,
+License, Payment Method, Session, and Subscription. Existing numeric IDs,
+business codes, row values, FK relationships, and image/data paths are preserved.
+
+Use `GET /platform/merchants`, `POST /platform/merchant`, and
+`PUT/DELETE /platform/merchant/{merchant_id}` with `merchant_name`,
+`merchant_code`, and `merchant_id` JSON fields. Image Add/Edit uses the same
+Merchant save implementation via `/with-image` and the existing Common image
+service. Linked Stores use `/platform/merchant/{merchant_id}/stores`;
+the tree is `/platform/merchants-tree`. There are no former business-model or
+Merchant route compatibility aliases. The System Merchant is seeded only into
+an empty Merchant table, so an existing system record is never duplicated.
+
+Existing installations must complete the reviewed PostgreSQL table/column and
+dependent identifier renames before restarting this code; startup does not
+silently fall back to the old schema. Do not rewrite existing names/codes or
+move uploaded files as part of this naming change. Historical migration input
+paths remain historical recovery formats, not current Merchant API contracts.
+HTTP/browser/network client metadata, Customer pages, banking/accounting and
+User authentication accounts are separate concepts and retain their names.
+
+Focused checks: `py -m unittest tools.test_merchant tools.test_business_codes
+tools.test_store_logo tools.test_branding tools.test_agency_portal`.
 
 ## Historical business code separator migration
 
@@ -218,7 +246,7 @@ Desktop header height is unchanged; narrow-screen navigation uses a single
 scrollable row so differing menu counts do not change header height.
 Image logos are width-limited on narrow screens.
 All requests use existing User/Auth/web sessions and server-enforced Agency scope.
-Merchants are restricted by `Account.i_agency_id`; Stores and device counts/details
+Merchants are restricted by `Merchant.i_agency_id`; Stores and device counts/details
 are restricted by **Store.i_installed_by_agency_id**, not the Merchant assignment.
 The technical Admin Store is always excluded.
 
@@ -287,7 +315,7 @@ The multipart adapter reuses existing Store field handling plus
 commit together, with filesystem compensation on failure. Existing Merchant/Store
 path rules and JSON/legacy logo APIs are retained; there is no immediate Store
 upload/reset button. Existing legacy files are not rewritten during preview/Cancel.
-Agency and Merchant (including legacy Account) Add/Edit use this same uploader,
+Agency and Merchant Add/Edit use this same uploader,
 with `AGENCY`/`MERCHANT` owner and `logo` category options. Their multipart Save
 adapters reuse the existing create/update/activation handlers and the same atomic
 image service. Default paths remain `/agency/<code>/images/logo/logo.webp` and

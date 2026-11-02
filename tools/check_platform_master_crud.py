@@ -47,7 +47,7 @@ def create_session_fixture(user_id: int) -> Optional[int]:
 
 def main() -> int:
     report: Dict[str, Any] = {}
-    ids: Dict[str, Optional[int]] = {"client_id": None, "store_id": None, "user_id": None, "session_id": None}
+    ids: Dict[str, Optional[int]] = {"merchant_id": None, "store_id": None, "user_id": None, "session_id": None}
 
     s = requests.Session()
     l = login(s)
@@ -62,21 +62,21 @@ def main() -> int:
     role_name = requests.get(f"{BASE_URL}/platform/roles", cookies=s.cookies, timeout=20).json()[0]["name"]
     business_type_name = requests.get(f"{BASE_URL}/platform/business-types", cookies=s.cookies, timeout=20).json()[0]["name"]
 
-    # Client CRUD
+    # Merchant CRUD
     acc = s.post(
-        f"{BASE_URL}/platform/client",
+        f"{BASE_URL}/platform/merchant",
         json={
-            "client_name": f"E2E-Client-{ts}",
+            "merchant_name": f"E2E-Merchant-{ts}",
             "first_name": "E2E",
             "last_name": "Owner",
-            "email": f"e2e-client-{ts}@example.com",
+            "email": f"e2e-merchant-{ts}@example.com",
             "phone": "5551001000",
             "status": "active",
         },
         timeout=20,
     )
-    ids["client_id"] = acc.json().get("id") if acc.ok else None
-    acc_u = s.put(f"{BASE_URL}/platform/client/{ids['client_id']}", json={"phone": "5551002000"}, timeout=20) if ids["client_id"] else None
+    ids["merchant_id"] = acc.json().get("id") if acc.ok else None
+    acc_u = s.put(f"{BASE_URL}/platform/merchant/{ids['merchant_id']}", json={"phone": "5551002000"}, timeout=20) if ids["merchant_id"] else None
 
     # Store CRUD
     store = s.post(
@@ -88,7 +88,7 @@ def main() -> int:
             "channel_type": "POS",
             "device_type": "Windows POS",
             "store_status": "active",
-            "client_id": ids["client_id"],
+            "merchant_id": ids["merchant_id"],
             "email": f"e2e-store-{ts}@example.com",
         },
         timeout=20,
@@ -125,10 +125,10 @@ def main() -> int:
     # Cleanup (soft delete)
     usr_d = s.delete(f"{BASE_URL}/platform/user/{ids['user_id']}", timeout=20) if ids["user_id"] else None
     store_d = s.delete(f"{BASE_URL}/platform/store/{ids['store_id']}", timeout=20) if ids["store_id"] else None
-    acc_d = s.delete(f"{BASE_URL}/platform/client/{ids['client_id']}", timeout=20) if ids["client_id"] else None
+    acc_d = s.delete(f"{BASE_URL}/platform/merchant/{ids['merchant_id']}", timeout=20) if ids["merchant_id"] else None
 
     report["crud"] = {
-        "clients": {
+        "merchants": {
             "create": acc.status_code,
             "update": acc_u.status_code if acc_u else None,
         },
@@ -150,7 +150,7 @@ def main() -> int:
     report["cleanup"] = {
         "user": usr_d.status_code if usr_d else None,
         "store": store_d.status_code if store_d else None,
-        "client": acc_d.status_code if acc_d else None,
+        "merchant": acc_d.status_code if acc_d else None,
     }
 
     print(json.dumps(report, ensure_ascii=True, indent=2))

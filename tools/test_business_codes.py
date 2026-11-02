@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.store import Store
@@ -36,18 +36,17 @@ class BusinessCodeTests(unittest.TestCase):
     def test_registration_entry_points_use_common_codes_and_keep_existing_records(self):
         before = {
             "agency": (self.db.get(Agency, 1).c_agency_code, self.db.get(Agency, 1).c_logo_url),
-            "merchant": (self.db.get(Account, 1).c_client_code, self.db.get(Account, 1).c_logo_url),
-            "store": (self.db.get(Store, 2).c_store_code, self.db.get(Store, 2).i_account_id),
+            "merchant": (self.db.get(Merchant, 1).c_merchant_code, self.db.get(Merchant, 1).c_logo_url),
+            "store": (self.db.get(Store, 2).c_store_code, self.db.get(Store, 2).i_merchant_id),
         }
         cases = (
             ("/platform/agency", {"company_name": "JSON Agency", "agency_type_id": 1}, "AGT", False),
             ("/platform/agency/with-image", {"company_name": "Image Agency", "agency_type_id": 1}, "AGT", True),
-            ("/platform/client", {"client_name": "Legacy Merchant"}, "MER", False),
-            ("/platform/client/with-image", {"client_name": "Image Merchant"}, "MER", True),
-            ("/platform/merchant", {"merchant_name": "Merchant", "primary_agency_id": 1, "business_type": "Test"}, "MER", False),
-            ("/platform/store", {"store_name": "Store", "client_id": 1, "installed_by_agency_id": 1}, "STR", False),
-            ("/platform/store/with-image", {"store_name": "Image Store", "client_id": 1, "installed_by_agency_id": 1}, "STR", True),
-            ("/platform/client/1/stores", {"store_name": "Linked Store"}, "STR", False),
+            ("/platform/merchant", {"merchant_name": "JSON Merchant", "primary_agency_id": 1, "business_type": "Test"}, "MER", False),
+            ("/platform/merchant/with-image", {"merchant_name": "Image Merchant", "primary_agency_id": 1, "business_type": "Test"}, "MER", True),
+            ("/platform/store", {"store_name": "Store", "merchant_id": 1, "installed_by_agency_id": 1}, "STR", False),
+            ("/platform/store/with-image", {"store_name": "Image Store", "merchant_id": 1, "installed_by_agency_id": 1}, "STR", True),
+            ("/platform/merchant/1/stores", {"store_name": "Linked Store"}, "STR", False),
         )
         codes = set()
         original_generator = business_code.generate_business_code
@@ -67,11 +66,11 @@ class BusinessCodeTests(unittest.TestCase):
                         if prefix == "AGT":
                             code = db.get(Agency, identity).c_agency_code
                         elif prefix == "MER":
-                            code = db.get(Account, identity).c_client_code
+                            code = db.get(Merchant, identity).c_merchant_code
                         else:
                             store = db.get(Store, identity)
                             code = store.c_store_code
-                            self.assertEqual(store.i_account_id, 1)
+                            self.assertEqual(store.i_merchant_id, 1)
                         self.assert_code(code, prefix)
                         self.assertNotIn(code, codes)
                         codes.add(code)
@@ -81,13 +80,13 @@ class BusinessCodeTests(unittest.TestCase):
             self.assertEqual(generator.call_count, len(cases))
         self.db.expire_all()
         self.assertEqual(before["agency"], (self.db.get(Agency, 1).c_agency_code, self.db.get(Agency, 1).c_logo_url))
-        self.assertEqual(before["merchant"], (self.db.get(Account, 1).c_client_code, self.db.get(Account, 1).c_logo_url))
-        self.assertEqual(before["store"], (self.db.get(Store, 2).c_store_code, self.db.get(Store, 2).i_account_id))
+        self.assertEqual(before["merchant"], (self.db.get(Merchant, 1).c_merchant_code, self.db.get(Merchant, 1).c_logo_url))
+        self.assertEqual(before["store"], (self.db.get(Store, 2).c_store_code, self.db.get(Store, 2).i_merchant_id))
 
     def test_collisions_retry_against_each_entity_without_changing_existing_codes(self):
         for entity, prefix, model, identity, field in (
             ("AGENCY", "AGT", Agency, 1, "c_agency_code"),
-            ("MERCHANT", "MER", Account, 1, "c_client_code"),
+            ("MERCHANT", "MER", Merchant, 1, "c_merchant_code"),
             ("STORE", "STR", Store, 2, "c_store_code"),
         ):
             with self.subTest(entity=entity):
@@ -116,11 +115,12 @@ class BusinessCodeTests(unittest.TestCase):
                 business_code.generate_business_code(self.db, "AGENCY")
         self.assertEqual(error.exception.status_code, 409)
 
-    def test_postgresql_transaction_lock_is_shared_by_client_and_merchant_generators(self):
+    def test_postgresql_transaction_lock_is_shared_by_router_and_common_generators(self):
         db = MagicMock()
         db.get_bind.return_value.dialect.name = "postgresql"
         db.query.return_value.filter.return_value.first.return_value = None
-        for function in (routes._generate_next_client_code, routes._generate_next_merchant_code):
+        for function in (routes._generate_next_merchant_code,
+                         lambda session: business_code.generate_business_code(session, "MERCHANT")):
             self.assert_code(function(db), "MER")
         self.assertEqual(db.execute.call_count, 2)
         self.assertEqual([call.args[1] for call in db.execute.call_args_list],

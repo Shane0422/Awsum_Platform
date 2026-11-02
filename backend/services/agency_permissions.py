@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database.pg_platform import ADMIN_STORE_ID
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.device import Device
 from backend.models_admin.platform_user import AGENCY_ADMIN_ROLE_NAME, PlatformUser
 from backend.models_admin.role import Role
@@ -69,14 +69,14 @@ class AgencyPortalPermissions:
         if record.i_agency_id != self.agency_id:
             raise HTTPException(404, "Record not found in your Agency.")
         if not self.can_deactivate_user(record.i_platform_user_id):
-            raise HTTPException(409, "You cannot deactivate your own account.")
+            raise HTTPException(409, "You cannot deactivate your own merchant.")
         if record.c_status == "active" and self.query(db, "users").filter(PlatformUser.c_status == "active").count() <= 1:
             raise HTTPException(409, "At least one active Agency Admin must remain.")
 
     def query(self, db: Session, resource: str):
         self.require(resource, "read")
         if resource == "merchants":
-            return db.query(Account).filter(Account.i_agency_id == self.agency_id)
+            return db.query(Merchant).filter(Merchant.i_agency_id == self.agency_id)
         if resource == "stores":
             return db.query(Store).filter(
                 Store.i_installed_by_agency_id == self.agency_id, Store.i_store_id != ADMIN_STORE_ID,

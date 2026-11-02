@@ -25,7 +25,7 @@ def check_db() -> Dict[str, Any]:
             result["db"] = {"name": db_name, "user": db_user}
 
             required_tables = [
-                "tb_client",
+                "tb_merchant",
                 "tb_business_type",
                 "tb_role",
                 "tb_store",

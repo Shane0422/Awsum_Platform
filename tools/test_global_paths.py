@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from backend.database.image_storage_migration import migrate_image_storage
 from backend.database.resource_path_migration import migrate_resource_paths
 from backend.database.store_db import get_store_engine, get_store_backup_dir
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.store import Store
 from backend.models_admin.contract import Contract
 from backend.services import images, paths, resource_storage
@@ -66,8 +66,8 @@ class GlobalPathTests(unittest.TestCase):
 
     def add_second_merchant(self):
         with self.factory() as db:
-            db.add(Account(i_client_id=2, c_client_code="CLT11002", c_client_name="Other Merchant"))
-            db.add(Store(i_store_id=4, c_store_code="STR00004", i_account_id=2, c_store_name="Other Store"))
+            db.add(Merchant(i_merchant_id=2, c_merchant_code="CLT11002", c_merchant_name="Other Merchant"))
+            db.add(Store(i_store_id=4, c_store_code="STR00004", i_merchant_id=2, c_store_name="Other Store"))
             db.commit()
 
     def test_wrong_merchant_denied_even_for_public_read_and_platform_admin(self):
@@ -87,7 +87,7 @@ class GlobalPathTests(unittest.TestCase):
 
     def test_multiple_stores_isolated_and_agency_is_not_in_path(self):
         with self.factory() as db:
-            db.add(Store(i_store_id=4, c_store_code="STR00004", i_account_id=1,
+            db.add(Store(i_store_id=4, c_store_code="STR00004", i_merchant_id=1,
                          i_installed_by_agency_id=1, c_store_name="Second Store"))
             db.commit()
         first = images.ImagePath("STORE", "STR00002", "employee", "EMP1.png", merchant_code="CLT11001")
@@ -235,7 +235,7 @@ class GlobalPathTests(unittest.TestCase):
 
     def contract(self, db, reference=None, merchant_id=1):
         from datetime import date
-        contract = Contract(i_contract_id=1, i_subscription_id=1, i_account_id=merchant_id,
+        contract = Contract(i_contract_id=1, i_subscription_id=1, i_merchant_id=merchant_id,
                             i_store_id=2, dt_contract_start_date=date(2026, 1, 1),
                             c_contract_pdf_path=reference)
         db.add(contract)
@@ -258,7 +258,7 @@ class GlobalPathTests(unittest.TestCase):
             with self.factory() as db:
                 row = db.get(Contract, 1)
                 self.assertEqual(row.c_contract_pdf_path, logical)
-                self.assertEqual((row.i_account_id, row.i_store_id), (1, 2))
+                self.assertEqual((row.i_merchant_id, row.i_store_id), (1, 2))
             self.assertEqual(paths.resource_storage_path(logical).read_bytes(), source.read_bytes())
             self.assertEqual(migrate_resource_paths(self.engine)["status"], "UNCHANGED")
 
@@ -277,7 +277,7 @@ class GlobalPathTests(unittest.TestCase):
                 self.assertTrue(reference.startswith("/merchant/CLT11001/store/STR00002/data/common/contract-1-"))
                 self.assertEqual(paths.resource_storage_path(reference).read_bytes(), b"%PDF-1.4 fixture")
                 self.assertTrue(reference.endswith(".pdf"))
-                db.get(Contract, 1).i_account_id = 999
+                db.get(Contract, 1).i_merchant_id = 999
                 db.commit()
                 with self.assertRaises(HTTPException) as error:
                     platform_store.download_contract_pdf(1, request(token), db)
@@ -316,10 +316,10 @@ class GlobalPathTests(unittest.TestCase):
             db.get(Store, 2).c_logo_url = "/merchant/CLT11001/store/STR00002/images/logo/logo.png"
             db.commit()
             with self.assertRaises(HTTPException) as error:
-                platform_store.update_store(2, {"client_id": 2}, request(token), db)
+                platform_store.update_store(2, {"merchant_id": 2}, request(token), db)
             self.assertEqual(error.exception.status_code, 409)
             db.rollback()
-            self.assertEqual(db.get(Store, 2).i_account_id, 1)
+            self.assertEqual(db.get(Store, 2).i_merchant_id, 1)
 
     def test_platform_sqlite_archive_migration_preserves_new_canonical_transactions(self):
         root = self.root / "data"

@@ -10,10 +10,11 @@ from backend.database.pg_platform import (
     platform_engine,
 )
 from backend.utils.safe_schema_migrate import safe_schema_migrate
+from backend.services.business_code import generate_business_code
 
 
-CLIENT_CODE_PREFIX = "CLT"
-CLIENT_CODE_SEQ_START = 11001
+MERCHANT_CODE_PREFIX = "CLT"
+MERCHANT_CODE_SEQ_START = 11001
 
 
 def _ensure_platform_user_last_login_schema(db: Session) -> None:
@@ -100,76 +101,76 @@ def _drop_legacy_store_type_dependencies(db: Session) -> None:
         print("[CLEANUP] Dropped legacy table tb_store_type")
 
 
-def _ensure_client_code_schema_and_backfill(db: Session) -> None:
-    """Ensure tb_client.c_client_code exists, is populated, unique, and not null."""
+def _ensure_merchant_code_schema_and_backfill(db: Session) -> None:
+    """Ensure tb_merchant.c_merchant_code exists, is populated, unique, and not null."""
     has_column = db.execute(
         text(
             """
             SELECT 1
             FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND table_name = 'tb_client'
-              AND column_name = 'c_client_code'
+              AND table_name = 'tb_merchant'
+              AND column_name = 'c_merchant_code'
             LIMIT 1
             """
         )
     ).scalar()
 
     if not has_column:
-        db.execute(text("ALTER TABLE tb_client ADD COLUMN c_client_code VARCHAR(20)"))
-        print("[MIGRATE] Added tb_client.c_client_code")
+        db.execute(text("ALTER TABLE tb_merchant ADD COLUMN c_merchant_code VARCHAR(20)"))
+        print("[MIGRATE] Added tb_merchant.c_merchant_code")
 
     # Serialize startup-side migration so constraints/backfill are deterministic.
-    db.execute(text("LOCK TABLE tb_client IN ACCESS EXCLUSIVE MODE"))
+    db.execute(text("LOCK TABLE tb_merchant IN ACCESS EXCLUSIVE MODE"))
 
     # If there are accidental duplicates, null out all but the first so they can be re-generated.
     db.execute(
         text(
             """
             WITH ranked AS (
-                SELECT i_client_id,
-                       c_client_code,
-                       ROW_NUMBER() OVER (PARTITION BY c_client_code ORDER BY i_client_id ASC) AS rn
-                FROM tb_client
-                WHERE c_client_code IS NOT NULL
-                  AND btrim(c_client_code) <> ''
+                SELECT i_merchant_id,
+                       c_merchant_code,
+                       ROW_NUMBER() OVER (PARTITION BY c_merchant_code ORDER BY i_merchant_id ASC) AS rn
+                FROM tb_merchant
+                WHERE c_merchant_code IS NOT NULL
+                  AND btrim(c_merchant_code) <> ''
             )
-            UPDATE tb_client AS tgt
-            SET c_client_code = NULL
+            UPDATE tb_merchant AS tgt
+            SET c_merchant_code = NULL
             FROM ranked
-            WHERE tgt.i_client_id = ranked.i_client_id
+            WHERE tgt.i_merchant_id = ranked.i_merchant_id
               AND ranked.rn > 1
             """
         )
     )
 
-    # Fill missing codes by i_client_id order starting at CLT11001 and continuing after current max.
+    # Fill missing codes by i_merchant_id order starting at CLT11001 and continuing after current max.
     db.execute(
         text(
             """
             WITH max_seq AS (
                 SELECT COALESCE(
-                    MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER)),
+                    MAX(CAST(SUBSTRING(c_merchant_code FROM '([0-9]+)$') AS INTEGER)),
                     :seed_start - 1
                 ) AS current_max
-                FROM tb_client
-                WHERE c_client_code ~ '^CLT_?[0-9]+$'
+                FROM tb_merchant
+                WHERE c_merchant_code ~ '^CLT_?[0-9]+$'
             ),
             missing AS (
-                SELECT i_client_id,
-                       ROW_NUMBER() OVER (ORDER BY i_client_id ASC) AS rn
-                FROM tb_client
-                WHERE c_client_code IS NULL OR btrim(c_client_code) = ''
+                SELECT i_merchant_id,
+                       ROW_NUMBER() OVER (ORDER BY i_merchant_id ASC) AS rn
+                FROM tb_merchant
+                WHERE c_merchant_code IS NULL OR btrim(c_merchant_code) = ''
             )
-            UPDATE tb_client AS tgt
-            SET c_client_code = :prefix || LPAD((max_seq.current_max + missing.rn)::text, 5, '0')
+            UPDATE tb_merchant AS tgt
+            SET c_merchant_code = :prefix || LPAD((max_seq.current_max + missing.rn)::text, 5, '0')
             FROM missing, max_seq
-            WHERE tgt.i_client_id = missing.i_client_id
+            WHERE tgt.i_merchant_id = missing.i_merchant_id
             """
         ),
         {
-            "prefix": CLIENT_CODE_PREFIX,
-            "seed_start": CLIENT_CODE_SEQ_START,
+            "prefix": MERCHANT_CODE_PREFIX,
+            "seed_start": MERCHANT_CODE_SEQ_START,
         },
     )
 
@@ -181,40 +182,40 @@ def _ensure_client_code_schema_and_backfill(db: Session) -> None:
                 IF NOT EXISTS (
                     SELECT 1
                     FROM pg_constraint
-                    WHERE conname = 'uq_tb_client_c_client_code'
-                      AND conrelid = 'tb_client'::regclass
+                    WHERE conname = 'uq_tb_merchant_c_merchant_code'
+                      AND conrelid = 'tb_merchant'::regclass
                 ) THEN
-                    ALTER TABLE tb_client
-                    ADD CONSTRAINT uq_tb_client_c_client_code UNIQUE (c_client_code);
+                    ALTER TABLE tb_merchant
+                    ADD CONSTRAINT uq_tb_merchant_c_merchant_code UNIQUE (c_merchant_code);
                 END IF;
             END $$;
             """
         )
     )
 
-    db.execute(text("ALTER TABLE tb_client ALTER COLUMN c_client_code SET NOT NULL"))
+    db.execute(text("ALTER TABLE tb_merchant ALTER COLUMN c_merchant_code SET NOT NULL"))
 
     migrated_rows = db.execute(
         text(
             """
             SELECT COUNT(*)
-            FROM tb_client
-            WHERE c_client_code ~ '^CLT_?[0-9]+$'
+            FROM tb_merchant
+            WHERE c_merchant_code ~ '^CLT_?[0-9]+$'
             """
         )
     ).scalar() or 0
-    print(f"[MIGRATE] tb_client.c_client_code populated rows: {migrated_rows}")
+    print(f"[MIGRATE] tb_merchant.c_merchant_code populated rows: {migrated_rows}")
 
 
-def _ensure_client_primary_agency_schema(db: Session) -> None:
-    """Ensure tb_client.i_agency_id exists and links to tb_agency when available."""
+def _ensure_merchant_primary_agency_schema(db: Session) -> None:
+    """Ensure tb_merchant.i_agency_id exists and links to tb_agency when available."""
     has_column = db.execute(
         text(
             """
             SELECT 1
             FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND table_name = 'tb_client'
+              AND table_name = 'tb_merchant'
               AND column_name = 'i_agency_id'
             LIMIT 1
             """
@@ -222,10 +223,10 @@ def _ensure_client_primary_agency_schema(db: Session) -> None:
     ).scalar()
 
     if not has_column:
-        db.execute(text("ALTER TABLE tb_client ADD COLUMN i_agency_id INTEGER"))
-        print("[MIGRATE] Added tb_client.i_agency_id")
+        db.execute(text("ALTER TABLE tb_merchant ADD COLUMN i_agency_id INTEGER"))
+        print("[MIGRATE] Added tb_merchant.i_agency_id")
 
-    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tb_client_i_agency_id ON tb_client (i_agency_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tb_merchant_i_agency_id ON tb_merchant (i_agency_id)"))
 
     has_agent_table = db.execute(text("SELECT to_regclass('public.tb_agency')")).scalar() is not None
     if not has_agent_table:
@@ -239,11 +240,11 @@ def _ensure_client_primary_agency_schema(db: Session) -> None:
                 IF NOT EXISTS (
                     SELECT 1
                     FROM pg_constraint
-                    WHERE conname = 'fk_tb_client_i_agency_id_tb_agency'
-                      AND conrelid = 'tb_client'::regclass
+                    WHERE conname = 'fk_tb_merchant_i_agency_id_tb_agency'
+                      AND conrelid = 'tb_merchant'::regclass
                 ) THEN
-                    ALTER TABLE tb_client
-                    ADD CONSTRAINT fk_tb_client_i_agency_id_tb_agency
+                    ALTER TABLE tb_merchant
+                    ADD CONSTRAINT fk_tb_merchant_i_agency_id_tb_agency
                     FOREIGN KEY (i_agency_id) REFERENCES tb_agency(i_agency_id)
                     ON DELETE SET NULL;
                 END IF;
@@ -253,11 +254,11 @@ def _ensure_client_primary_agency_schema(db: Session) -> None:
     )
 
 
-def _ensure_client_website_column(db: Session) -> None:
-    """Ensure tb_client.c_website exists (nullable; existing rows untouched)."""
-    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_website VARCHAR(255)"))
-    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_notes TEXT"))
-    db.execute(text("ALTER TABLE tb_client ADD COLUMN IF NOT EXISTS c_timezone VARCHAR(64)"))
+def _ensure_merchant_website_column(db: Session) -> None:
+    """Ensure tb_merchant.c_website exists (nullable; existing rows untouched)."""
+    db.execute(text("ALTER TABLE tb_merchant ADD COLUMN IF NOT EXISTS c_website VARCHAR(255)"))
+    db.execute(text("ALTER TABLE tb_merchant ADD COLUMN IF NOT EXISTS c_notes TEXT"))
+    db.execute(text("ALTER TABLE tb_merchant ADD COLUMN IF NOT EXISTS c_timezone VARCHAR(64)"))
     db.execute(text("ALTER TABLE tb_store ADD COLUMN IF NOT EXISTS c_notes TEXT"))
 
 
@@ -409,21 +410,21 @@ def _ensure_subscription_schema(db: Session) -> None:
     print("[MIGRATE] Ensured tb_subscription pricing snapshot columns")
 
 
-def _next_client_code_value(db: Session) -> str:
+def _next_merchant_code_value(db: Session) -> str:
     max_seq = db.execute(
         text(
             """
             SELECT COALESCE(
-                MAX(CAST(SUBSTRING(c_client_code FROM '([0-9]+)$') AS INTEGER)),
+                MAX(CAST(SUBSTRING(c_merchant_code FROM '([0-9]+)$') AS INTEGER)),
                 :seed_start - 1
             ) AS current_max
-            FROM tb_client
-            WHERE c_client_code ~ '^CLT_?[0-9]+$'
+            FROM tb_merchant
+            WHERE c_merchant_code ~ '^CLT_?[0-9]+$'
             """
         ),
-        {"seed_start": CLIENT_CODE_SEQ_START},
-    ).scalar() or (CLIENT_CODE_SEQ_START - 1)
-    return f"{CLIENT_CODE_PREFIX}{int(max_seq) + 1:05d}"
+        {"seed_start": MERCHANT_CODE_SEQ_START},
+    ).scalar() or (MERCHANT_CODE_SEQ_START - 1)
+    return f"{MERCHANT_CODE_PREFIX}{int(max_seq) + 1:05d}"
 
 
 # ------------------------------------------------------------------
@@ -601,7 +602,7 @@ def _seed_device_categories_and_types(db: Session) -> None:
 def init_platform_db() -> None:
     """Create platform tables in PostgreSQL and seed baseline data."""
     from backend.models_admin import (
-        account,
+        merchant,
         business_type,
         store,
         platform_user,
@@ -630,7 +631,7 @@ def init_platform_db() -> None:
         master_group,
         business_contact,
     )
-    from backend.models_admin.account import Client
+    from backend.models_admin.merchant import Merchant
     from backend.models_admin.business_type import BusinessType
     from backend.models_admin.role import Role
     from backend.models_admin.agency_type import AgencyType
@@ -673,9 +674,9 @@ def init_platform_db() -> None:
         _drop_legacy_tb_user_table(db)
         _drop_legacy_session_user_column(db)
         _drop_legacy_store_type_dependencies(db)
-        _ensure_client_code_schema_and_backfill(db)
-        _ensure_client_primary_agency_schema(db)
-        _ensure_client_website_column(db)
+        _ensure_merchant_code_schema_and_backfill(db)
+        _ensure_merchant_primary_agency_schema(db)
+        _ensure_merchant_website_column(db)
         _ensure_store_license_options_schema(db)
         _ensure_pricing_plan_schema(db)
         _ensure_subscription_schema(db)
@@ -683,15 +684,15 @@ def init_platform_db() -> None:
         _ensure_license_management_schema(db)
         db.commit()
 
-        # Client seed
-        if not db.query(Client).filter_by(c_client_name="SystemClient").first():
+        # Bootstrap only; renaming the model must not duplicate the existing system merchant.
+        if not db.query(Merchant).first():
             db.add(
-                Client(
-                    c_client_code=_next_client_code_value(db),
-                    c_client_name="SystemClient",
+                Merchant(
+                    c_merchant_code=generate_business_code(db, "MERCHANT"),
+                    c_merchant_name="SystemMerchant",
                     c_first_name="System",
-                    c_last_name="Client",
-                    c_email="client@system.local",
+                    c_last_name="Owner",
+                    c_email="merchant@system.local",
                     c_status="active",
                 )
             )
@@ -815,7 +816,7 @@ def init_platform_db() -> None:
         superadmin_role = db.query(Role).filter_by(c_name="SuperAdmin").first()
 
         # Platform admin auth source of truth (tb_platform_user)
-        # Bootstrap only: never modify an existing SuperAdmin / bootstrap account.
+        # Bootstrap only: never modify an existing SuperAdmin / bootstrap merchant.
         superadmin_role_id = superadmin_role.i_role_id if superadmin_role else 1
         existing_superadmin = (
             db.query(PlatformUser)
@@ -843,7 +844,7 @@ def init_platform_db() -> None:
                 )
             )
 
-        # Fixed test client store (undeletable by API)
+        # Fixed test merchant store (undeletable by API)
         tuxedo_business_type = db.query(BusinessType).filter_by(c_business_code="TUXEDO_RENTAL").first()
         test_store_pw = bcrypt.hashpw("Cust00001".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 

@@ -153,7 +153,7 @@ class UserImageTests(unittest.TestCase):
         self.assertEqual(self.db.query(PlatformUser).count(), before)
         self.assertEqual(list(self.root.rglob("*.png")), [])
 
-    def test_existing_photo_is_not_uploaded_or_revalidated_on_account_only_edits(self):
+    def test_existing_photo_is_not_uploaded_or_revalidated_on_merchant_only_edits(self):
         item = self.create()
         original = self.physical(item).read_bytes()
         for changes in ({"name": "Name only"}, {"role_id": 1, "status": "inactive"},
@@ -203,7 +203,7 @@ class UserImageTests(unittest.TestCase):
                 self.assertEqual(self.physical(item).read_bytes(), original)
         self.assert_clean()
 
-    def test_legacy_photo_reference_survives_account_edit_then_migrates_after_commit(self):
+    def test_legacy_photo_reference_survives_merchant_edit_then_migrates_after_commit(self):
         item = self.create()
         for extension, fmt in (("jpg", "JPEG"), ("png", "PNG")):
             with self.subTest(extension=extension):

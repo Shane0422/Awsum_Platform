@@ -191,7 +191,7 @@ class MasterGroupTests(unittest.TestCase):
         self.assertEqual((out["p1_price"], out["p2_price"], out["p3_price"]), ("160.00", "120.00", "45.00"))
         self.assertEqual(out["p1_discount_pct"], "20.00")
 
-    def test_client_supplied_price_ignored_in_discount_mode(self):
+    def test_merchant_supplied_price_ignored_in_discount_mode(self):
         item = svc.create_item(self.db, "md", self.md_payload(
             retail_price="100", p1_mode="DISCOUNT", p1_discount_pct="20", p1_price="1.00"), 1)
         self.assertEqual(item["p1_price"], "80.00")

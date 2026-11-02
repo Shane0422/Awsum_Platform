@@ -19,16 +19,16 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 
-def _public_brand(context_type="platform", client_code=None, store_code=None) -> BrandingContext:
+def _public_brand(context_type="platform", merchant_code=None, store_code=None) -> BrandingContext:
     engine = PlatformSessionLocal.kw.get("bind")
     if engine is not None and inspect(engine).has_table("tb_system_settings"):
         with PlatformSessionLocal() as db:
             if context_type == "store" and store_code:
                 return resolve_access_code(db, store_code, "STORE")
-            if context_type in {"client", "account", "merchant"} and client_code:
-                return resolve_access_code(db, client_code, "MERCHANT")
-            if context_type == "agency" and client_code:
-                return resolve_access_code(db, client_code, "AGENCY")
+            if context_type == "merchant" and merchant_code:
+                return resolve_access_code(db, merchant_code, "MERCHANT")
+            if context_type == "agency" and merchant_code:
+                return resolve_access_code(db, merchant_code, "AGENCY")
             return resolve_branding(db)
     return BrandingContext("PLATFORM", APP_NAME, platform_logo_url(),
                            APP_NAME, "/platform-admin", "ADMIN", "Platform Administration")
@@ -44,24 +44,24 @@ def get_company_branding() -> dict:
 
 
 def resolve_brand_asset_paths(
-    *, context_type: str, client_code: Optional[str] = None,
-    account_code: Optional[str] = None, store_code: Optional[str] = None,
+    *, context_type: str, merchant_code: Optional[str] = None,
+    store_code: Optional[str] = None,
 ) -> dict:
-    brand = _public_brand(context_type, client_code or account_code, store_code)
+    brand = _public_brand(context_type, merchant_code, store_code)
     return {"brand_icon_path": favicon_url(brand.logo_url), "brand_logo_path": brand.logo_url}
 
 
 def get_brand_context(
     *, context_type: str = "platform", brand_display_name: Optional[str] = None,
-    brand_icon_path: Optional[str] = None, client_code: Optional[str] = None,
-    account_code: Optional[str] = None, store_code: Optional[str] = None,
+    brand_icon_path: Optional[str] = None, merchant_code: Optional[str] = None,
+    store_code: Optional[str] = None,
 ):
-    assets = resolve_brand_asset_paths(context_type=context_type, client_code=client_code,
-                                       account_code=account_code, store_code=store_code)
+    assets = resolve_brand_asset_paths(context_type=context_type, merchant_code=merchant_code,
+                                       store_code=store_code)
     return {
         "brand_context": context_type, "brand_display_name": brand_display_name or APP_NAME,
         **assets, "brand_icon_path": brand_icon_path or assets["brand_icon_path"],
-        **get_company_branding(), "brand_client_code": client_code or account_code,
+        **get_company_branding(), "brand_merchant_code": merchant_code,
         "brand_store_code": store_code,
     }
 

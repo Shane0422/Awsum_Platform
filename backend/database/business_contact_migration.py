@@ -30,10 +30,10 @@ def _sources() -> dict:
             SELECT i_agency_id AS owner_id, {agency_first} AS first_name, {agency_last} AS last_name,
                    c_email AS email, c_phone AS phone
             FROM tb_agency"""),
-        "MERCHANT": ("tb_client", """
-            SELECT i_client_id AS owner_id, NULLIF(trim(c_first_name), '') AS first_name,
+        "MERCHANT": ("tb_merchant", """
+            SELECT i_merchant_id AS owner_id, NULLIF(trim(c_first_name), '') AS first_name,
                    NULLIF(trim(c_last_name), '') AS last_name, c_email AS email, c_phone AS phone
-            FROM tb_client"""),
+            FROM tb_merchant"""),
         "STORE": ("tb_store", f"""
             SELECT i_store_id AS owner_id,
                    CASE WHEN NULLIF(trim(c_contact_name), '') IS NOT NULL THEN {agency_first}

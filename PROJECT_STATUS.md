@@ -38,7 +38,7 @@
 | 테이블 | 모델 파일 | 핵심 컬럼 / 비고 |
 |---|---|---|
 | `tb_platform_user` | platform_user.py | 플랫폼 관리자 계정, `i_must_change_password` 강제 변경 플래그 |
-| `tb_client` (Account) | account.py | `c_client_code`(CLTXXXXX), `i_agency_id`, 로고 지원 |
+| `tb_merchant` (Merchant) | merchant.py | `i_merchant_id`, `c_merchant_name`, `c_merchant_code` (MER+YY+4; existing codes preserved), `i_agency_id`, 로고 지원 |
 | `tb_store` | store.py | `c_store_code`(STRXXXXX), dashboard_type, 로고, 세금/타임존 |
 | `tb_role` | role.py | 역할 정의 |
 | `tb_business_type` | business_type.py | 업종 정의 |
@@ -71,7 +71,7 @@ currency, sort_order, is_default, status
 
 #### Subscription 주요 컬럼 (계약 시점 스냅샷 포함)
 ```
-account_id, store_id, plan_id (FK),
+merchant_id, store_id, plan_id (FK),
 plan_code/name (스냅샷), store_base_fee/pos_fee/.../transaction_fee_rate (스냅샷),
 monthly_fee (계약 월액), start_date, end_date,
 device_limit, status, billing_cycle, renewal_status, dt_next_billing
@@ -79,7 +79,7 @@ device_limit, status, billing_cycle, renewal_status, dt_next_billing
 
 #### Invoice / InvoiceLine
 ```
-invoice_no (INV-YYYYMMDD-XXXX), subscription_id, account_id, store_id,
+invoice_no (INV-YYYYMMDD-XXXX), subscription_id, merchant_id, store_id,
 invoice_date, due_date, subtotal, tax, total, currency,
 status: issued → paid | void (paid→void 차단, void→* 차단)
 
@@ -88,7 +88,7 @@ InvoiceLine: line_type, description, quantity (4dp), unit_price, amount
 
 #### Contract
 ```
-contract_id, subscription_id, account_id, store_id, pricing_plan_id,
+contract_id, subscription_id, merchant_id, store_id, pricing_plan_id,
 contract_start_date, contract_end_date, contract_term_month,
 setup_fee, monthly_base_fee, monthly_device_fee, monthly_user_fee,
 monthly_total_fee, tax_rate, tax_amount, total_monthly_fee,
@@ -99,7 +99,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 - `backend/database/db_init_platform.py` — 앱 시작 시 자동 실행
 - `backend/utils/safe_schema_migrate.py` — 컬럼 추가만 허용 (삭제 없음), 백업 후 정렬
-- 수동 보강 함수: `_ensure_client_code_schema_and_backfill`, pricing_plan SaaS 컬럼, subscription 스냅샷 컬럼
+- 수동 보강 함수: `_ensure_merchant_code_schema_and_backfill`, pricing_plan SaaS 컬럼, subscription 스냅샷 컬럼
 - 시드 데이터: 기본 역할/업종/플랜/플랫폼 관리자 계정 자동 생성
 
 ---
@@ -127,13 +127,13 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 ### ✅ 완료 — 플랫폼 관리 API (`backend/routers/platform_store.py`, prefix 없음)
 
-#### 계정(Client/Account)
+#### Merchant
 | Method | Path |
 |---|---|
-| GET | `/platform/clients` |
-| GET/PUT/DELETE | `/platform/client/{id}` |
-| POST | `/platform/client` |
-| POST/DELETE | `/platform/client/{id}/logo` |
+| GET | `/platform/merchants` |
+| PUT/DELETE | `/platform/merchant/{id}` |
+| POST | `/platform/merchant` |
+| POST/DELETE | `/platform/merchant/{id}/logo` |
 
 #### 스토어
 | Method | Path |
@@ -141,12 +141,12 @@ status(active/terminated/expired), contract_pdf_path, created_at
 | GET | `/platform/stores`, `/platform/store/{id}` |
 | POST/PUT/DELETE | `/platform/store`, `/platform/store/{id}` |
 | POST/DELETE | `/platform/store/{id}/logo` |
-| GET/POST/PUT/DELETE | `/platform/client/{id}/stores`, `/platform/client/{id}/stores/{store_id}` |
+| GET/POST/PUT/DELETE | `/platform/merchant/{id}/stores`, `/platform/merchant/{id}/stores/{store_id}` |
 
 #### 디바이스
 | Method | Path |
 |---|---|
-| GET/POST/PUT/DELETE | `/platform/client/{id}/stores/{store_id}/devices[/{device_id}]` |
+| GET/POST/PUT/DELETE | `/platform/merchant/{id}/stores/{store_id}/devices[/{device_id}]` |
 | POST | `/platform/device/activate` (활성화 토큰 발급) |
 | POST | `/platform/device/validate` (토큰 검증) |
 
@@ -220,7 +220,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 | POST | `/subscriptions` | 생성 (플랜 스냅샷 자동 저장) |
 | PUT | `/subscriptions/{id}` | 수정 |
 | DELETE | `/subscriptions/{id}` | 취소 |
-| GET | `/subscriptions/account/{id}/subscriptions` | 계정별 구독 목록 |
+| GET | `/subscriptions/merchant/{id}/subscriptions` | 계정별 구독 목록 |
 | GET | `/subscriptions/store/{id}/subscriptions` | 스토어별 구독 목록 |
 | GET | `/subscriptions/{id}/billing-preview` | Billing preview 계산 (과금 미리보기) |
 | GET | `/subscriptions/{id}/contract-summary` | 구독의 최신 Contract 요약 (계약 ID/월요금/상태) |
@@ -253,7 +253,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 #### 플랫폼 대시보드 (`platform_dashboard.html`)
 - KPI 카드 (총 계정수, 활성/비활성 스토어, 사용자 수, 최근 계정)
-- 사이드바 (Dashboard / Accounts / Agencies / Agency Types / Subscriptions / Contracts / Pricing Plans / Invoices / Payment Methods / Device Categories / Device Types / Business Types / Roles / Users / Sessions)
+- 사이드바 (Dashboard / Merchants / Agencies / Agency Types / Subscriptions / Contracts / Pricing Plans / Invoices / Payment Methods / Device Categories / Device Types / Business Types / Roles / Users / Sessions)
 - 사이드바 하단 고정 Logout 버튼 (flex 분리 레이아웃)
 
 #### 마스터 관리 (`master_management.html`) — 공통 CRUD 엔진
@@ -266,7 +266,7 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 | 모듈 키 | 경로 | 특이사항 |
 |---|---|---|
-| `account` | /platform/master/account | 로고 업로드, ZIP 자동완성(API), 하위 스토어 패널, 디바이스 패널 |
+| `merchant` | /platform/master/merchant | 로고 업로드, ZIP 자동완성(API), 하위 스토어 패널, 디바이스 패널 |
 | `agency` | /platform/master/agency | 수수료율, 담당자 정보 |
 | `agency-type` | /platform/master/agency-type | 코드 자동 정규화(대문자+언더스코어) |
 | `subscription` | /platform/master/subscription | Monthly Billing Preview (Store Base/Device/User/Subtotal/Tax/Total), Contract Monthly Fee 자동 계산 |
@@ -287,10 +287,10 @@ status(active/terminated/expired), contract_pdf_path, created_at
 
 | 템플릿 | 상태 | 비고 |
 |---|---|---|
-| `client/dashboard_standard.html` | 기본 구조 완성 | 실제 데이터 연동 미완 |
-| `client/dashboard_restaurant.html` | 플레이스홀더 | 미구현 |
-| `client/dashboard_deli.html` | 플레이스홀더 | 미구현 |
-| `client/dashboard_tuxedo.html` | 플레이스홀더 | 미구현 |
+| `merchant/dashboard_standard.html` | 기본 구조 완성 | 실제 데이터 연동 미완 |
+| `merchant/dashboard_restaurant.html` | 플레이스홀더 | 미구현 |
+| `merchant/dashboard_deli.html` | 플레이스홀더 | 미구현 |
+| `merchant/dashboard_tuxedo.html` | 플레이스홀더 | 미구현 |
 | `store/workspace_dashboard.html` | 기본 구조 | 재고/업무 패널 미구현 |
 
 ### 🔲 미구현 — UI
@@ -385,7 +385,8 @@ Awsum_Platform/
 │   │   ├── master_management.html # 공통 마스터 CRUD 엔진 (핵심)
 │   │   ├── platform_dashboard.html
 │   │   └── login.html
-│   ├── client/                    # 클라이언트 대시보드 (부분 구현)
+│   ├── merchant/                  # Merchant 대시보드 (부분 구현)
+│   ├── client/                    # 별도 Customer 화면
 │   └── store/                     # 스토어 워크스페이스 (부분 구현)
 ├── static/                        # 서버 CSS/JS/컴포넌트 번들, Bootstrap 오프라인
 │   └── images/platform/           # 내장 Platform 이미지 (logo/background/favicon/defaults/ui)

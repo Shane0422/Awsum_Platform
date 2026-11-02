@@ -12,7 +12,7 @@ Seed 데이터는 영문 코드 저장 + Python 코드에 한글 주석
 
 1.1 용어 원칙 (B2B/B2C 구분)
 
-Account: 상위 B2B 테넌트(회사/가맹/파트너) 단위
+Merchant: 상위 B2B 테넌트(회사/가맹/파트너) 단위
 Customer: 최종 소비자(End Consumer) 문맥에서만 사용
 UI/문서/코드에서 상위 회사 의미의 Customer 표기는 사용하지 않음
 
@@ -37,8 +37,8 @@ Manager (# 매장 운영 책임자)
 Staff (# 매장 직원)
 Customer (# 일반 고객)
 
-2.4 tb_account (상위 계정)
-Account명, 상태
+2.4 tb_merchant (상위 계정)
+Merchant명, 상태
 ContactMixin
 AuditMixin
 
@@ -102,14 +102,14 @@ erDiagram
         string c_status
     }
 
-    ACCOUNT {
-        int i_account_id PK
-        string c_account_name
+    MERCHANT {
+        int i_merchant_id PK
+        string c_merchant_name
         string c_status
     }
 
     STORE {
-        int i_account_id FK
+        int i_merchant_id FK
         int i_store_id PK
         string c_store_name
         string c_store_pw
@@ -162,7 +162,7 @@ erDiagram
     }
 
     %% 관계
-    ACCOUNT ||--o{ STORE : "owns"
+    MERCHANT ||--o{ STORE : "owns"
     STORE_TYPE ||--o{ STORE : "has"
     BUSINESS_TYPE ||--o{ STORE : "has"
     ROLE ||--o{ USER : "assigns"
@@ -170,7 +170,7 @@ erDiagram
     USER ||--o{ SESSION : "creates"
 
     %% 공통 부분 연결
-    AUDIT_MIXIN ||..|| ACCOUNT : "includes"
+    AUDIT_MIXIN ||..|| MERCHANT : "includes"
     AUDIT_MIXIN ||..|| STORE : "includes"
     AUDIT_MIXIN ||..|| USER : "includes"
     AUDIT_MIXIN ||..|| SESSION : "includes"
@@ -178,7 +178,7 @@ erDiagram
     AUDIT_MIXIN ||..|| BUSINESS_TYPE : "includes"
     AUDIT_MIXIN ||..|| ROLE : "includes"
 
-    CONTACT_MIXIN ||..|| ACCOUNT : "includes"
+    CONTACT_MIXIN ||..|| MERCHANT : "includes"
     CONTACT_MIXIN ||..|| STORE : "includes"
     CONTACT_MIXIN ||..|| USER : "includes"
 

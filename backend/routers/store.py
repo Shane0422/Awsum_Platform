@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.database.store_db import StoreBase, get_store_engine, get_store_backup_dir
 from backend.models_admin.store import Store as StoreModel
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.platform_user import PlatformUser
 from backend.utils.safe_schema_migrate import safe_schema_migrate
 from backend.config.templates import templates, get_brand_context
@@ -68,7 +68,7 @@ def store_workspace(
     store = db.query(StoreModel).filter(StoreModel.i_store_id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
-    account = db.query(Account).filter(Account.i_account_id == store.i_account_id).first()
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first()
 
     # Normalize module name (fallback to dashboard)
     module = (module or "dashboard").lower()
@@ -108,7 +108,7 @@ def store_workspace(
             **get_brand_context(
                 context_type="store",
                 brand_display_name=store.c_store_name,
-                client_code=account.c_client_code if account else None,
+                merchant_code=merchant.c_merchant_code if merchant else None,
                 store_code=store.c_store_code,
             ),
         },

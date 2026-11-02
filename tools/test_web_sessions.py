@@ -23,7 +23,7 @@ from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.role import Role
 from backend.models_admin.session import SessionTbl
 from backend.models_admin.store import Store
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.system_settings import SystemSettings
 from backend.services.session_context import session_organization
@@ -60,11 +60,11 @@ def seed(factory):
         db.add(Store(i_store_id=2, c_store_name="Test Store", c_store_code="STR00002", c_status="active"))
         db.flush()
         db.add(Agency(i_agency_id=1, c_agency_code="AGT00001", c_agency_name="Test Agency"))
-        db.add(Account(i_client_id=1, c_client_code="CLT11001", c_client_name="Customer Merchant"))
+        db.add(Merchant(i_merchant_id=1, c_merchant_code="CLT11001", c_merchant_name="Customer Merchant"))
         db.add(SystemSettings(i_settings_id=1, c_company_name="Configured Platform"))
         db.flush()
         for store_id in (ADMIN_STORE_ID, 2):
-            db.get(Store, store_id).i_account_id = 1
+            db.get(Store, store_id).i_merchant_id = 1
         hashed = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
         for i in (1, 2):
             db.add(PlatformUser(
@@ -109,7 +109,7 @@ class WebSessionTests(unittest.TestCase):
             row = db.query(SessionTbl).one()
             self.assertEqual(row.c_login_context, "PLATFORM")
             self.assertIsNone(row.i_store_id)
-            self.assertIsNone(row.i_account_id)
+            self.assertIsNone(row.i_merchant_id)
             self.assertIsNone(row.i_agency_id)
             self.assertEqual(session_organization(db, row), ("Configured Platform", "Platform Admin"))
             self.assertEqual(db.get(PlatformUser, 1).i_store_id, ADMIN_STORE_ID)
@@ -124,6 +124,12 @@ class WebSessionTests(unittest.TestCase):
             ("agency", {"agency_id": 1}, ("Test Agency", "Agency")),
         ):
             with self.subTest(context=context), self.factory() as db:
+                if context == "agency":
+                    db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
+                    db.get(Agency, 1).c_status = "active"
+                    user = db.get(PlatformUser, 3)
+                    user.i_role_id, user.i_agency_id = 99, 1
+                    db.commit()
                 token = svc.create_session(db, db.get(PlatformUser, 3), request(), {"scope_type": context, **extra})
                 row = db.query(SessionTbl).filter_by(i_platform_user_id=3, c_status="ACTIVE").one()
                 self.assertEqual(session_organization(db, row), expected)
@@ -201,7 +207,7 @@ class WebSessionTests(unittest.TestCase):
                     db.refresh(row)
                     self.assertEqual(row.c_status, "EXPIRED")
 
-    def test_expire_on_login_without_request_from_abandoned_client(self):
+    def test_expire_on_login_without_request_from_abandoned_merchant(self):
         login_token(self.factory)
         with self.factory() as db:
             db.query(SessionTbl).update({"dt_last_active": svc.utcnow() - timedelta(days=1)})
@@ -455,7 +461,7 @@ class PostgresSessionTests(unittest.TestCase):
         from pathlib import Path
         from backend.database.branding_migration import migrate_branding
         from backend.database.image_storage_migration import migrate_image_storage
-        from backend.models_admin.account import Account
+        from backend.models_admin.merchant import Merchant
         token = login_token(self.factory, user_id=3)
         with self.factory() as db:
             row = db.query(SessionTbl).one()
@@ -463,7 +469,7 @@ class PostgresSessionTests(unittest.TestCase):
             row.c_login_path = "/"
             db.commit()
         with self.engine.begin() as conn:
-            for table in ("tb_client", "tb_store", "tb_agency"):
+            for table in ("tb_merchant", "tb_store", "tb_agency"):
                 conn.execute(text(f"ALTER TABLE {table} DROP COLUMN c_logo_url"))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -477,7 +483,7 @@ class PostgresSessionTests(unittest.TestCase):
                 migrate_branding(self.engine)
                 migrate_branding(self.engine)
                 with self.factory() as db:
-                    self.assertEqual(db.get(Account, 1).c_logo_url, "/static/images/brands/clients/CLT11001/logo.png")
+                    self.assertEqual(db.get(Merchant, 1).c_logo_url, "/static/images/brands/clients/CLT11001/logo.png")
                     self.assertEqual(db.get(Store, 2).c_logo_url, "/static/images/brands/clients/CLT11001/stores/STR00002/logo.png")
                 migrated = migrate_image_storage(self.engine)
                 self.assertEqual(len(migrated["references"]), 2)
@@ -491,7 +497,7 @@ class PostgresSessionTests(unittest.TestCase):
             self.assertEqual(logo.read_bytes(), b"existing merchant logo")
             self.assertEqual(store_logo.read_bytes(), b"existing store logo")
         with self.factory() as db:
-            self.assertEqual(db.get(Account, 1).c_logo_url, "/merchant/CLT11001/images/logo/logo.png")
+            self.assertEqual(db.get(Merchant, 1).c_logo_url, "/merchant/CLT11001/images/logo/logo.png")
             self.assertIsNone(db.get(Store, 2).c_logo_url)
             row = db.query(SessionTbl).one()
             self.assertEqual((row.i_session_id, row.c_status, row.c_session_key, row.dt_login), original)

@@ -210,7 +210,7 @@ whether to preserve ownership or use a reviewed ownership/grant remapping.
 Do not blindly add `--clean`, drop a populated database, or restore over newer
 business data. Stop on restore errors and inspect the target before retrying.
 
-Verify schemas, tables, row counts, important owner/Account IDs, foreign keys,
+Verify schemas, tables, row counts, important owner/Merchant IDs, foreign keys,
 sequences, extensions, privileges and required credentials. Verify the
 application role can connect/read/write in an isolated test transaction or
 fixture, and that role provisioning privileges meet actual deployment needs.

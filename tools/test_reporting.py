@@ -9,7 +9,7 @@ from reportlab.lib.pagesizes import A4, landscape
 
 from backend.config.settings import APP_NAME
 from backend.database.pg_platform import ADMIN_STORE_ID
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
 from backend.services.report_pdf import GlobalReportCanvas, fit_footer_text, report_font
@@ -36,9 +36,9 @@ class ReportContextTests(unittest.TestCase):
 
     def test_tenant_company_comes_from_users_store_not_report_target(self):
         db = Mock()
-        store = SimpleNamespace(i_account_id=9, c_store_name="Tenant Store")
-        account = SimpleNamespace(c_account_name="Tenant Company")
-        db.get.side_effect = lambda model, key: store if model is Store else account if model is Account else None
+        store = SimpleNamespace(i_merchant_id=9, c_store_name="Tenant Store")
+        merchant = SimpleNamespace(c_merchant_name="Tenant Company")
+        db.get.side_effect = lambda model, key: store if model is Store else merchant if model is Merchant else None
         self.assertEqual(report_context(db, self.user(i_store_id=100)).company, "Tenant Company")
         db.get.assert_any_call(Store, 100)
 
@@ -132,7 +132,7 @@ class ReportPdfTests(unittest.TestCase):
         from backend.routers.platform_store import _build_contract_pdf_bytes
 
         contract = SimpleNamespace(
-            i_contract_id=1, i_subscription_id=2, i_account_id=3, i_store_id=4,
+            i_contract_id=1, i_subscription_id=2, i_merchant_id=3, i_store_id=4,
             c_status="active", dt_contract_start_date=None, dt_contract_end_date=None,
             n_setup_fee=0, n_monthly_base_fee=0, n_monthly_device_fee=0, n_monthly_user_fee=0,
             n_monthly_total_fee=0, n_tax_rate=0, n_tax_amount=0, n_total_monthly_fee=0,

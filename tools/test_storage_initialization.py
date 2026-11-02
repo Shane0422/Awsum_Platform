@@ -11,7 +11,7 @@ from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 
 from backend.database.pg_platform import ADMIN_STORE_ID
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.agency_type import AgencyType
 from backend.models_admin.business_type import BusinessType
@@ -45,7 +45,7 @@ class StorageInitializationTests(unittest.TestCase):
         self.request = SimpleNamespace()
         self.agency_payload = {"contact_name": "Contact", "company_name": "Agency", "agency_type_id": 1}
         self.merchant_payload = {"merchant_name": "New Merchant", "primary_agency_id": 1, "business_type": "Retail"}
-        self.store_payload = {"store_name": "New Store", "client_id": 1, "installed_by_agency_id": 1}
+        self.store_payload = {"store_name": "New Store", "merchant_id": 1, "installed_by_agency_id": 1}
 
     def roots(self, owner):
         return (
@@ -79,8 +79,8 @@ class StorageInitializationTests(unittest.TestCase):
         self.assertFalse((self.root / "data" / "store").exists())
 
     def test_store_resolves_current_merchant_from_database_and_not_frontend_codes(self):
-        self.db.add(Account(i_client_id=2, c_client_code="MER00001", c_client_name="Another Merchant"))
-        self.db.get(Store, 2).i_account_id = 2
+        self.db.add(Merchant(i_merchant_id=2, c_merchant_code="MER00001", c_merchant_name="Another Merchant"))
+        self.db.get(Store, 2).i_merchant_id = 2
         self.db.commit()
         result = self.service.initialize_store_storage(2)
         self.assertEqual(result["logical_root"], "/merchant/MER00001/store/STR00002")
@@ -95,7 +95,7 @@ class StorageInitializationTests(unittest.TestCase):
             with self.subTest(context=context), self.assertLogs(resource_storage.logger, "ERROR"), \
                     self.assertRaises(StorageInitializationError):
                 self.service._initialize(context, identity)
-        self.db.get(Store, 2).i_account_id = None
+        self.db.get(Store, 2).i_merchant_id = None
         self.db.commit()
         with self.assertLogs(resource_storage.logger, "ERROR"), self.assertRaises(StorageInitializationError):
             self.service.initialize_store_storage(2)
@@ -103,7 +103,7 @@ class StorageInitializationTests(unittest.TestCase):
         self.assertFalse((self.root / "data" / "store").exists())
 
     def test_invalid_owner_codes_categories_and_traversal_are_rejected(self):
-        self.db.get(Account, 1).c_client_code = "../merchant"
+        self.db.get(Merchant, 1).c_merchant_code = "../merchant"
         self.db.commit()
         with self.assertLogs(resource_storage.logger, "ERROR"), self.assertRaises(StorageInitializationError):
             self.service.initialize_store_storage(2)
@@ -180,7 +180,7 @@ class StorageInitializationTests(unittest.TestCase):
         self.assertFalse(self.media.exists())
 
     def test_existing_repair_dry_run_and_repeat_preserve_business_rows(self):
-        before = [(s.i_store_id, s.c_store_code, s.i_account_id) for s in self.db.query(Store).order_by(Store.i_store_id)]
+        before = [(s.i_store_id, s.c_store_code, s.i_merchant_id) for s in self.db.query(Store).order_by(Store.i_store_id)]
         plan = self.service.initialize_missing_storage(dry_run=True)
         self.assertFalse(plan["failures"])
         self.assertEqual(len(plan["initialized"]), 4)
@@ -190,7 +190,7 @@ class StorageInitializationTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertFalse(first["failures"])
         self.assertNotIn(ADMIN_STORE_ID, [r["entity_id"] for r in first["initialized"] if r["context_type"] == "STORE"])
-        self.assertEqual(before, [(s.i_store_id, s.c_store_code, s.i_account_id) for s in self.db.query(Store).order_by(Store.i_store_id)])
+        self.assertEqual(before, [(s.i_store_id, s.c_store_code, s.i_merchant_id) for s in self.db.query(Store).order_by(Store.i_store_id)])
 
     def test_repair_reports_orphan_without_blocking_other_owners(self):
         self.db.add(Store(i_store_id=4, c_store_code="STR00004", c_store_name="Orphan"))
@@ -202,10 +202,9 @@ class StorageInitializationTests(unittest.TestCase):
         self.assertFalse((self.media / "store" / "STR00004").exists())
 
     def create_with_generators(self, function, payload, *leading):
-        with patch.object(routes, "_generate_next_client_code", return_value="CLT11002"), \
-                patch.object(routes, "_generate_next_merchant_code", return_value="MER00001"), \
-                patch.object(routes, "_generate_client_store_code", return_value=("STR20001", 20001)):
-            if function is routes.create_store or function is routes.create_client_store:
+        with patch.object(routes, "_generate_next_merchant_code", return_value="MER00001"), \
+                patch.object(routes, "_generate_merchant_store_code", return_value=("STR20001", 20001)):
+            if function is routes.create_store or function is routes.create_merchant_store:
                 return json.loads(function(*leading, self.request, payload, self.db).body)
             return json.loads(function(payload, self.request, self.db).body)
 
@@ -223,14 +222,13 @@ class StorageInitializationTests(unittest.TestCase):
             return original(service, context, identity)
         with patch.object(AwsumStorageService, "initialize_after_registration", check_commit):
             agency = self.create_with_generators(routes.create_agent, self.agency_payload)
-            legacy = self.create_with_generators(routes.create_client, {"client_name": "Legacy Merchant"})
             merchant = self.create_with_generators(routes.create_merchant, self.merchant_payload)
             store = self.create_with_generators(routes.create_store, self.store_payload)
-            with patch.object(routes, "_generate_client_store_code", return_value=("STR20002", 20002)):
-                linked = json.loads(routes.create_client_store(1, self.request, {"store_name": "Linked"}, self.db).body)
-        self.assertEqual(seen, ["AGENCY", "MERCHANT", "MERCHANT", "STORE", "STORE"])
+            with patch.object(routes, "_generate_merchant_store_code", return_value=("STR20002", 20002)):
+                linked = json.loads(routes.create_merchant_store(1, self.request, {"store_name": "Linked"}, self.db).body)
+        self.assertEqual(seen, ["AGENCY", "MERCHANT", "STORE", "STORE"])
         for context, response, identity_key in (
-            ("AGENCY", agency, "id"), ("MERCHANT", legacy, "id"), ("MERCHANT", merchant, "id"),
+            ("AGENCY", agency, "id"), ("MERCHANT", merchant, "id"),
             ("STORE", store, "store_id"), ("STORE", linked, "store_id"),
         ):
             self.assertTrue(response["storage_initialized"])
@@ -254,22 +252,22 @@ class StorageInitializationTests(unittest.TestCase):
             response = self.create_with_generators(routes.create_merchant, self.merchant_payload)
         self.assertFalse(response["storage_initialized"])
         self.assertIn("Registration saved", response["storage_warning"])
-        merchant = self.db.get(Account, response["id"])
-        self.assertEqual(merchant.c_client_code, "MER00001")
+        merchant = self.db.get(Merchant, response["id"])
+        self.assertEqual(merchant.c_merchant_code, "MER00001")
         self.assertTrue(self.service.initialize_merchant_storage(response["id"])["storage_initialized"])
 
-    def test_storage_failure_is_reported_by_agency_legacy_and_both_store_forms(self):
+    def test_storage_failure_is_reported_by_agency_merchant_and_both_store_forms(self):
         cases = (
             (routes.create_agent, self.agency_payload, (), "AGENCY", "id"),
-            (routes.create_client, {"client_name": "Legacy pending"}, (), "MERCHANT", "id"),
+            (routes.create_merchant, self.merchant_payload, (), "MERCHANT", "id"),
             (routes.create_store, self.store_payload, (), "STORE", "store_id"),
-            (routes.create_client_store, {"store_name": "Linked pending"}, (1,), "STORE", "store_id"),
+            (routes.create_merchant_store, {"store_name": "Linked pending"}, (1,), "STORE", "store_id"),
         )
         for index, (function, payload, leading, context, key) in enumerate(cases):
             with self.subTest(context=context), patch.object(Path, "mkdir", side_effect=PermissionError("Disk unavailable")), \
-                    patch.object(routes, "_generate_client_store_code", return_value=(f"STR{20001+index:05d}", 20001+index)), \
+                    patch.object(routes, "_generate_merchant_store_code", return_value=(f"STR{20001+index:05d}", 20001+index)), \
                     self.assertLogs(resource_storage.logger, "ERROR"):
-                if function is routes.create_client_store:
+                if function is routes.create_merchant_store:
                     response = json.loads(function(*leading, self.request, payload, self.db).body)
                 else:
                     response = self.create_with_generators(function, payload, *leading)
@@ -280,7 +278,7 @@ class StorageInitializationTests(unittest.TestCase):
     def test_non_admin_registration_never_initializes_storage(self):
         self.user.login_role = 2
         with patch.object(AwsumStorageService, "initialize_after_registration") as initialize:
-            for function, payload in ((routes.create_agent, self.agency_payload), (routes.create_client, {"client_name": "Denied"}),
+            for function, payload in ((routes.create_agent, self.agency_payload),
                                       (routes.create_merchant, self.merchant_payload), (routes.create_store, self.store_payload)):
                 with self.subTest(function=function.__name__), self.assertRaises(HTTPException) as error:
                     self.create_with_generators(function, payload)
@@ -310,11 +308,15 @@ class StorageInitializationTests(unittest.TestCase):
         self.service.initialize_store_storage(2)
         routes.delete_store(2, self.request, self.db)
         routes.delete_agent(1, self.request, self.db)
-        routes.delete_client(1, self.request, self.db)
+        execute = self.db.execute
+        refs = SimpleNamespace(all=lambda: [("tb_store", "i_merchant_id")])
+        with patch.object(self.db, "execute", side_effect=lambda statement, *args, **kwargs:
+                          refs if "pg_constraint" in str(statement) else execute(statement, *args, **kwargs)):
+            routes.delete_merchant(1, self.request, self.db)
         self.assertTrue(path.is_file())
         self.assertEqual(path.read_bytes(), self.png)
         self.assertEqual(self.db.get(Store, 2).c_store_code, "STR00002")
-        self.assertEqual(self.db.get(Account, 1).c_client_code, "CLT11001")
+        self.assertEqual(self.db.get(Merchant, 1).c_merchant_code, "CLT11001")
 
     def test_warning_is_presented_in_both_registration_ui_flows(self):
         source = (Path(__file__).resolve().parents[1] / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
@@ -358,7 +360,7 @@ class PostgresStorageInitializationTests(unittest.TestCase):
         # Seed fixtures use explicit IDs; align only this isolated schema's Agency sequence.
         from sqlalchemy import text
         self.db.execute(text("SELECT setval(pg_get_serial_sequence('tb_agency','i_agency_id'), (SELECT MAX(i_agency_id) FROM tb_agency))"))
-        self.db.execute(text("SELECT setval(pg_get_serial_sequence('tb_client','i_client_id'), (SELECT MAX(i_client_id) FROM tb_client))"))
+        self.db.execute(text("SELECT setval(pg_get_serial_sequence('tb_merchant','i_merchant_id'), (SELECT MAX(i_merchant_id) FROM tb_merchant))"))
         self.db.commit()
 
     def test_real_generators_committed_rows_and_storage_failures(self):
@@ -375,12 +377,12 @@ class PostgresStorageInitializationTests(unittest.TestCase):
             merchant = json.loads(routes.create_merchant(
                 {"merchant_name": "PG merchant", "primary_agency_id": agency["id"], "business_type": "Retail"}, request, self.db).body)
             store = json.loads(routes.create_store(
-                request, {"store_name": "PG store", "client_id": merchant["id"], "installed_by_agency_id": agency["id"]}, self.db).body)
-            legacy = json.loads(routes.create_client({"client_name": "PG legacy"}, request, self.db).body)
-            linked = json.loads(routes.create_client_store(legacy["id"], request, {"store_name": "PG linked"}, self.db).body)
+                request, {"store_name": "PG store", "merchant_id": merchant["id"], "installed_by_agency_id": agency["id"]}, self.db).body)
+            legacy = json.loads(routes.create_merchant({"merchant_name": "PG legacy"}, request, self.db).body)
+            linked = json.loads(routes.create_merchant_store(legacy["id"], request, {"store_name": "PG linked"}, self.db).body)
         for code, prefix in (
             (agency["agency_code"], "AGT"), (merchant["merchant_code"], "MER"),
-            (store["store_code"], "STR"), (legacy["c_client_code"], "MER"),
+            (store["store_code"], "STR"), (legacy["c_merchant_code"], "MER"),
             (linked["store_code"], "STR"),
         ):
             self.assertRegex(code, rf"^{prefix}[0-9]{{2}}[A-HJ-NP-Z2-9]{{4}}$")
@@ -390,11 +392,11 @@ class PostgresStorageInitializationTests(unittest.TestCase):
         self.assertEqual(service.resolve_owner("STORE", store["store_id"]).get_context_root(),
                          f"/merchant/{merchant['merchant_code']}/store/{store['store_code']}")
         self.assertEqual(service.resolve_owner("STORE", linked["store_id"]).get_context_root(),
-                         f"/merchant/{legacy['c_client_code']}/store/{linked['store_code']}")
+                         f"/merchant/{legacy['c_merchant_code']}/store/{linked['store_code']}")
         with patch.object(Path, "mkdir", side_effect=OSError("Disk failure")), self.assertLogs(resource_storage.logger, "ERROR"):
-            pending = json.loads(routes.create_client({"client_name": "Pending storage"}, request, self.db).body)
+            pending = json.loads(routes.create_merchant({"merchant_name": "Pending storage"}, request, self.db).body)
         with self.factory() as independent:
-            self.assertIsNotNone(independent.get(Account, pending["id"]))
+            self.assertIsNotNone(independent.get(Merchant, pending["id"]))
         self.assertFalse(pending["storage_initialized"])
         self.assertTrue(service.initialize_merchant_storage(pending["id"])["storage_initialized"])
         self.assertFalse(service.initialize_missing_storage()["failures"])

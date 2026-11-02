@@ -1,6 +1,6 @@
 # legacy_tools
 
-This folder contains legacy or temporary diagnostics that are not part of the active Client-based toolset.
+This folder contains legacy or temporary diagnostics that are not part of the active Merchant-based toolset.
 
 ## Files moved here
 
@@ -9,13 +9,13 @@ This folder contains legacy or temporary diagnostics that are not part of the ac
   - Kept only for historical migration checks.
 - `db_customer_counts.py`
   - Legacy row-count probe tied to `customer/account` naming.
-  - Replaced by `tools/db_client_counts.py`.
+  - Replaced by `tools/db_merchant_counts.py`.
 - `db_customer_schema_check.py`
   - Legacy keyword scan focused on `customer` columns/tables.
-  - Replaced by `tools/db_client_schema_check.py`.
+  - Replaced by `tools/db_merchant_schema_check.py`.
 - `crud_regression_out.txt`, `ui_regression_out.txt`, `regression_out.txt`
   - Temporary command outputs, not source scripts.
 - `_terminal_probe.txt`
   - Temporary terminal probe artifact.
 
-If a file here must be reused, migrate it back to `tools/` with Client terminology and clear scope notes.
+If a file here must be reused, migrate it back to `tools/` with Merchant terminology and clear scope notes.

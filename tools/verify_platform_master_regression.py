@@ -24,7 +24,7 @@ if DB_URL.startswith("postgresql+psycopg://"):
 
 @dataclass
 class CreatedIds:
-    client_id: Optional[int] = None
+    merchant_id: Optional[int] = None
     store_id: Optional[int] = None
     store_code: Optional[str] = None
     user_id: Optional[int] = None
@@ -121,7 +121,7 @@ def pick_seed_values(admin: requests.Session) -> Dict[str, Any]:
 
 def check_master_pages(admin: requests.Session) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
-    for module in ("client", "store", "user", "session"):
+    for module in ("merchant", "store", "user", "session"):
         url = f"{BASE_URL}/platform/master/{module}"
         resp = admin.get(url, timeout=20)
         ok = resp.status_code == 200
@@ -137,39 +137,39 @@ def run_crud(admin: requests.Session, seeds: Dict[str, Any], created: CreatedIds
     report: Dict[str, Any] = {}
     ts = int(time.time())
 
-    # Client CRUD
-    client_payload = {
-        "client_name": f"E2E-Client-{ts}",
+    # Merchant CRUD
+    merchant_payload = {
+        "merchant_name": f"E2E-Merchant-{ts}",
         "first_name": "E2E",
         "last_name": "Owner",
-        "email": f"e2e-client-{ts}@example.com",
+        "email": f"e2e-merchant-{ts}@example.com",
         "phone": "5550001111",
         "status": "active",
     }
-    client_create = admin.post(f"{BASE_URL}/platform/client", json=client_payload, timeout=20)
-    client_create_json = client_create.json() if client_create.headers.get("content-type", "").startswith("application/json") else {}
-    created.client_id = client_create_json.get("id")
+    merchant_create = admin.post(f"{BASE_URL}/platform/merchant", json=merchant_payload, timeout=20)
+    merchant_create_json = merchant_create.json() if merchant_create.headers.get("content-type", "").startswith("application/json") else {}
+    created.merchant_id = merchant_create_json.get("id")
 
-    client_update = None
-    if created.client_id:
-        client_update = admin.put(
-            f"{BASE_URL}/platform/client/{created.client_id}",
+    merchant_update = None
+    if created.merchant_id:
+        merchant_update = admin.put(
+            f"{BASE_URL}/platform/merchant/{created.merchant_id}",
             json={"phone": "5550002222", "status": "active"},
             timeout=20,
         )
 
-    client_list = admin.get(f"{BASE_URL}/platform/clients?q=E2E-Client-{ts}", timeout=20)
-    client_found = False
-    if client_list.ok:
-        client_found = any(a.get("id") == created.client_id for a in client_list.json())
+    merchant_list = admin.get(f"{BASE_URL}/platform/merchants?q=E2E-Merchant-{ts}", timeout=20)
+    merchant_found = False
+    if merchant_list.ok:
+        merchant_found = any(a.get("id") == created.merchant_id for a in merchant_list.json())
 
-    report["clients"] = {
-        "create_status": client_create.status_code,
-        "create_ok": client_create.status_code == 200 and bool(created.client_id),
-        "list_ok": client_list.status_code == 200,
-        "list_found_created": client_found,
-        "update_status": client_update.status_code if client_update is not None else None,
-        "update_ok": (client_update.status_code == 200) if client_update is not None else False,
+    report["merchants"] = {
+        "create_status": merchant_create.status_code,
+        "create_ok": merchant_create.status_code == 200 and bool(created.merchant_id),
+        "list_ok": merchant_list.status_code == 200,
+        "list_found_created": merchant_found,
+        "update_status": merchant_update.status_code if merchant_update is not None else None,
+        "update_ok": (merchant_update.status_code == 200) if merchant_update is not None else False,
     }
 
     # Store CRUD
@@ -180,7 +180,7 @@ def run_crud(admin: requests.Session, seeds: Dict[str, Any], created: CreatedIds
         "channel_type": "POS",
         "device_type": "Windows POS",
         "store_status": "active",
-        "client_id": created.client_id,
+        "merchant_id": created.merchant_id,
         "owner_name": "E2E Owner",
         "email": f"e2e-store-{ts}@example.com",
         "phone": "5550003333",
@@ -307,22 +307,22 @@ def cleanup(admin: requests.Session, created: CreatedIds) -> Dict[str, Any]:
         r = admin.delete(f"{BASE_URL}/platform/store/{created.store_id}", timeout=20)
         result["store_delete"] = r.status_code
 
-    if created.client_id:
-        r = admin.delete(f"{BASE_URL}/platform/client/{created.client_id}", timeout=20)
-        result["client_delete"] = r.status_code
+    if created.merchant_id:
+        r = admin.delete(f"{BASE_URL}/platform/merchant/{created.merchant_id}", timeout=20)
+        result["merchant_delete"] = r.status_code
 
     return result
 
 
 def check_db_rename_need(admin: requests.Session) -> Dict[str, Any]:
     # Runtime/API-level heuristic only (no physical rename performed here):
-    # if client APIs are operational, physical schema is already aligned to tb_client.
-    resp = admin.get(f"{BASE_URL}/platform/clients", timeout=20)
+    # if Merchant APIs are operational, physical schema is already aligned to tb_merchant.
+    resp = admin.get(f"{BASE_URL}/platform/merchants", timeout=20)
     return {
-        "clients_api_status": resp.status_code,
-        "clients_api_operational": resp.status_code == 200,
+        "merchants_api_status": resp.status_code,
+        "merchants_api_operational": resp.status_code == 200,
         "rename_needed_now": False if resp.status_code == 200 else None,
-        "reason": "Client APIs are active and functional; physical schema should remain on tb_client unless a new migration is explicitly planned.",
+        "reason": "Merchant APIs are active and functional; physical schema should remain on tb_merchant unless a new migration is explicitly planned.",
     }
 
 
@@ -356,7 +356,7 @@ def main() -> int:
     page_ok = all(v.get("ok_200") and v.get("active_menu") for v in report["master_pages"].values())
     crud = report["crud"]
     crud_ok = all([
-        crud["clients"]["create_ok"], crud["clients"]["update_ok"], crud["clients"]["list_found_created"],
+        crud["merchants"]["create_ok"], crud["merchants"]["update_ok"], crud["merchants"]["list_found_created"],
         crud["stores"]["create_ok"], crud["stores"]["read_ok"], crud["stores"]["update_ok"],
         crud["users"]["create_ok"], crud["users"]["update_ok"], crud["users"]["list_found_created"],
         crud["sessions"]["create_ok"], crud["sessions"]["update_ok"], crud["sessions"]["delete_ok"],

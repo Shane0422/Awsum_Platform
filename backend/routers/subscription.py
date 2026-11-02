@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.models_admin.subscription import Subscription
-from backend.models_admin.account import Client
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.store import Store
 from backend.models_admin.pricing_plan import PricingPlan
 from backend.models_admin.invoice import Invoice, InvoiceLine
@@ -246,7 +246,7 @@ def _invoice_dict(invoice: Invoice, lines: list[InvoiceLine]) -> dict:
         "invoice_id": invoice.i_invoice_id,
         "invoice_no": invoice.c_invoice_no,
         "subscription_id": invoice.i_subscription_id,
-        "account_id": invoice.i_account_id,
+        "merchant_id": invoice.i_merchant_id,
         "store_id": invoice.i_store_id,
         "invoice_date": str(invoice.dt_invoice_date) if invoice.dt_invoice_date else None,
         "due_date": str(invoice.dt_due_date) if invoice.dt_due_date else None,
@@ -323,7 +323,7 @@ def _create_contract_for_subscription(db: Session, subscription: Subscription) -
 
     contract = Contract(
         i_subscription_id=subscription.i_subscription_id,
-        i_account_id=subscription.i_account_id,
+        i_merchant_id=subscription.i_merchant_id,
         i_store_id=subscription.i_store_id,
         i_pricing_plan_id=subscription.i_plan_id,
         dt_contract_start_date=start_date,
@@ -392,7 +392,7 @@ def _issue_invoice_for_subscription(db: Session, subscription: Subscription, pay
 
         invoice = Invoice(
             i_subscription_id=subscription.i_subscription_id,
-            i_account_id=subscription.i_account_id,
+            i_merchant_id=subscription.i_merchant_id,
             i_store_id=subscription.i_store_id,
             c_invoice_no=_generate_invoice_no(db),
             dt_invoice_date=effective_invoice_date,
@@ -456,7 +456,7 @@ def _issue_invoice_for_subscription(db: Session, subscription: Subscription, pay
 
     invoice = Invoice(
         i_subscription_id=subscription.i_subscription_id,
-        i_account_id=subscription.i_account_id,
+        i_merchant_id=subscription.i_merchant_id,
         i_store_id=subscription.i_store_id,
         c_invoice_no=_generate_invoice_no(db),
         dt_invoice_date=effective_invoice_date,
@@ -545,21 +545,21 @@ def _apply_plan_snapshot(subscription: Subscription, plan: PricingPlan) -> None:
 
 @router.get("")
 async def list_subscriptions(
-    account_id: Optional[int] = Query(None),
+    merchant_id: Optional[int] = Query(None),
     store_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """List all subscriptions with account/store/plan names joined"""
+    """List all subscriptions with merchant/store/plan names joined"""
     query = (
-        db.query(Subscription, Client.c_client_name, Store.c_store_name, PricingPlan.c_plan_name)
-        .outerjoin(Client, Subscription.i_account_id == Client.i_account_id)
+        db.query(Subscription, Merchant.c_merchant_name, Store.c_store_name, PricingPlan.c_plan_name)
+        .outerjoin(Merchant, Subscription.i_merchant_id == Merchant.i_merchant_id)
         .outerjoin(Store, Subscription.i_store_id == Store.i_store_id)
         .outerjoin(PricingPlan, Subscription.i_plan_id == PricingPlan.i_plan_id)
     )
 
-    if account_id:
-        query = query.filter(Subscription.i_account_id == account_id)
+    if merchant_id:
+        query = query.filter(Subscription.i_merchant_id == merchant_id)
     if store_id:
         query = query.filter(Subscription.i_store_id == store_id)
     if status:
@@ -580,13 +580,13 @@ async def list_subscriptions(
             latest_contract_by_subscription.setdefault(contract.i_subscription_id, contract)
 
     result = []
-    for sub, account_name, store_name, plan_name in rows:
+    for sub, merchant_name, store_name, plan_name in rows:
         latest_contract = latest_contract_by_subscription.get(sub.i_subscription_id)
         result.append({
             "id": sub.i_subscription_id,
             "subscription_id": sub.i_subscription_id,
-            "account_id": sub.i_account_id,
-            "account_name": account_name or "",
+            "merchant_id": sub.i_merchant_id,
+            "merchant_name": merchant_name or "",
             "store_id": sub.i_store_id,
             "store_name": store_name or "",
             "plan_id": sub.i_plan_id,
@@ -680,26 +680,26 @@ async def create_subscription(
 ):
     """Create a new subscription"""
     # Validate required fields
-    if not data.account_id or not data.store_id:
-        raise HTTPException(status_code=400, detail="Account and Store are required")
+    if not data.merchant_id or not data.store_id:
+        raise HTTPException(status_code=400, detail="Merchant and Store are required")
 
     if not data.plan_id and not data.plan_code:
         raise HTTPException(status_code=400, detail="Pricing plan is required")
     
-    # Verify account exists
-    account = db.query(Client).filter(Client.i_account_id == data.account_id).first()
-    if not account:
-        raise HTTPException(status_code=404, detail=f"Account {data.account_id} not found")
+    # Verify merchant exists
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == data.merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail=f"Merchant {data.merchant_id} not found")
 
-    # Verify store exists and belongs to account
+    # Verify store exists and belongs to merchant
     store = db.query(Store).filter(
         and_(
             Store.i_store_id == data.store_id,
-            Store.i_account_id == data.account_id,
+            Store.i_merchant_id == data.merchant_id,
         )
     ).first()
     if not store:
-        raise HTTPException(status_code=404, detail=f"Store {data.store_id} not found for account {data.account_id}")
+        raise HTTPException(status_code=404, detail=f"Store {data.store_id} not found for merchant {data.merchant_id}")
 
     plan = _resolve_plan(db, data.plan_id, data.plan_code)
 
@@ -707,7 +707,7 @@ async def create_subscription(
     try:
         contract_monthly_fee = data.monthly_fee if data.monthly_fee is not None else plan.n_store_base_fee
         subscription = Subscription(
-            i_account_id=data.account_id,
+            i_merchant_id=data.merchant_id,
             i_store_id=data.store_id,
             n_monthly_fee=_money(contract_monthly_fee),
             dt_start_date=data.start_date,
@@ -798,14 +798,14 @@ async def delete_subscription(
     return {"message": "Subscription cancelled"}
 
 
-@router.get("/account/{account_id}/subscriptions", response_model=List[SubscriptionList])
-async def get_account_subscriptions(
-    account_id: int,
+@router.get("/merchant/{merchant_id}/subscriptions", response_model=List[SubscriptionList])
+async def get_merchant_subscriptions(
+    merchant_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get all subscriptions for an account"""
+    """Get all subscriptions for an merchant"""
     subscriptions = db.query(Subscription).filter(
-        Subscription.i_account_id == account_id
+        Subscription.i_merchant_id == merchant_id
     ).order_by(Subscription.dt_start_date.desc()).all()
 
     return subscriptions

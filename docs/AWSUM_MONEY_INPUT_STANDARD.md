@@ -60,7 +60,7 @@ permissions as part of presentation changes.
   [static/js/money.js](../static/js/money.js), global `AwsumMoneyInput`.
 - Server-side monetary report presentation:
   [backend/services/money.py](../backend/services/money.py), `format_money`.
-- The existing Platform, Client, shared Dashboard and Store base layouts load the
+- The existing Platform, Merchant, shared Dashboard and Store base layouts load the
   same browser implementation before dependent screen scripts.
 
 The current application uses Jinja/JavaScript inputs. `AwsumMoneyInput.bind`
@@ -158,7 +158,7 @@ bundles and obsolete scratch tools.
 
 There are **27 monetary controls** (5 MD and 22 metadata-defined controls,
 including read-only controls). No current monetary input was found in the
-Svelte starter, Client/Store dashboards or the quantity-only Device/License
+Svelte starter, Merchant/Store dashboards or the quantity-only Device/License
 issue dialogs. No not-yet-built Sales/Payment/Refund/Employee/POS/KIOSK UI was
 invented; the permanent rule applies when those screens gain monetary fields.
 

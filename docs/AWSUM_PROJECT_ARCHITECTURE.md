@@ -25,7 +25,7 @@ Awsum_Projects\
 |-- Awsum_Platform\                 PROGRAM (Git repository)
 |   |-- backend\                    FastAPI app: main.py, routers, services, models,
 |   |                               database, config, core, schemas, utils
-|   |-- templates\                  Jinja HTML: platform\, client\, store\, shared\
+|   |-- templates\                  Jinja HTML: platform\, merchant\, client\ (Customer), store\, shared\
 |   |-- static\                     mounted at /static
 |   |   |-- css\  js\  bootstrap\   server CSS/JS and offline Bootstrap
 |   |   |-- components\             compiled bundles (image-uploader\)

@@ -148,7 +148,7 @@ def management_branding(
 @router.delete("/api/images")
 def delete_image(request: Request, image_path: str, db: Session = Depends(get_db)):
     from backend.routers.system_settings import _validate_origin
-    from backend.models_admin.account import Account
+    from backend.models_admin.merchant import Merchant
     from backend.models_admin.agency import Agency
     from backend.models_admin.store import Store
     from backend.models_admin.system_settings import SystemSettings
@@ -159,7 +159,7 @@ def delete_image(request: Request, image_path: str, db: Session = Depends(get_db
     images.authorize_images(request, db, image.context_type, image.owner_code, merchant_code=image.merchant_code)
     _validate_origin(request)
     _protect_md_image(db, image)
-    for model in (Account, Agency, Store, SystemSettings):
+    for model in (Merchant, Agency, Store, SystemSettings):
         if db.query(model).filter(model.c_logo_url == image.logical_path).first():
             raise HTTPException(409, "Image is in use. Reset its logo reference first.")
     path = images.physical_image_path(image)

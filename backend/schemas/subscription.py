@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class SubscriptionBase(BaseModel):
-    account_id: int = Field(..., alias="i_account_id")
+    merchant_id: int = Field(..., alias="i_merchant_id")
     store_id: int = Field(..., alias="i_store_id")
     plan_id: Optional[int] = Field(None, alias="i_plan_id")
     plan_code: str = Field(..., alias="c_plan_code")
@@ -33,7 +33,7 @@ class SubscriptionBase(BaseModel):
 
 
 class SubscriptionCreate(BaseModel):
-    account_id: int = Field(..., alias="i_account_id")
+    merchant_id: int = Field(..., alias="i_merchant_id")
     store_id: int = Field(..., alias="i_store_id")
     plan_id: Optional[int] = Field(None, alias="i_plan_id")
     plan_code: Optional[str] = Field(None, alias="c_plan_code")
@@ -80,7 +80,7 @@ class SubscriptionDetail(SubscriptionBase):
 
 class SubscriptionList(BaseModel):
     subscription_id: int = Field(..., alias="i_subscription_id")
-    account_id: int = Field(..., alias="i_account_id")
+    merchant_id: int = Field(..., alias="i_merchant_id")
     store_id: int = Field(..., alias="i_store_id")
     plan_code: str = Field(..., alias="c_plan_code")
     plan_name: Optional[str] = Field(None, alias="c_plan_name")

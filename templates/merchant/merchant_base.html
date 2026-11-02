@@ -5,7 +5,7 @@
   <script src="/static/js/web-session.js?v=1"></script>
   <script src="/static/js/money.js?v=1"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block page_title %}Client Dashboard{% endblock %} | {{ APP_NAME }}</title>
+  <title>{% block page_title %}Merchant Dashboard{% endblock %} | {{ APP_NAME }}</title>
   <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/brand.css">
@@ -185,17 +185,17 @@
     <aside class="sidebar">
       <div class="menu-title">Navigation</div>
       <nav class="nav flex-column">
-        <a class="nav-link{% if active_menu == 'dashboard' %} active{% endif %}" href="/client/dashboard/standard">Dashboard</a>
-        <a class="nav-link{% if active_menu == 'sales' %} active{% endif %}" href="/client/sales">Sales</a>
-        <a class="nav-link{% if active_menu == 'employees' %} active{% endif %}" href="/client/employees">Employees</a>
-        <a class="nav-link{% if active_menu == 'schedule' %} active{% endif %}" href="/client/schedule">Schedule</a>
-        <a class="nav-link{% if active_menu == 'settings' %} active{% endif %}" href="/client/settings">Settings</a>
+        <a class="nav-link{% if active_menu == 'dashboard' %} active{% endif %}" href="/merchant/dashboard/standard">Dashboard</a>
+        <a class="nav-link{% if active_menu == 'sales' %} active{% endif %}" href="/merchant/sales">Sales</a>
+        <a class="nav-link{% if active_menu == 'employees' %} active{% endif %}" href="/merchant/employees">Employees</a>
+        <a class="nav-link{% if active_menu == 'schedule' %} active{% endif %}" href="/merchant/schedule">Schedule</a>
+        <a class="nav-link{% if active_menu == 'settings' %} active{% endif %}" href="/merchant/settings">Settings</a>
       </nav>
     </aside>
 
     <main class="content">
       <section class="page-header">
-        <h1>{% block dashboard_heading %}Client Dashboard{% endblock %}</h1>
+        <h1>{% block dashboard_heading %}Merchant Dashboard{% endblock %}</h1>
         <p>{% block dashboard_subheading %}Store dashboard workspace{% endblock %}</p>
       </section>
 

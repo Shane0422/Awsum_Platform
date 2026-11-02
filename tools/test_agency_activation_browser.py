@@ -98,7 +98,8 @@ window.fetch=async(path,options)=>{
         bootstrap_css += (browser.ROOT / "static" / "css" / "platform-modal.css").read_text(encoding="utf-8")
         functions = "\n".join(re.search(
             rf"  function {name}\([^\n]*\) \{{.*?\n  \}}", template, re.DOTALL).group()
-            for name in ("createField", "createContactManagerPanel", "renderForm", "clearForm", "syncAgencyEmailButton"))
+            for name in ("createField", "createContactManagerPanel", "createImageFormLayout",
+                         "renderForm", "clearForm", "syncAgencyEmailButton"))
         config = re.search(r"    agency: (\{.*?\n    \}),\n    license:", template, re.DOTALL).group(1)
         script = (
             f"const style=document.createElement('style');style.textContent={json.dumps(bootstrap_css + styles)};document.head.appendChild(style);\n"
@@ -111,11 +112,11 @@ window.fetch=async(path,options)=>{
             "const selectedMasterId={value:''};let selectedOriginalRecord=null;\n"
             "const agencyRegistrationPasswords=new Map();let previewOpens=0;const openAgencyRegistrationEmail=async()=>{previewOpens++;};\n"
             "const CONTACT_ROLE_OPTIONS=[['PRIMARY','Primary Contact']];\n"
-            "const noop=()=>{};\n"
+            "const noop=()=>{},resetContactDrafts=noop;\n"
             "const bindUsDatePickers=noop,bindBrandLogoUploadHandlers=noop,refreshOrgLogoPreview=noop,\n"
             "refreshContactManager=noop,bindScopedStoreSelect=noop,applyEditFieldRules=noop,\n"
-            "syncScopedStoreOptions=noop,updateSectionTitles=noop,renderClientDetailHero=noop,\n"
-            "renderStoreDetailHero=noop,renderModuleDetailHero=noop,refreshClientLogoPreview=noop,\n"
+            "syncScopedStoreOptions=noop,updateSectionTitles=noop,renderMerchantDetailHero=noop,\n"
+            "renderStoreDetailHero=noop,renderModuleDetailHero=noop,refreshMerchantLogoPreview=noop,\n"
             "refreshStoreLogoPreview=noop,updateListCentricActionButtons=noop,syncStoreOptionScopes=noop,\n"
             "setBaselineSnapshot=noop,openContactEditor=noop,closeContactEditor=noop,saveBusinessContact=noop;\n"
             "const createIdField=()=>document.createElement('div'),createBrandLogoUploadPanel=createIdField;\n"
@@ -161,6 +162,7 @@ window.fetch=async(path,options)=>{
         script = (
             "const activeModule='agency',isListCentricModule=true,agencyModalMode='edit';\n"
             "const selectedMasterId={value:'1'},agencyRegistrationPasswords=new Map();let lastSavedId=null;\n"
+            "let savingStoreImage=false;const getStoreLogoUploader=()=>null,getOrganizationLogoUploader=()=>null;\n"
             "const noop=()=>{},isFormDirty=()=>true,usesPremiumModal=()=>true,getFormData=()=>({status:'active'}),\n"
             "validateAgencyForm=()=>[],showMasterModalError=noop,getItemUrl=id=>'/platform/agency/'+id,\n"
             "loadList=async()=>{},setBaselineSnapshot=noop,updateListCentricActionButtons=noop,notifyStorageWarning=noop;\n"

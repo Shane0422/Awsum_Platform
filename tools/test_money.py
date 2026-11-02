@@ -36,7 +36,7 @@ class MoneyPresentationTests(unittest.TestCase):
         from backend.services.reporting import ReportPrintContext
 
         contract = SimpleNamespace(
-            i_contract_id=1, i_subscription_id=2, i_account_id=3, i_store_id=4,
+            i_contract_id=1, i_subscription_id=2, i_merchant_id=3, i_store_id=4,
             i_pricing_plan_id=1, i_contract_term_month=12, c_status="active",
             dt_contract_start_date=None, dt_contract_end_date=None,
             n_setup_fee=Decimal("2500.50"), n_monthly_base_fee=Decimal("1000000"),
@@ -56,7 +56,7 @@ class MoneyPresentationTests(unittest.TestCase):
 
         invoice = SimpleNamespace(
             i_invoice_id=1, c_invoice_no="TEST", dt_invoice_date=None, dt_due_date=None,
-            c_status="issued", i_subscription_id=1, i_account_id=2, i_store_id=3,
+            c_status="issued", i_subscription_id=1, i_merchant_id=2, i_store_id=3,
             c_currency="USD", n_subtotal=Decimal("2500.50"), n_tax=Decimal("1000"),
             n_total=Decimal("3500.50"),
         )

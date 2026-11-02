@@ -7,15 +7,15 @@ def migrate_branding(engine) -> None:
     from backend.services.images import legacy_physical_path
     with engine.begin() as conn:
         added = set()
-        for table in ("tb_agency", "tb_client", "tb_store"):
+        for table in ("tb_agency", "tb_merchant", "tb_store"):
             if inspect(conn).has_table(table):
                 if "c_logo_url" not in {column["name"] for column in inspect(conn).get_columns(table)}:
                     added.add(table)
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS c_logo_url VARCHAR(1000)"))
         for table, key, query in (
-            ("tb_client", "i_client_id", "SELECT i_client_id,c_client_code FROM tb_client WHERE c_logo_url IS NULL"),
-            ("tb_store", "i_store_id", """SELECT s.i_store_id,c.c_client_code,s.c_store_code
-                FROM tb_store s JOIN tb_client c ON c.i_client_id=s.i_account_id WHERE s.c_logo_url IS NULL"""),
+            ("tb_merchant", "i_merchant_id", "SELECT i_merchant_id,c_merchant_code FROM tb_merchant WHERE c_logo_url IS NULL"),
+            ("tb_store", "i_store_id", """SELECT s.i_store_id,c.c_merchant_code,s.c_store_code
+                FROM tb_store s JOIN tb_merchant c ON c.i_merchant_id=s.i_merchant_id WHERE s.c_logo_url IS NULL"""),
         ):
             if table not in added:
                 continue
@@ -36,7 +36,7 @@ def migrate_branding(engine) -> None:
         }:
             for context, table, session_key, organization_key, code in (
                 ("AGENCY", "tb_agency", "i_agency_id", "i_agency_id", "c_agency_code"),
-                ("MERCHANT", "tb_client", "i_account_id", "i_client_id", "c_client_code"),
+                ("MERCHANT", "tb_merchant", "i_merchant_id", "i_merchant_id", "c_merchant_code"),
                 ("STORE", "tb_store", "i_store_id", "i_store_id", "c_store_code"),
             ):
                 conn.execute(text(f"""

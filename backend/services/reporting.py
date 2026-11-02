@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.config.settings import APP_NAME
 from backend.database.pg_platform import ADMIN_STORE_ID, PlatformSessionLocal
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
@@ -47,9 +47,9 @@ def report_context(db: Session, user: PlatformUser | None = None) -> ReportPrint
         else:
             store = db.get(Store, user.i_store_id)
             if store:
-                account = db.get(Account, store.i_account_id) if store.i_account_id else None
+                merchant = db.get(Merchant, store.i_merchant_id) if store.i_merchant_id else None
                 company = (
-                    _name(account.c_account_name if account else None)
+                    _name(merchant.c_merchant_name if merchant else None)
                     or _name(store.c_store_name)
                     or company
                 )

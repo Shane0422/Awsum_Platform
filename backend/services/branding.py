@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.services import images
 from backend.services.builtin_assets import favicon_url
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.agency import Agency
 from backend.models_admin.store import Store
 from backend.models_admin.system_settings import SystemSettings
@@ -67,8 +67,8 @@ def resolve_branding(
         return BrandingContext(context, platform_name, platform_logo, platform_name,
                                "/platform-admin", "ADMIN", "Platform Administration")
     store = db.get(Store, store_id) if context == "STORE" and store_id else None
-    merchant = db.get(Account, store.i_account_id) if store and store.i_account_id else (
-        db.get(Account, merchant_id) if context == "MERCHANT" and merchant_id else None
+    merchant = db.get(Merchant, store.i_merchant_id) if store and store.i_merchant_id else (
+        db.get(Merchant, merchant_id) if context == "MERCHANT" and merchant_id else None
     )
     agency = db.get(Agency, merchant.i_agency_id) if merchant and merchant.i_agency_id else (
         db.get(Agency, agency_id) if context == "AGENCY" and agency_id else None
@@ -88,9 +88,9 @@ def resolve_branding(
             continue
         if row is store:
             valid = (merchant is not None and image.context_type == "STORE"
-                     and image.owner_code == store.c_store_code and image.merchant_code == merchant.c_client_code)
+                     and image.owner_code == store.c_store_code and image.merchant_code == merchant.c_merchant_code)
         elif row is merchant:
-            valid = image.context_type == "MERCHANT" and image.owner_code == merchant.c_client_code
+            valid = image.context_type == "MERCHANT" and image.owner_code == merchant.c_merchant_code
         else:
             valid = image.context_type == "AGENCY" and image.owner_code == agency.c_agency_code
         if valid:
@@ -99,10 +99,10 @@ def resolve_branding(
             logging.getLogger(__name__).warning("Ignoring branding image with mismatched owner: %s", row.c_logo_url)
     logo = next((asset for candidate in candidates if (asset := versioned_logo(candidate))), platform_logo)
     name = store.c_store_name if context == "STORE" else (
-        merchant.c_account_name if context == "MERCHANT" else agency.c_agency_name
+        merchant.c_merchant_name if context == "MERCHANT" else agency.c_agency_name
     )
     code = store.c_store_code if context == "STORE" else (
-        merchant.c_client_code if context == "MERCHANT" else agency.c_agency_code
+        merchant.c_merchant_code if context == "MERCHANT" else agency.c_agency_code
     )
     if not code or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", code):
         raise HTTPException(422, "Organization has no valid login entry code.")
@@ -126,7 +126,7 @@ def resolve_access_code(
     matches = []
     for kind, model, column, key in (
         ("AGENCY", Agency, Agency.c_agency_code, "agency_id"),
-        ("MERCHANT", Account, Account.c_client_code, "merchant_id"),
+        ("MERCHANT", Merchant, Merchant.c_merchant_code, "merchant_id"),
         ("STORE", Store, Store.c_store_code, "store_id"),
     ):
         if context and context != kind:
@@ -136,7 +136,7 @@ def resolve_access_code(
             query = query.filter(func.lower(model.c_status) == "active")
         rows = query.all()
         for row in rows:
-            identifier = row.i_agency_id if kind == "AGENCY" else row.i_client_id if kind == "MERCHANT" else row.i_store_id
+            identifier = row.i_agency_id if kind == "AGENCY" else row.i_merchant_id if kind == "MERCHANT" else row.i_store_id
             matches.append(resolve_branding(db, kind, include_inactive=include_inactive, **{key: identifier}))
     if not matches:
         raise HTTPException(404, "Login organization not found.")
@@ -153,8 +153,8 @@ def identity_login_entry(db: Session, identity: dict) -> str:
         organization = db.get(Agency, identity["i_agency_id"])
         code = organization.c_agency_code
     elif context == "MERCHANT":
-        organization = db.get(Account, identity["i_account_id"])
-        code = organization.c_client_code
+        organization = db.get(Merchant, identity["i_merchant_id"])
+        code = organization.c_merchant_code
     else:
         organization = db.get(Store, identity["i_store_id"])
         code = organization.c_store_code

@@ -48,7 +48,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,35));
   win.confirm=()=>true;
   const updateAvatar=win.AwsumImages.updateCurrentAvatar;
   win.AwsumImages.updateCurrentAvatar=(...args)=>{photoUpdates++;return updateAvatar(...args);};
-  const user={id:2,name:'Existing Admin',email:'existing@example.test',phone:'555-1234',role:'Admin',role_id:1,status:'active',must_change_password:false};
+  const user={id:2,name:'Existing Admin',first_name:'Existing',last_name:'Admin',email:'existing@example.test',phone:'555-1234',role:'Admin',role_id:1,status:'active',must_change_password:false};
   win.fetch=async(path,options={})=>{
     const body=options.body instanceof win.FormData?JSON.parse(options.body.get('payload')):options.body?JSON.parse(options.body):null;
     calls.push({path,method:options.method||'GET',body});
@@ -73,7 +73,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,35));
   doc.getElementById('addPlatformUserButton').click();await tick();
   for(const width of [1440,375,320]){
     frame.style.width=width+'px';await tick();
-    for(const id of ['platformUserName','platformUserEmail','platformUserRole','platformUserStatus',...(agency?['platformUserPhone']:[])]){
+    for(const id of ['platformUserFirstName','platformUserLastName','platformUserEmail','platformUserRole','platformUserStatus',...(agency?['platformUserPhone']:[])]){
       const rect=doc.getElementById(id).getBoundingClientRect();
       assert(rect.width>0&&rect.left>=0&&rect.right<=width,`${item.scope} ${id} fits ${width}px`);
     }
@@ -82,7 +82,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,35));
     assert(doc.getElementById('platformUserMustChange').getBoundingClientRect().width>0,'same Must Change Password control');
   }
   const form=doc.getElementById('platformUserForm');
-  doc.getElementById('platformUserName').value='New Admin';
+  doc.getElementById('platformUserFirstName').value='New';
+  doc.getElementById('platformUserLastName').value='Admin';
   doc.getElementById('platformUserEmail').value='new@example.test';
   doc.getElementById('platformUserRole').value=agency?'agency-admin':'1';
   doc.getElementById('platformUserPassword').value='Secret!42';

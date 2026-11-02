@@ -72,7 +72,7 @@ def owner_inventory(engine) -> list[dict]:
         owners = [{"context": "PLATFORM", "id": None, "code": None, "logical_root": "/platform-admin"}]
         for table, key, code, context in (
             ("tb_agency", "i_agency_id", "c_agency_code", "AGENCY"),
-            ("tb_client", "i_client_id", "c_client_code", "MERCHANT"),
+            ("tb_merchant", "i_merchant_id", "c_merchant_code", "MERCHANT"),
         ):
             for identity, value in conn.execute(text(f"SELECT {key},{code} FROM {table} ORDER BY {key}")):
                 resolver = AwsumPathResolver.for_owner(context, value)
@@ -80,8 +80,8 @@ def owner_inventory(engine) -> list[dict]:
                                "logical_root": resolver.get_context_root()})
         from backend.database.pg_platform import ADMIN_STORE_ID
         for identity, merchant_id, code, merchant in conn.execute(text("""
-            SELECT s.i_store_id,s.i_account_id,s.c_store_code,c.c_client_code
-            FROM tb_store s LEFT JOIN tb_client c ON c.i_client_id=s.i_account_id
+            SELECT s.i_store_id,s.i_merchant_id,s.c_store_code,c.c_merchant_code
+            FROM tb_store s LEFT JOIN tb_merchant c ON c.i_merchant_id=s.i_merchant_id
             WHERE s.i_store_id<>:hq ORDER BY s.i_store_id
         """), {"hq": ADMIN_STORE_ID}):
             resolver = AwsumPathResolver("STORE", merchant_code=merchant, store_code=code)

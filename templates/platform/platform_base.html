@@ -265,12 +265,12 @@
         </div>
     {% endcall %}
     <main class="platform-main">
-      <div class="platform-view{% if active_page in ['master', 'stores', 'system-settings', 'accounts-tree', 'agency-portal'] %} awsum-list awsum-admin{% endif %}">
+      <div class="platform-view{% if active_page in ['master', 'stores', 'system-settings', 'merchants-tree', 'agency-portal'] %} awsum-list awsum-admin{% endif %}">
         {% block content %}{% endblock %}
       </div>
     </main>
   </div>
-  {% if active_page in ['master', 'stores', 'system-settings', 'accounts-tree', 'agency-portal'] %}
+  {% if active_page in ['master', 'stores', 'system-settings', 'merchants-tree', 'agency-portal'] %}
   <link rel="stylesheet" href="/static/css/awsum-list.css?v=3">
   {% endif %}
   <script>

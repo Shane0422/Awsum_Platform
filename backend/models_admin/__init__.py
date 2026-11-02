@@ -25,4 +25,4 @@ from .system_settings import SystemSettings
 from .system_settings_audit import SystemSettingsAudit
 from .platform_user import PlatformUser
 
-from .account import Account
+from .merchant import Merchant

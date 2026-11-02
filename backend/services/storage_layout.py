@@ -28,7 +28,7 @@ def validate_runtime_references(engine) -> int:
         inspector = inspect(conn)
         for table, field in (
             ("tb_system_settings", "c_logo_url"), ("tb_agency", "c_logo_url"),
-            ("tb_client", "c_logo_url"), ("tb_store", "c_logo_url"),
+            ("tb_merchant", "c_logo_url"), ("tb_store", "c_logo_url"),
             ("tb_store", "c_db_path"), ("tb_contract", "c_contract_pdf_path"),
             ("tb_md_master", "c_image_path"), ("tb_platform_user", "c_image_path"),
         ):

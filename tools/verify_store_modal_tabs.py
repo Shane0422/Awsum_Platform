@@ -19,11 +19,11 @@ def main() -> int:
     if login.status_code not in (302, 303):
         raise SystemExit(f"login failed: {login.status_code} {login.text[:200]}")
 
-    page = session.get(f"{BASE}/platform/master/client", timeout=20)
+    page = session.get(f"{BASE}/platform/master/merchant", timeout=20)
     html = page.text
 
     checks = {
-        "client_page_200": page.status_code == 200,
+        "merchant_page_200": page.status_code == 200,
         "modal_tab_buttons_present": all(
             token in html
             for token in [
@@ -42,11 +42,11 @@ def main() -> int:
                 'data-store-modal-panel="receipt"',
             ]
         ),
-        "js_has_tab_reset_on_open": "setClientStoreModalTab('basic');" in source,
-        "js_has_tab_init": "function initClientStoreModalTabs()" in source,
+        "js_has_tab_reset_on_open": "setMerchantStoreModalTab('basic');" in source,
+        "js_has_tab_init": "function initMerchantStoreModalTabs()" in source,
         "js_has_hidden_reset": "hidden.bs.modal" in source,
-        "js_has_add_mode_switch": "updateClientStoreModalChrome('add')" in source,
-        "js_has_edit_mode_switch": "updateClientStoreModalChrome('edit')" in source,
+        "js_has_add_mode_switch": "updateMerchantStoreModalChrome('add')" in source,
+        "js_has_edit_mode_switch": "updateMerchantStoreModalChrome('edit')" in source,
     }
 
     print(json.dumps(checks, ensure_ascii=True, indent=2))

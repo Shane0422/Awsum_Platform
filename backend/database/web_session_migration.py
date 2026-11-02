@@ -15,7 +15,7 @@ def migrate_web_sessions(engine) -> None:
             "c_login_path": "VARCHAR(64)", "dt_expires": "TIMESTAMP", "dt_logout": "TIMESTAMP",
             "i_terminated_by": "INTEGER",
             "c_login_context": "VARCHAR(16)",
-            "i_account_id": "INTEGER REFERENCES tb_client(i_client_id)",
+            "i_merchant_id": "INTEGER REFERENCES tb_merchant(i_merchant_id)",
             "i_agency_id": "INTEGER REFERENCES tb_agency(i_agency_id)",
             "c_local_ip": "VARCHAR(64)", "c_country_code": "VARCHAR(2)",
             "c_region": "VARCHAR(128)", "c_city": "VARCHAR(128)",
@@ -45,7 +45,7 @@ def migrate_web_sessions(engine) -> None:
         # technical Store ID alone is not evidence of customer membership.
         conn.execute(text("""
             UPDATE tb_session SET c_login_context='PLATFORM',
-                i_store_id=NULL, i_account_id=NULL, i_agency_id=NULL
+                i_store_id=NULL, i_merchant_id=NULL, i_agency_id=NULL
             WHERE c_login_context IS NULL AND c_login_path='/platform-admin'
         """))
         conn.execute(text("UPDATE tb_session SET c_status=UPPER(c_status) WHERE c_status <> UPPER(c_status)"))

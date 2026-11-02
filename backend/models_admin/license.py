@@ -10,7 +10,7 @@ class License(PlatformBase, AuditMixin):
     i_license_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     i_device_id = Column(Integer, ForeignKey("tb_device.i_device_id"), nullable=True, index=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=False, index=True)
-    i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=True, index=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
     i_agency_id = Column(Integer, ForeignKey("tb_agency.i_agency_id"), nullable=True, index=True)
 
     c_license_key = Column(String, nullable=False, unique=True)

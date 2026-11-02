@@ -24,17 +24,17 @@ from fastapi import HTTPException
 ADMIN_STORE_ID = 1000001
 PLATFORM_ADMIN_ACCESS_CODE = "ADMIN"
 PLATFORM_ADMIN_ROLE_NAME = "superadmin"
-CLIENT_CODE_PATTERNS = (
+MERCHANT_CODE_PATTERNS = (
     re.compile(r"^(?:STR|CLT)_?(\d{5})$", re.IGNORECASE),
     re.compile(r"^CUST_?(\d{5})$", re.IGNORECASE),
 )
 
 DASHBOARD_TYPE_TO_URL = {
     "PLATFORM": "/platform/dashboard",
-    "STANDARD": "/client/dashboard/standard",
-    "RESTAURANT": "/client/dashboard/restaurant",
-    "DELI": "/client/dashboard/deli",
-    "TUXEDO_RENTAL": "/client/dashboard/tuxedo",
+    "STANDARD": "/merchant/dashboard/standard",
+    "RESTAURANT": "/merchant/dashboard/restaurant",
+    "DELI": "/merchant/dashboard/deli",
+    "TUXEDO_RENTAL": "/merchant/dashboard/tuxedo",
 }
 
 # bcrypt max password length is 72 bytes; validate early for a clear error response
@@ -92,30 +92,30 @@ def _normalize_dashboard_type(raw_value: str | None) -> str:
     return value
 
 
-def _extract_client_seq(store_code: str | None) -> int | None:
+def _extract_merchant_seq(store_code: str | None) -> int | None:
     if not store_code:
         return None
     normalized = store_code.strip().upper()
-    for pattern in CLIENT_CODE_PATTERNS:
+    for pattern in MERCHANT_CODE_PATTERNS:
         matched = pattern.match(normalized)
         if matched:
             return int(matched.group(1))
     return None
 
 
-def _is_client_store_code(store_code: str | None) -> bool:
-    return _extract_client_seq(store_code) is not None
+def _is_merchant_store_code(store_code: str | None) -> bool:
+    return _extract_merchant_seq(store_code) is not None
 
 
 def _is_test_store_code(store_code: str | None) -> bool:
-    seq = _extract_client_seq(store_code)
+    seq = _extract_merchant_seq(store_code)
     if seq is None:
         return False
     return 1 <= seq <= 99999
 
 
-def _is_real_client_store_code(store_code: str | None) -> bool:
-    seq = _extract_client_seq(store_code)
+def _is_real_merchant_store_code(store_code: str | None) -> bool:
+    seq = _extract_merchant_seq(store_code)
     if seq is None:
         return False
     return seq >= 11001
@@ -124,20 +124,20 @@ def _is_real_client_store_code(store_code: str | None) -> bool:
 def _resolve_store_dashboard_redirect(db: Session, store_id: int) -> str:
     store_obj = db.query(Store).filter(Store.i_store_id == store_id).first()
     if not store_obj:
-        return "/client/dashboard/standard"
+        return "/merchant/dashboard/standard"
 
     store_code = (store_obj.c_store_code or "").strip().upper()
 
-        # Route client-affiliated stores by dashboard_type (default: STANDARD)
-    if _is_client_store_code(store_code):
+        # Route merchant-affiliated stores by dashboard_type (default: STANDARD)
+    if _is_merchant_store_code(store_code):
         # Explicit classification per policy for test/real customer stores.
-        if _is_test_store_code(store_code) or _is_real_client_store_code(store_code):
+        if _is_test_store_code(store_code) or _is_real_merchant_store_code(store_code):
             dashboard_type = _normalize_dashboard_type(store_obj.c_dashboard_type)
             return DASHBOARD_TYPE_TO_URL[dashboard_type]
         dashboard_type = _normalize_dashboard_type(store_obj.c_dashboard_type)
         return DASHBOARD_TYPE_TO_URL[dashboard_type]
 
-    return "/client/dashboard/standard"
+    return "/merchant/dashboard/standard"
 
 
 def _resolve_post_login_redirect(db: Session, user: Any, store_id: int) -> str:
@@ -145,10 +145,10 @@ def _resolve_post_login_redirect(db: Session, user: Any, store_id: int) -> str:
         return "/platform/dashboard"
 
     store_obj = db.query(Store).filter(Store.i_store_id == store_id).first()
-    if store_obj and _is_client_store_code(store_obj.c_store_code):
+    if store_obj and _is_merchant_store_code(store_obj.c_store_code):
         return _resolve_store_dashboard_redirect(db, store_id)
 
-    # Fallback for non-client stores (backwards compatibility)
+    # Fallback for non-merchant stores (backwards compatibility)
     role_id = user.i_role_id
     if role_id in [2, 3]:
         return "/dashboard/store"
@@ -443,7 +443,7 @@ def login(
 
     # Store operation-user authentication remains unchanged.
     return _login_error(
-        "Platform DB does not manage Store users. Please use your Client/Store operation DB login path.",
+        "Platform DB does not manage Store users. Please use your Merchant/Store operation DB login path.",
         status_code=400,
     )
 
@@ -569,7 +569,7 @@ def register(
     return JSONResponse(
         {
             "success": False,
-            "message": "Platform DB does not register operation users. Register users in each Client/Store operation DB.",
+            "message": "Platform DB does not register operation users. Register users in each Merchant/Store operation DB.",
         },
         status_code=410,
     )

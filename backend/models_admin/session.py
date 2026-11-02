@@ -15,7 +15,7 @@ class SessionTbl(PlatformBase, AuditMixin):
     c_session_key = Column(String(36), nullable=True, unique=True)
     i_store_id = Column(Integer, ForeignKey("tb_store.i_store_id"), nullable=True)
     c_login_context = Column(String(16), nullable=True)
-    i_account_id = Column(Integer, ForeignKey("tb_client.i_client_id"), nullable=True)
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True)
     i_agency_id = Column(Integer, ForeignKey("tb_agency.i_agency_id"), nullable=True)
     c_client_id = Column(String(128), nullable=True)
     # Canonical public/client transport IP; may correctly be private/loopback.

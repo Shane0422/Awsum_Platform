@@ -68,7 +68,7 @@ tb_store
 ```text
 Store Code
 Status
-Account ID
+Merchant ID
 Store ID
 ```
 ### Step 3
@@ -124,7 +124,7 @@ Store User
 접근 가능
 
 ```text
-Account
+Merchant
 Store
 User
 Role
@@ -172,7 +172,7 @@ JWT에는 최소한 아래 정보를 포함한다.
 {
   "user_id": 1,
   "user_type": "platform_admin",
-  "account_id": 10001,
+  "merchant_id": 10001,
   "store_id": 20001,
   "store_code": "Admin",
   "role": "SuperAdmin",
@@ -186,7 +186,7 @@ Store User 예
 {
   "user_id": 101,
   "user_type": "store_user",
-  "account_id": 10001,
+  "merchant_id": 10001,
   "store_id": 20001,
   "store_code": "CUST10001",
   "role": "Manager",
@@ -210,7 +210,7 @@ Store User 예
 
 ---
 
-### ACCOUNT_OWNER
+### MERCHANT_OWNER
 
 고객사 관리자
 
@@ -241,7 +241,7 @@ POS 사용자
 ```text
 tb_platform_user
 tb_store
-tb_account
+tb_merchant
 tb_role
 tb_session
 tb_subscription

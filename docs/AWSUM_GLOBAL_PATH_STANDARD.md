@@ -308,15 +308,15 @@ storage.initialize_merchant_storage(merchant_id)
 storage.initialize_store_storage(store_id)
 ```
 
-Store initialization queries `tb_store.i_account_id` and the referenced
-`tb_client.c_client_code`. Missing/invalid relationships are reported as failures;
+Store initialization queries `tb_store.i_merchant_id` and the referenced
+`tb_merchant.c_merchant_code`. Missing/invalid relationships are reported as failures;
 the service never guesses a Merchant or creates a standalone Store root.
 The technical HQ Store (`ADMIN_STORE_ID`) is not a business Store and uses
 Platform storage; bulk repair deliberately excludes it.
 
 All **mounted registration entry points** initialize after the successful DB
-commit and final generated code: Agency, Merchant, legacy Client, Store, and
-Client-linked Store. The following basic roots are ensured, without creating
+commit and final generated code: Agency, Merchant, Store, and
+Merchant-linked Store. The following basic roots are ensured, without creating
 future category folders:
 
 ```text

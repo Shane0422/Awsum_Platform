@@ -8,14 +8,14 @@ from tools.test_platform_navigation import render_navigation
 
 
 MODULES = (
-    "agency-type", "business-type", "agency", "merchant", "account", "store",
+    "agency-type", "business-type", "agency", "merchant", "store",
     "device-category", "device-type", "license", "pricing-plan", "subscription",
     "invoice", "contract", "payment-method", "role",
 )
 OTHER_PAGES = (
     ("users.html", "master", "user"), ("sessions.html", "master", "session"),
     ("system_settings.html", "system-settings", ""),
-    ("platform_stores.html", "stores", ""), ("accounts_tree.html", "accounts-tree", ""),
+    ("platform_stores.html", "stores", ""), ("merchants_tree.html", "merchants-tree", ""),
 )
 
 
@@ -23,7 +23,7 @@ def render_admin(filename, page, module):
     base, context, _ = render_navigation()
     context.update(
         active_page=page, active_module=module, brand_logo_path="",
-        roles=[], business_types=[], accounts=[], clients=[], agencies=[], agency_types=[],
+        roles=[], business_types=[], merchants=[], agencies=[], agency_types=[],
         stores=[], pricing_plans=[], device_categories=[], device_types=[],
         filter={"status": "", "business_type": "", "channel_type": ""},
     )
@@ -48,7 +48,7 @@ class PlatformAdminTemplateTests(unittest.TestCase):
                         self.assertIn(f'id="{control}"', html)
                 if filename == "system_settings.html":
                     self.assertEqual(html.count('role="tab"'), 4)
-                if filename != "accounts_tree.html":
+                if filename != "merchants_tree.html":
                     self.assertIn('awsum-page-header', html)
                     self.assertIn('awsum-filter-card', html)
                     self.assertIn('awsum-settings-card' if filename == "system_settings.html" else 'awsum-table-card', html)
@@ -95,7 +95,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
     const doc=frame.contentDocument,win=frame.contentWindow;
     const root=doc.querySelector('.awsum-admin');
     assert(root,'shared skin applied');
-    if(fixture.filename!=='accounts_tree.html'){
+    if(fixture.filename!=='merchants_tree.html'){
       const header=root.querySelector('.awsum-page-header');
       const filters=root.querySelector('.awsum-filter-card');
       const content=root.querySelector('.awsum-table-card,.awsum-settings-card');
@@ -135,7 +135,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
     for(const width of [1440,768,375]){
       frame.style.width=width+'px';await tick();
       assert(doc.documentElement.scrollWidth<=width+1,'no page overflow: '+fixture.filename+'/'+fixture.module+' '+width);
-      if(fixture.filename!=='accounts_tree.html'){
+      if(fixture.filename!=='merchants_tree.html'){
         const header=root.querySelector('.awsum-page-header').getBoundingClientRect();
         const filters=root.querySelector('.awsum-filter-card').getBoundingClientRect();
         const content=root.querySelector('.awsum-table-card,.awsum-settings-card').getBoundingClientRect();

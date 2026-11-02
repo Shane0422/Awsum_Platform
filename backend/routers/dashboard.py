@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.store import Store
-from backend.models_admin.account import Account
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.business_type import BusinessType
 from backend.models_admin.role import Role
 from backend.models_admin.agency import Agency
@@ -90,7 +90,7 @@ def _resolve_store_brand_info(db: Session, login_store: Optional[int]) -> dict:
     if not login_store or login_store == ADMIN_STORE_ID:
         return {
             "brand_display_name": APP_NAME,
-            "client_code": None,
+            "merchant_code": None,
             "store_code": None,
         }
 
@@ -98,14 +98,14 @@ def _resolve_store_brand_info(db: Session, login_store: Optional[int]) -> dict:
     if not store:
         return {
             "brand_display_name": APP_NAME,
-            "client_code": None,
+            "merchant_code": None,
             "store_code": None,
         }
 
-    account = db.query(Account).filter(Account.i_account_id == store.i_account_id).first()
+    merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first()
     return {
         "brand_display_name": (store.c_store_name or "").strip() or APP_NAME,
-        "client_code": account.c_client_code if account else None,
+        "merchant_code": merchant.c_merchant_code if merchant else None,
         "store_code": (store.c_store_code or "").strip() or None,
     }
 
@@ -221,9 +221,7 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
 
     # Normalize aliases used by legacy/deep links.
     # Keep this centralized so template/JS can continue to use singular keys.
-    if module == "client":
-        module = "account"
-    elif module == "invoices":
+    if module == "invoices":
         module = "invoice"
     elif module == "contracts":
         module = "contract"
@@ -247,20 +245,20 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
             **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
         }))
 
-    allowed_modules = {"role", "business-type", "agency-type", "account", "merchant", "agency", "license", "subscription", "pricing-plan", "contract", "invoice", "payment-method", "user", "session", "store", "device-category", "device-type"}
+    allowed_modules = {"role", "business-type", "agency-type", "merchant", "merchant", "agency", "license", "subscription", "pricing-plan", "contract", "invoice", "payment-method", "user", "session", "store", "device-category", "device-type"}
     if module not in allowed_modules:
         module = "role"
 
     # Provide master data for dropdowns
     from backend.models_admin.store import Store
-    from backend.models_admin.account import Account
+    from backend.models_admin.merchant import Merchant
     from backend.models_admin.pricing_plan import PricingPlan
     from backend.models_admin.device_category import DeviceCategory
     from backend.models_admin.device_type import DeviceType
 
     roles = db.query(Role).all()
     business_types = db.query(BusinessType).filter(BusinessType.c_status == "active").all()
-    accounts = db.query(Account).filter(Account.c_status == "active").order_by(Account.i_account_id).all()
+    merchants = db.query(Merchant).filter(Merchant.c_status == "active").order_by(Merchant.i_merchant_id).all()
     agencies = db.query(Agency).order_by(Agency.i_agency_id).all()
     agency_types = db.query(AgencyType).filter(AgencyType.c_status == "active").order_by(AgencyType.i_agency_type_id).all()
     stores = db.query(Store).order_by(Store.i_store_id).all()
@@ -294,8 +292,7 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         "active_module": module,
         "roles": roles,
         "business_types": business_types,
-        "accounts": accounts,
-        "clients": accounts,  # legacy compatibility
+        "merchants": merchants,
         "agencies": agencies,
         "agency_types": agency_types,
         "stores": stores,
@@ -313,20 +310,10 @@ def master_invoices_alias(request: Request):
     return _set_no_cache_headers(RedirectResponse(url="/platform/master/invoice", status_code=303))
 
 
-@router.get("/platform/master/account/{account_id}/stores", response_class=HTMLResponse)
-def master_account_stores(request: Request, account_id: int, db: Session = Depends(get_db)):
-    # Keep this URL for multi-tenant hierarchy semantics and deep-linking.
-    return _set_no_cache_headers(RedirectResponse(url=f"/platform/master/account?account_id={account_id}", status_code=303))
 
 
-# Legacy compatibility
-@router.get("/platform/master/client/{client_id}/stores", response_class=HTMLResponse)
-def master_client_stores_legacy(request: Request, client_id: int, db: Session = Depends(get_db)):
-    return _set_no_cache_headers(RedirectResponse(url=f"/platform/master/account?account_id={client_id}", status_code=303))
-
-
-@router.get("/platform/accounts-tree", response_class=HTMLResponse)
-def platform_accounts_tree(request: Request, db: Session = Depends(get_db)):
+@router.get("/platform/merchants-tree", response_class=HTMLResponse)
+def platform_merchants_tree(request: Request, db: Session = Depends(get_db)):
     user, redirect_resp = _auth_user_or_home_redirect(request, db)
     if redirect_resp:
         return redirect_resp
@@ -334,12 +321,12 @@ def platform_accounts_tree(request: Request, db: Session = Depends(get_db)):
     if user.login_role != 1:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    return _set_no_cache_headers(templates.TemplateResponse(request, "platform/accounts_tree.html", {
+    return _set_no_cache_headers(templates.TemplateResponse(request, "platform/merchants_tree.html", {
         "request": request,
         "APP_NAME": APP_NAME,
         "user": user,
         "role": "Platform Admin",
-        "active_page": "accounts-tree",
+        "active_page": "merchants-tree",
         **get_brand_context(context_type="platform", brand_display_name=APP_NAME),
     }))
 
@@ -349,10 +336,10 @@ def platform_accounts_tree(request: Request, db: Session = Depends(get_db)):
 # ==========================
 @router.get("/dashboard/store", response_class=HTMLResponse)
 def dashboard_store(request: Request, db: Session = Depends(get_db)):
-    return _client_dashboard_response(request, db, "STANDARD", active_menu="dashboard")
+    return _merchant_dashboard_response(request, db, "STANDARD", active_menu="dashboard")
 
 
-def _client_dashboard_response(request: Request, db: Session, dashboard_type: str, active_menu: str = "dashboard"):
+def _merchant_dashboard_response(request: Request, db: Session, dashboard_type: str, active_menu: str = "dashboard"):
     user, redirect_resp = _auth_user_or_home_redirect(request, db)
     if redirect_resp:
         return redirect_resp
@@ -361,12 +348,12 @@ def _client_dashboard_response(request: Request, db: Session, dashboard_type: st
         return _set_no_cache_headers(RedirectResponse(url="/", status_code=303))
 
     template_map = {
-        "STANDARD": "client/dashboard_standard.html",
-        "RESTAURANT": "client/dashboard_restaurant.html",
-        "DELI": "client/dashboard_deli.html",
-        "TUXEDO_RENTAL": "client/dashboard_tuxedo.html",
+        "STANDARD": "merchant/dashboard_standard.html",
+        "RESTAURANT": "merchant/dashboard_restaurant.html",
+        "DELI": "merchant/dashboard_deli.html",
+        "TUXEDO_RENTAL": "merchant/dashboard_tuxedo.html",
     }
-    template_name = template_map.get((dashboard_type or "").upper(), "client/dashboard_standard.html")
+    template_name = template_map.get((dashboard_type or "").upper(), "merchant/dashboard_standard.html")
 
     brand_info = _resolve_store_brand_info(db, user.login_store)
 
@@ -381,72 +368,32 @@ def _client_dashboard_response(request: Request, db: Session, dashboard_type: st
         **get_brand_context(
             context_type="store",
             brand_display_name=brand_info["brand_display_name"],
-            client_code=brand_info["client_code"],
+            merchant_code=brand_info["merchant_code"],
             store_code=brand_info["store_code"],
         ),
     }))
 
 
-@router.get("/client/dashboard/standard", response_class=HTMLResponse)
+@router.get("/merchant/dashboard/standard", response_class=HTMLResponse)
 def dashboard_standard(request: Request, db: Session = Depends(get_db)):
-    return _client_dashboard_response(request, db, "STANDARD", active_menu="dashboard")
+    return _merchant_dashboard_response(request, db, "STANDARD", active_menu="dashboard")
 
 
-@router.get("/client/dashboard/restaurant", response_class=HTMLResponse)
+@router.get("/merchant/dashboard/restaurant", response_class=HTMLResponse)
 def dashboard_restaurant(request: Request, db: Session = Depends(get_db)):
-    return _client_dashboard_response(request, db, "RESTAURANT", active_menu="dashboard")
+    return _merchant_dashboard_response(request, db, "RESTAURANT", active_menu="dashboard")
 
 
-@router.get("/client/dashboard/deli", response_class=HTMLResponse)
+@router.get("/merchant/dashboard/deli", response_class=HTMLResponse)
 def dashboard_deli(request: Request, db: Session = Depends(get_db)):
-    return _client_dashboard_response(request, db, "DELI", active_menu="dashboard")
+    return _merchant_dashboard_response(request, db, "DELI", active_menu="dashboard")
 
 
-@router.get("/client/dashboard/tuxedo", response_class=HTMLResponse)
+@router.get("/merchant/dashboard/tuxedo", response_class=HTMLResponse)
 def dashboard_tuxedo(request: Request, db: Session = Depends(get_db)):
-    return _client_dashboard_response(request, db, "TUXEDO_RENTAL", active_menu="dashboard")
+    return _merchant_dashboard_response(request, db, "TUXEDO_RENTAL", active_menu="dashboard")
 
 
-# Legacy customer URL aliases kept for compatibility.
-@router.get("/customer/dashboard/standard", response_class=HTMLResponse)
-def dashboard_standard_customer_alias():
-    return RedirectResponse(url="/client/dashboard/standard", status_code=307)
-
-
-@router.get("/customer/dashboard/restaurant", response_class=HTMLResponse)
-def dashboard_restaurant_customer_alias():
-    return RedirectResponse(url="/client/dashboard/restaurant", status_code=307)
-
-
-@router.get("/customer/dashboard/deli", response_class=HTMLResponse)
-def dashboard_deli_customer_alias():
-    return RedirectResponse(url="/client/dashboard/deli", status_code=307)
-
-
-@router.get("/customer/dashboard/tuxedo", response_class=HTMLResponse)
-def dashboard_tuxedo_customer_alias():
-    return RedirectResponse(url="/client/dashboard/tuxedo", status_code=307)
-
-
-# Legacy aliases kept for compatibility; they redirect to the new customer routes.
-@router.get("/standard/dashboard", response_class=HTMLResponse)
-def dashboard_standard_legacy():
-    return RedirectResponse(url="/client/dashboard/standard", status_code=307)
-
-
-@router.get("/restaurant/dashboard", response_class=HTMLResponse)
-def dashboard_restaurant_legacy():
-    return RedirectResponse(url="/client/dashboard/restaurant", status_code=307)
-
-
-@router.get("/deli/dashboard", response_class=HTMLResponse)
-def dashboard_deli_legacy():
-    return RedirectResponse(url="/client/dashboard/deli", status_code=307)
-
-
-@router.get("/tuxedo/dashboard", response_class=HTMLResponse)
-def dashboard_tuxedo_legacy():
-    return RedirectResponse(url="/client/dashboard/tuxedo", status_code=307)
 
 # ==========================
 # Staff Dashboard
@@ -471,7 +418,7 @@ def dashboard_staff(request: Request, db: Session = Depends(get_db)):
         **get_brand_context(
             context_type="store",
             brand_display_name=brand_info["brand_display_name"],
-            client_code=brand_info["client_code"],
+            merchant_code=brand_info["merchant_code"],
             store_code=brand_info["store_code"],
         ),
     }))
@@ -499,7 +446,7 @@ def dashboard_client(request: Request, db: Session = Depends(get_db)):
         **get_brand_context(
             context_type="store",
             brand_display_name=brand_info["brand_display_name"],
-            client_code=brand_info["client_code"],
+            merchant_code=brand_info["merchant_code"],
             store_code=brand_info["store_code"],
         ),
     }))

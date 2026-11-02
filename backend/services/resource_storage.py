@@ -48,13 +48,13 @@ class AwsumStorageService:
     def resolve_owner(self, context_type: str, entity_id: int | None = None) -> AwsumPathResolver:
         from backend.database.pg_platform import ADMIN_STORE_ID
         from backend.models_admin.agency import Agency
-        from backend.models_admin.account import Account
+        from backend.models_admin.merchant import Merchant
         from backend.models_admin.store import Store
         if context_type == "PLATFORM":
             if entity_id is not None:
                 raise ValueError("Platform storage has no organization ID.")
             return AwsumPathResolver("PLATFORM")
-        models = {"AGENCY": Agency, "MERCHANT": Account, "STORE": Store}
+        models = {"AGENCY": Agency, "MERCHANT": Merchant, "STORE": Store}
         if context_type not in models or not isinstance(entity_id, int) or isinstance(entity_id, bool):
             raise ValueError("A valid organization context and database ID are required.")
         if context_type == "STORE" and entity_id == ADMIN_STORE_ID:
@@ -65,11 +65,11 @@ class AwsumStorageService:
         if context_type == "AGENCY":
             return AwsumPathResolver("AGENCY", agency_code=row.c_agency_code)
         if context_type == "MERCHANT":
-            return AwsumPathResolver("MERCHANT", merchant_code=row.c_client_code)
-        merchant = self.db.get(Account, row.i_account_id, populate_existing=True) if row.i_account_id is not None else None
+            return AwsumPathResolver("MERCHANT", merchant_code=row.c_merchant_code)
+        merchant = self.db.get(Merchant, row.i_merchant_id, populate_existing=True) if row.i_merchant_id is not None else None
         if merchant is None:
             raise HTTPException(409, "Store storage requires its saved Merchant relationship.")
-        return AwsumPathResolver("STORE", merchant_code=merchant.c_client_code, store_code=row.c_store_code)
+        return AwsumPathResolver("STORE", merchant_code=merchant.c_merchant_code, store_code=row.c_store_code)
 
     def _initialize(self, context_type: str, entity_id: int | None = None) -> dict:
         owner = None
@@ -133,12 +133,12 @@ class AwsumStorageService:
     def initialize_missing_storage(self, *, dry_run: bool = False) -> dict:
         from backend.database.pg_platform import ADMIN_STORE_ID
         from backend.models_admin.agency import Agency
-        from backend.models_admin.account import Account
+        from backend.models_admin.merchant import Merchant
         from backend.models_admin.store import Store
         identities = [("PLATFORM", None)]
         for context_type, model, key in (
             ("AGENCY", Agency, Agency.i_agency_id),
-            ("MERCHANT", Account, Account.i_client_id),
+            ("MERCHANT", Merchant, Merchant.i_merchant_id),
             ("STORE", Store, Store.i_store_id),
         ):
             query = self.db.query(key)

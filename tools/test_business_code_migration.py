@@ -36,7 +36,7 @@ class BusinessCodeMigrationTests(unittest.TestCase):
 
     def test_detects_collision_before_conversion(self):
         conflicts = _find_code_conflicts(
-            "tb_client",
+            "tb_merchant",
             [(1, "CLT_11001"), (2, "CLT11001")],
             ("CLT",),
         )
