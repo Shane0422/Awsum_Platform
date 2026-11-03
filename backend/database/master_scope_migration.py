@@ -22,5 +22,13 @@ def migrate_master_scopes(engine) -> None:
                     f"ALTER TABLE {table} ADD COLUMN i_merchant_id INTEGER REFERENCES tb_merchant(i_merchant_id)"
                 ))
             conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_i_merchant_id ON {table} (i_merchant_id)"))
+            if table == "tb_category3":
+                for n in (1, 2, 3):
+                    column = f"i_tax{n}_id"
+                    if column not in columns:
+                        conn.execute(text(
+                            f"ALTER TABLE {table} ADD COLUMN {column} INTEGER REFERENCES tb_tax(i_tax_id)"
+                        ))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table} ({column})"))
             if conn.execute(snapshot).all() != existing_rows:
                 raise RuntimeError(f"Master scope migration changed existing {table} rows; rolling back.")

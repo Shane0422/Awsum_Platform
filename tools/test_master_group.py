@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -72,6 +72,65 @@ class MasterGroupTests(unittest.TestCase):
         self.assertIn("name", self.errors("tax", {"name": " ", "rate": "1"}))
 
     # --- categories ---
+    def test_category3_tax_migration_preserves_existing_rows_and_is_repeatable(self):
+        from backend.database.master_scope_migration import migrate_master_scopes
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_category3 (i_category3_id INTEGER PRIMARY KEY, c_category_name TEXT)"))
+            conn.execute(text("INSERT INTO tb_category3 VALUES (1, 'Existing')"))
+        migrate_master_scopes(engine)
+        migrate_master_scopes(engine)
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT i_category3_id, c_category_name, i_tax1_id, i_tax2_id, i_tax3_id FROM tb_category3"
+            )).one()
+            self.assertEqual(tuple(row), (1, "Existing", None, None, None))
+            self.assertEqual(
+                {fk["constrained_columns"][0] for fk in inspect(conn).get_foreign_keys("tb_category3")},
+                {"i_merchant_id", "i_tax1_id", "i_tax2_id", "i_tax3_id"},
+            )
+
+    def test_category3_tax_slots_are_scoped_nullable_and_distinct(self):
+        for merchant_id in (None, 42):
+            with self.subTest(merchant_id=merchant_id):
+                def create(entity, payload):
+                    return svc.create_item(self.db, entity, payload, 1, merchant_id=merchant_id)
+
+                c1 = create("category1", {"name": "One"})
+                c2 = create("category2", {"name": "Two", "category1_id": c1["id"]})
+                zero = create("tax", {"name": "Exempt", "rate": "0"})
+                other = create("tax", {"name": "Sales", "rate": "6.25"})
+                payload = {"name": "Three", "category1_id": c1["id"], "category2_id": c2["id"]}
+                category = create("category3", payload)
+                self.assertEqual([category[f"tax{n}_id"] for n in (1, 2, 3)], [None] * 3)
+                item = svc.update_item(self.db, "category3", category["id"], {
+                    **payload, "tax1_id": zero["id"], "tax2_id": other["id"], "tax3_id": "",
+                }, 1, merchant_id=merchant_id)
+                self.assertEqual([item[f"tax{n}_id"] for n in (1, 2, 3)], [zero["id"], other["id"], None])
+                lookup = next(row for row in svc.lookup_options(self.db, merchant_id=merchant_id)["category3"]
+                              if row["id"] == category["id"])
+                self.assertEqual([lookup[f"tax{n}_id"] for n in (1, 2, 3)], [zero["id"], other["id"], None])
+                unchanged = svc.update_item(self.db, "category3", category["id"], payload, 1, merchant_id=merchant_id)
+                self.assertEqual(unchanged["tax1_id"], zero["id"])
+                with self.assertRaises(svc.FieldErrors) as duplicate:
+                    create("category3", {**payload, "tax1_id": zero["id"], "tax2_id": zero["id"]})
+                self.assertIn("tax2_id", duplicate.exception.errors)
+                foreign = svc.create_item(self.db, "tax", {"name": "Foreign", "rate": "1"}, 1, merchant_id=99)
+                for tax_id in (foreign["id"], 99999, 0):
+                    with self.assertRaises(svc.FieldErrors):
+                        create("category3", {**payload, "tax1_id": tax_id})
+                options = svc.lookup_options(self.db, merchant_id=merchant_id)["taxes"]
+                self.assertNotIn(foreign["id"], [option["id"] for option in options])
+                self.assertEqual(next(option["rate"] for option in options if option["id"] == zero["id"]), "0.0000")
+                with self.assertRaises(svc.Conflict):
+                    svc.delete_item(self.db, "tax", zero["id"], merchant_id=merchant_id)
+                cleared = svc.update_item(self.db, "category3", category["id"], {
+                    **payload, "tax1_id": None, "tax2_id": "", "tax3_id": None,
+                }, 1, merchant_id=merchant_id)
+                self.assertIsNone(cleared["tax1_id"])
+
     def test_category_chain_validation(self):
         c1 = svc.create_item(self.db, "category1", {"name": "One"}, 1)
         other = svc.create_item(self.db, "category1", {"name": "Other"}, 1)
@@ -342,4 +401,3 @@ class MasterGroupApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -277,6 +277,23 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
                     errors["category2_id"] = "Category II is inactive."
                 elif current is not None and changed and _category3_in_use(db, current.i_category3_id):
                     errors["category2_id"] = "This Category III is used by items; its parents cannot change."
+        selected_taxes = set()
+        for n in (1, 2, 3):
+            key, column = f"tax{n}_id", f"i_tax{n}_id"
+            tax_id = _id(payload, key, errors, required=False, label=f"Tax {n}") if key in payload else (
+                getattr(current, column) if current is not None else None
+            )
+            values[column] = tax_id
+            if tax_id is None or key in errors:
+                continue
+            tax = _scoped_parent(db, Tax, tax_id, merchant_id)
+            if tax is None:
+                errors[key] = "Tax does not exist in this scope."
+            elif not tax.b_active and (current is None or getattr(current, column) != tax_id):
+                errors[key] = "Tax is inactive."
+            if tax_id in selected_taxes:
+                errors[key] = "Select each Tax only once."
+            selected_taxes.add(tax_id)
         values.update(_validate_common(payload, errors, ordered=True))
 
     else:  # md
@@ -402,7 +419,14 @@ def _category3_in_use(db: Session, cid: int) -> bool:
 
 def is_in_use(db: Session, entity: str, row) -> bool:
     if entity == "tax":
-        return bool(db.query(MdMaster.i_md_id).filter(MdMaster.i_default_tax_id == row.i_tax_id).first())
+        return bool(
+            db.query(MdMaster.i_md_id).filter(MdMaster.i_default_tax_id == row.i_tax_id).first()
+            or db.query(Category3.i_category3_id).filter(or_(
+                Category3.i_tax1_id == row.i_tax_id,
+                Category3.i_tax2_id == row.i_tax_id,
+                Category3.i_tax3_id == row.i_tax_id,
+            )).first()
+        )
     if entity == "category1":
         cid = row.i_category1_id
         return bool(
@@ -448,6 +472,8 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
     if entity == "category3":
         c2 = _scoped_parent(db, Category2, row.i_category2_id, row.i_merchant_id)
         base.update(category2_id=row.i_category2_id, category2_name=c2.c_category_name if c2 else None)
+        for n in (1, 2, 3):
+            base[f"tax{n}_id"] = getattr(row, f"i_tax{n}_id")
     if entity == "md":
         c1 = db.get(Category1, row.i_category1_id)
         c2 = db.get(Category2, row.i_category2_id) if row.i_category2_id else None
@@ -758,7 +784,8 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         ],
         "category3": [
             {"id": r.i_category3_id, "category1_id": r.i_category1_id, "category2_id": r.i_category2_id,
-             "code": r.c_category_code, "name": r.c_category_name, "active": bool(r.b_active)}
+             "code": r.c_category_code, "name": r.c_category_name, "active": bool(r.b_active),
+             **{f"tax{n}_id": getattr(r, f"i_tax{n}_id") for n in (1, 2, 3)}}
             for r in _scoped_query(db, Category3, merchant_id).order_by(Category3.i_display_order, Category3.i_category3_id)
         ],
         "taxes": [

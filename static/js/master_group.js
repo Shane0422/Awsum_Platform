@@ -41,6 +41,8 @@
     md: 'Sellable and billable items with their license and serial management rules.',
   };
 
+  const taxLabel = (tax) => tax ? `${tax.name} (${Number(tax.rate)}%)` : '';
+
   const COLUMNS = {
     tax: [
       ['code', 'Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
@@ -66,6 +68,9 @@
       ['', 'Category I', (r) => esc(r.category1_name), false],
       ['', 'Category II', (r) => esc(r.category2_name), false],
       ['name', 'Name', (r) => esc(r.name), true],
+      ...[1, 2, 3].map((n) => ['', `Tax ${n}`, (r) => esc(taxLabel(
+        (state.options.taxes || []).find((t) => t.id === r[`tax${n}_id`]),
+      )), false]),
       ['display_order', 'Order', (r) => esc(r.display_order), true],
       ['active', 'Status', (r) => badge(r.active), true],
     ],
@@ -223,6 +228,7 @@
         return field('category1_id', 'Category I', select('category1_id'), { required: true })
           + field('category2_id', 'Category II', select('category2_id'), { required: true })
           + field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
+          + [1, 2, 3].map((n) => field(`tax${n}_id`, `Tax ${n}`, select(`tax${n}_id`))).join('')
           + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
           + activeField() + notes;
       default:
@@ -238,7 +244,8 @@
     const classification = field('category1_id', 'Category I', select('category1_id'), { required: true, col: 'col-md-4' })
       + field('category2_id', 'Category II', select('category2_id'), { col: 'col-md-4' })
       + field('category3_id', 'Category III', select('category3_id'), { col: 'col-md-4' })
-      + field('default_tax_id', 'Tax', select('default_tax_id'), { col: 'col-md-6' })
+      + input('default_tax_id', 'hidden')
+      + field('category_tax_display', 'Tax', '<div id="mgf_category_tax_display" class="form-control-plaintext" aria-live="polite"></div>', { col: 'col-md-6' })
       + field('billing_cycle', 'Billing Cycle', select('billing_cycle'), { required: true, col: 'col-md-6' });
     const info = field('name', 'Item Name', input('name', 'text', 'maxlength="200"'), { required: true, col: 'col-md-8' })
       + field('item_kind', 'Item Kind', select('item_kind'), { required: true, col: 'col-md-4' })
@@ -266,9 +273,10 @@
   };
 
   // Active parents, plus the currently saved parent so existing records stay editable.
-  const cat1Opts = (keep) => state.options.category1.filter((c) => c.active || c.id === keep).map((c) => [c.id, `${c.name} (${c.code})`]);
-  const cat2Opts = (c1, keep) => state.options.category2.filter((c) => c.category1_id === Number(c1) && (c.active || c.id === keep)).map((c) => [c.id, `${c.name} (${c.code})`]);
-  const cat3Opts = (c2, keep) => state.options.category3.filter((c) => c.category2_id === Number(c2) && (c.active || c.id === keep)).map((c) => [c.id, `${c.name} (${c.code})`]);
+  const categoryLabel = (category) => ['category3', 'md'].includes(entity) ? category.name : `${category.name} (${category.code})`;
+  const cat1Opts = (keep) => state.options.category1.filter((c) => c.active || c.id === keep).map((c) => [c.id, categoryLabel(c)]);
+  const cat2Opts = (c1, keep) => state.options.category2.filter((c) => c.category1_id === Number(c1) && (c.active || c.id === keep)).map((c) => [c.id, categoryLabel(c)]);
+  const cat3Opts = (c2, keep) => state.options.category3.filter((c) => c.category2_id === Number(c2) && (c.active || c.id === keep)).map((c) => [c.id, categoryLabel(c)]);
 
   function refreshCategory2(selected) {
     if (!f('category2_id')) return;
@@ -286,6 +294,16 @@
     const c2 = f('category2_id').value;
     setOptions('category3_id', c2 ? cat3Opts(c2, selected) : [], selected, c2 ? 'None' : 'Select Category II first');
     f('category3_id').disabled = !c2;
+    refreshCategoryTaxDisplay();
+  }
+  function refreshCategoryTaxDisplay() {
+    const display = f('category_tax_display');
+    if (!display) return;
+    const category = state.options.category3.find((c) => c.id === Number(f('category3_id').value));
+    display.textContent = [1, 2, 3].map((n) => {
+      const tax = state.options.taxes.find((t) => t.id === category?.[`tax${n}_id`]);
+      return taxLabel(tax);
+    }).filter(Boolean).join(' \u00b7 ') || 'None';
   }
   function refreshLicenseFields() {
     if (entity !== 'md') return;
@@ -352,6 +370,15 @@
       refreshCategory2(row && row.category2_id);
       if (entity === 'md') refreshCategory3(row && row.category3_id);
     }
+    if (entity === 'category3') {
+      [1, 2, 3].forEach((n) => {
+        const key = `tax${n}_id`;
+        setOptions(key,
+          o.taxes.filter((t) => t.active || t.id === (row && row[key]))
+            .map((t) => [t.id, taxLabel(t)]),
+          row && row[key], 'None');
+      });
+    }
     if (entity === 'md') {
       f('description').value = val('description', '');
       f('unit').value = val('unit', 'EA');
@@ -369,12 +396,8 @@
       setOptions('license_type', o.license_types.map((k) => [k, label(k)]), row && row.license_type, 'Select type');
       setOptions('license_required', [['false', 'No'], ['true', 'Yes']], String(editing ? row.license_required : false));
       setOptions('serial_required', [['false', 'No'], ['true', 'Yes']], String(editing ? row.serial_required : false));
-      setOptions(
-        'default_tax_id',
-        o.taxes.filter((t) => t.active || t.id === (row && row.default_tax_id)).map((t) => [t.id, `${t.name} (${t.rate}%)`]),
-        row && row.default_tax_id,
-        'None',
-      );
+      // Preserve the legacy stored value; displayed taxes come only from Category III.
+      f('default_tax_id').value = val('default_tax_id', '');
       refreshLicenseFields();
     }
   }
@@ -437,6 +460,7 @@
     }
     if (c2 && f('category3_id')) c2.addEventListener('change', () => refreshCategory3(null));
     if (entity === 'md') {
+      f('category3_id').addEventListener('change', refreshCategoryTaxDisplay);
       f('license_required').addEventListener('change', refreshLicenseFields);
       f('retail_price').addEventListener('input', refreshPricing);
       [1, 2, 3].forEach((n) => {

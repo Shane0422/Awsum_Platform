@@ -43,6 +43,13 @@ Platform navigation
   filtering and Rows paging run in the common UI over the existing array API;
   Store retains server-side filtering, sorting and pagination. Exports include
   the full filtered result rather than only the displayed page.
+- Category III uses the existing scoped Tax lookup for optional Tax 1/2/3.
+  Each slot is a nullable Tax FK; None is distinct from a selected 0% Tax.
+  Selections must be distinct and belong to the same Platform/Merchant scope.
+  Startup migration adds the nullable columns without changing existing rows.
+- MD Overview displays the selected Category III taxes read-only using the common
+  Tax label formatter. Parent/category changes refresh this display. The legacy
+  MD default Tax value is preserved for compatibility, not used as the display source.
 - List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
 - The same stylesheet is attached by `platform_base.html` for existing management,
   Users, Sessions, Store Management, Merchants Tree, and System Settings pages.
