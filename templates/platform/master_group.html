@@ -4,38 +4,86 @@
 {% block page_title %}{{ mg_title }}{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/awsum-list.css?v=4">
+<link rel="stylesheet" href="/static/css/awsum-list.css?v=5">
 <style>
   {% if mg_entity == 'md' %}
-  #mgModal .mg-md-top { display: grid; grid-template-columns: minmax(0, 1fr) 154px; gap: 20px; }
-  #mgModal .mg-image-panel { justify-self: end; }
-  #mgModal .mg-record-code { margin-bottom: 6px; }
+  .mg-md-workspace { display: grid; grid-template-columns: minmax(240px, 26fr) minmax(0, 74fr); align-items: start; gap: .65rem; }
+  .mg-md-filter { margin-bottom: .4rem; }
+  .mg-md-filter .row { --bs-gutter-x: .5rem; --bs-gutter-y: 0; align-items: end; }
+  .mg-md-filter .awsum-list-filter-label { margin-bottom: .15rem; font-size: 10px; }
+  .mg-md-filter .form-control, .mg-md-filter .form-select { min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+  .mg-md-pager { gap: .35rem !important; padding-top: .4rem; }
+  .mg-md-pager #mgPageSize { width: auto; min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+  .mg-md-list-panel, .mg-md-form-panel { min-width: 0; padding: .55rem !important; }
+  .mg-md-row { cursor: pointer; }
+  .mg-md-row.selected > * { background: #edf4ff; }
+  .mg-md-row:focus-visible { outline: 2px solid #93bfff; outline-offset: -2px; }
+  .mg-md-form-header { gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
+  .mg-md-form-title { padding-left: .45rem; border-left: 3px solid var(--platform-blue, #1263eb); color: var(--list-navy); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; }
+  .mg-md-list-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
+  .mg-md-list-panel > .mg-md-filter, .mg-md-list-panel > .mg-md-pager { flex: 0 0 auto; }
+  .mg-md-list-panel > .awsum-list-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .mg-md-list-panel thead th { position: sticky; top: 0; z-index: 1; }
+  /* Tab panes share one grid cell, so the PageFrame keeps the tallest tab's height. */
+  .mg-md-form .mg-md-pageframe .tab-content { display: grid; }
+  .mg-md-form .mg-md-pageframe .tab-content > .tab-pane { display: block; grid-area: 1 / 1; visibility: hidden; }
+  .mg-md-form .mg-md-pageframe .tab-content > .tab-pane.active { visibility: visible; }
+  .mg-md-form-header h2 { font-size: 1rem; margin-bottom: 0 !important; }
+  .mg-md-form-header .mg-md-description { font-size: 11px; }
+  .mg-md-form #mgFields { --bs-gutter-y: .35rem; --bs-gutter-x: .6rem; }
+  .mg-md-form #mgFields > .pm-section { margin-top: 4px; padding-top: 5px; }
+  .mg-md-form #mgFields > .pm-section .pm-section-head { margin-bottom: 4px; }
+  .mg-md-form .pm-section-head h3 { margin-bottom: 0; font-size: .9rem; }
+  .mg-md-form .pm-section-head span { font-size: 10px; }
+  .mg-md-form #mgDetailSection { margin-top: 0; padding-top: 0; border-top: 0; }
+  .mg-md-form .mg-md-pageframe { margin-top: 6px; }
+  .mg-md-form .mg-md-pageframe .nav-tabs .nav-link { padding: .3rem .9rem; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+  .mg-md-form .mg-md-pageframe .tab-content { padding-top: 6px; }
+  .mg-md-form .mg-md-pageframe .tab-pane > .row { --bs-gutter-y: .35rem; --bs-gutter-x: .6rem; }
+  .mg-md-form .mg-md-pageframe .tab-pane > .row > .pm-section + .pm-section { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--list-border); }
+  .mg-md-form #mgDetailSection .table { font-size: 11px; }
+  .mg-md-form #mgDetailSection .table > :not(caption) > * > * { padding: .25rem .3rem; }
+  .mg-md-form #mgDetailSection .btn { padding: .15rem .35rem; font-size: 11px; }
+  .mg-md-form .mg-md-top { display: grid; grid-template-columns: minmax(0, 1fr) 154px; gap: 20px; }
+  .mg-md-form .mg-image-panel { justify-self: end; }
+  .mg-md-form .mg-record-code { margin-bottom: 6px; }
   #mgModal .modal-dialog { max-width: min(1000px, calc(100vw - 1rem)); margin-block: 2dvh; }
   #mgModal .modal-content, #mgModal form { max-height: 96dvh; }
   #mgModal .modal-header { padding: 14px 22px 10px; }
   #mgModal .modal-body { padding: 4px 22px 12px; }
   #mgModal .modal-footer { padding: 10px 22px; }
-  #mgModal .pm-section + .pm-section, #mgModal .mg-md-top + .pm-section { margin-top: 8px; padding-top: 10px; border-top: 1px solid #eef2f7; }
-  #mgModal .pm-section-head { margin-bottom: 6px; }
-  #mgModal .row { --bs-gutter-y: .5rem; --bs-gutter-x: .8rem; }
-  #mgModal .form-label { margin-bottom: 3px; font-size: 12px; }
-  #mgModal .form-control, #mgModal .form-select, #mgModal .input-group-text { min-height: 34px; padding: 5px 9px; font-size: 13px; border-radius: 6px; }
-  #mgModal .form-select { padding-right: 28px; }
-  #mgModal textarea.form-control { height: 48px; min-height: 48px; }
-  #mgModal .form-text { font-size: 11px; }
-  @media (max-width: 575.98px) { #mgModal .mg-md-top { grid-template-columns: 1fr; } #mgModal .mg-image-panel { justify-self: start; } }
+  .mg-md-form .pm-section + .pm-section, .mg-md-form .mg-md-top + .pm-section { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--list-border); }
+  .mg-md-form .pm-section-head { margin-bottom: 3px; }
+  .mg-md-form .row { --bs-gutter-y: .3rem; --bs-gutter-x: .6rem; }
+  .mg-md-form .form-label { margin-bottom: 1px; font-size: 11px; line-height: 1.2; }
+  .mg-md-form .mg-inline-field { display: flex; align-items: baseline; gap: 4px; }
+  .mg-md-form .mg-inline-field > .form-label::after { content: ":"; }
+  .mg-md-form .mg-inline-field > .form-control-plaintext { width: auto; padding: 0; }
+  .mg-md-form .form-control, .mg-md-form .form-select, .mg-md-form .input-group-text { min-height: 28px; height: 28px; padding: 2px 7px; font-size: 12px; line-height: 1.3; border-radius: 4px; }
+  .mg-md-form .form-select { padding-right: 24px; background-position: right .45rem center; }
+  .mg-md-form textarea.form-control { height: 38px; min-height: 38px; }
+  .mg-md-form .form-text { margin-top: 1px; font-size: 10px; }
+  .mg-md-form .form-check { min-height: 20px; margin-bottom: 0; font-size: 12px; }
+  .mg-md-form .mg-record-code { margin-bottom: 3px; }
+  .mg-md-form .mg-record-code-input { background: var(--bs-secondary-bg, #f8f9fa); color: var(--list-muted); font-size: 11px; font-weight: 600; }
+  .mg-md-form .mg-md-top { gap: 12px; }
+  .mg-md-form #mgDetailSection .form-control, .mg-md-form #mgDetailSection .form-select { min-height: 26px; height: 26px; padding-top: 1px; padding-bottom: 1px; }
+  .mg-md-list-panel .table { font-size: 12px; }
+  .mg-md-list-panel .table > :not(caption) > * > * { padding: .22rem .4rem; }
+  @media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel { height: auto; max-height: 70vh; } }
+  @media (max-width: 575.98px) { .mg-md-form .mg-md-top { grid-template-columns: 1fr; } .mg-md-form .mg-image-panel { justify-self: start; } }
   {% endif %}
-  #mgModal .mg-price-table { display: grid; gap: 5px; }
-  #mgModal .mg-price-row { display: grid; grid-template-columns: 90px minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(140px, 1fr); gap: 10px; align-items: start; }
-  #mgModal .mg-price-head { font-size: .8125rem; font-weight: 600; color: #6b7f99; padding-bottom: .35rem; border-bottom: 1px solid #eef2f7; }
-  #mgModal .mg-level { display: flex; align-items: center; min-height: 34px; font-weight: 700; color: #173451; }
+  .mg-md-form .mg-price-table { display: grid; gap: 3px; }
+  .mg-md-form .mg-price-row { display: grid; grid-template-columns: 90px minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(140px, 1fr); gap: 6px; align-items: start; }
+  .mg-md-form .mg-price-head { font-size: 11px; font-weight: 600; color: #6b7f99; padding-bottom: .2rem; border-bottom: 1px solid var(--list-border); }
+  .mg-md-form .mg-level { display: flex; align-items: center; min-height: 28px; font-weight: 700; color: #173451; }
   @media (max-width: 767.98px) {
-    #mgModal .mg-price-head { display: none; }
-    #mgModal .mg-price-row { grid-template-columns: 1fr 1fr; padding: .75rem 0; border-bottom: 1px solid #eef2f7; }
-    #mgModal .mg-level { grid-column: 1 / -1; min-height: 0; }
-    #mgModal .mg-price-row > div[data-label]:not(.mg-level)::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 600; color: #6b7f99; margin-bottom: .2rem; }
+    .mg-md-form .mg-price-head { display: none; }
+    .mg-md-form .mg-price-row { grid-template-columns: 1fr 1fr; padding: .75rem 0; border-bottom: 1px solid var(--list-border); }
+    .mg-md-form .mg-level { grid-column: 1 / -1; min-height: 0; }
+    .mg-md-form .mg-price-row > div[data-label]:not(.mg-level)::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 600; color: #6b7f99; margin-bottom: .2rem; }
   }
-  @media (max-width: 479.98px) { #mgModal .mg-price-row { grid-template-columns: 1fr; } }
+  @media (max-width: 479.98px) { .mg-md-form .mg-price-row { grid-template-columns: 1fr; } }
 </style>
 <div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}" data-api-base="{{ mg_api_base | default('/platform/api/master-group', true) }}">
   {% set subtitle %}<p class="mb-0" id="mgSubtitle"></p>{% endset %}
@@ -53,6 +101,7 @@
 
   <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
 
+  {% if mg_entity != 'md' %}
   {% call surface('filter') %}
       <div class="row g-2 flex-nowrap">
         <div class="col-6 col-lg-4">
@@ -77,6 +126,65 @@
         </div>
       </div>
   {% endcall %}
+  {% endif %}
+  {% if mg_entity == 'md' %}
+  <div class="mg-md-workspace">
+    {% call surface('table', '', 'mg-md-list-panel') %}
+      <div class="row g-2 flex-nowrap mg-md-filter">
+        <div class="col-7">
+          <label for="mgSearch" class="awsum-list-filter-label">Search</label>
+          <input type="search" id="mgSearch" class="form-control" placeholder="Search code or name" aria-label="Search">
+        </div>
+        <div class="col-5">
+          <label for="mgActiveFilter" class="awsum-list-filter-label">Status</label>
+          <select id="mgActiveFilter" class="form-select" aria-label="Status filter">
+            <option value="">All status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-responsive awsum-list-table-wrap">
+        <table class="table table-hover mg-table mb-0">
+          <thead id="mgHead"></thead>
+          <tbody id="mgBody"></tbody>
+        </table>
+      </div>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 awsum-list-footer mg-md-pager">
+        <span class="text-muted small" id="mgSummary"></span>
+        <label for="mgPageSize" class="visually-hidden">Rows per page</label>
+        <select id="mgPageSize" class="form-select form-select-sm" aria-label="Rows per page">
+          <option value="10">10 / page</option>
+          <option value="20" selected>20 / page</option>
+          <option value="50">50 / page</option>
+        </select>
+        <div class="btn-group">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mgPrev">Previous</button>
+          <span class="btn btn-outline-secondary btn-sm disabled" id="mgPageLabel"></span>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mgNext">Next</button>
+        </div>
+      </div>
+    {% endcall %}
+    {% call surface('table', '', 'mg-md-form-panel') %}
+      <form id="mgForm" class="mg-md-form" novalidate>
+        <div class="mg-md-form-header d-flex justify-content-between align-items-center">
+          <div class="mg-md-form-title">MD INFORMATION</div>
+          <div class="visually-hidden">
+            <h2 class="h5 mb-1" id="mgModalTitle">Select an MD Master</h2>
+            <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new MD Master.</div>
+          </div>
+          <div class="d-flex gap-1 flex-shrink-0">
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="mgMdToggle" data-md-act="toggle">Deactivate</button>
+            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="mgMdDelete" data-md-act="delete">Delete</button>
+            <button type="submit" class="btn btn-sm btn-primary" id="mgSave" disabled>Create</button>
+          </div>
+        </div>
+        <div id="mgFormError" class="alert alert-danger d-none" role="alert"></div>
+        <div class="row g-3" id="mgFields"></div>
+      </form>
+    {% endcall %}
+  </div>
+  {% else %}
   {% call surface('table') %}
       <div class="table-responsive awsum-list-table-wrap">
         <table class="table table-hover mg-table mb-0">
@@ -93,8 +201,10 @@
         </div>
       </div>
   {% endcall %}
+  {% endif %}
 </div>
 
+{% if mg_entity != 'md' %}
 <div class="modal fade pm-modal{% if mg_entity == 'md' %} pm-modal-lg{% endif %}" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -119,5 +229,6 @@
     </div>
   </div>
 </div>
-<script src="/static/js/master_group.js?v=16"></script>
+{% endif %}
+<script src="/static/js/master_group.js?v=29"></script>
 {% endblock %}

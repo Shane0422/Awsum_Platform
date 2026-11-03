@@ -39,6 +39,7 @@
     category2: 'Second-level classification under Category I.',
     category3: 'Third-level classification under Category II.',
     md: 'Sellable and billable items with their license and serial management rules.',
+    item_kind: 'Platform System Master. System Codes are fixed logic keys; only the Display Name can change.',
   };
 
   const taxLabel = (tax) => tax ? `${tax.name} (${Number(tax.rate)}%)` : '';
@@ -75,28 +76,23 @@
       ['active', 'Status', (r) => badge(r.active), true],
     ],
     md: [
-      ['', 'Image', (r) => `<span class="mg-thumbnail"><img src="/images/platform/defaults/no-image.svg" alt="">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" loading="lazy">` : ''}</span>`, false],
-      ['code', 'Item Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['name', 'Item Name', (r) => esc(r.name), true],
-      ['item_kind', 'Kind', (r) => esc(label(r.item_kind)), true],
       ['', 'Category', (r) => esc([r.category1_name, r.category2_name, r.category3_name].filter(Boolean).join(' > ')), false],
-      ['retail_price', 'Retail', (r) => money(r.retail_price), true],
-      ['p1_price', 'P1', (r) => levelCell(r, 1), true],
-      ['p2_price', 'P2', (r) => levelCell(r, 2), true],
-      ['p3_price', 'P3', (r) => levelCell(r, 3), true],
-      ['', 'Cost', (r) => money(r.cost), false, 'cost'],
-      ['billing_cycle', 'Billing', (r) => esc(label(r.billing_cycle)), true],
-      ['', 'License', (r) => (r.license_required ? esc(label(r.license_type)) + ' x' + esc(r.licenses_per_unit) : '-'), false],
-      ['', 'Serial', (r) => yes(r.serial_required), false],
+      ['name', 'Name', (r) => esc(r.name), true],
+    ],
+    item_kind: [
+      ['code', 'System Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
+      ['name', 'Display Name', (r) => esc(r.name), true],
+      ['display_order', 'Order', (r) => esc(r.display_order), true],
       ['active', 'Status', (r) => badge(r.active), true],
     ],
   };
 
-  const state = { q: '', active: '', sort: '', direction: 'asc', page: 1, size: 20, items: [], options: null, editing: null };
+  const state = { q: '', active: '', sort: '', direction: 'asc', page: 1, size: 20, items: [], options: null, editing: null, details: [], editingDetailId: null };
   let modal = null;
   let saving = false;
   let allowClose = false;
   let imageUploader = null;
+  let detailLoadToken = 0;
 
   function showMessage(text, kind) {
     const box = $('mgMessage');
@@ -130,19 +126,19 @@
       const sorted = sortable && state.sort === key;
       const cls = sortable ? `sortable${sorted ? ' sorted' : ''}${sorted && state.direction === 'desc' ? ' desc' : ''}` : '';
       return `<th class="${cls}" ${sortable ? `data-sort="${key}" tabindex="0"` : ''}>${text}</th>`;
-    }).join('') + '<th class="text-end">Actions</th></tr>';
+    }).join('') + (entity === 'md' ? '' : '<th class="text-end">Actions</th>') + '</tr>';
   }
 
   function renderRows(data) {
     const columns = cols();
     $('mgBody').innerHTML = data.items.length
-      ? data.items.map((r) => `<tr>${columns.map((c) => `<td>${c[2](r)}</td>`).join('')}
-          <td class="text-end text-nowrap">
+      ? data.items.map((r) => `<tr${entity === 'md' ? ` class="mg-md-row${state.editing && state.editing.id === r.id ? ' selected' : ''}" data-row-select="${r.id}" tabindex="0" aria-label="Edit ${esc(r.name)}"` : ''}>${columns.map((c) => `<td>${c[2](r)}</td>`).join('')}
+          ${entity === 'md' ? '' : `<td class="text-end text-nowrap">
             <button type="button" class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${r.id}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-act="toggle" data-id="${r.id}">${r.active ? 'Deactivate' : 'Activate'}</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" data-id="${r.id}">Delete</button>
-          </td></tr>`).join('')
-      : `<tr><td colspan="${columns.length + 1}" class="text-center text-muted py-4">No records found.</td></tr>`;
+            ${r.system ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" data-id="${r.id}">Delete</button>`}
+          </td>`}</tr>`).join('')
+      : `<tr><td colspan="${columns.length + (entity === 'md' ? 0 : 1)}" class="text-center text-muted py-4">No records found.</td></tr>`;
     $('mgSummary').textContent = `${data.total} record(s)`;
     $('mgPageLabel').textContent = `${data.page} / ${data.pages}`;
     $('mgPrev').disabled = data.page <= 1;
@@ -219,6 +215,10 @@
         return field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
           + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
           + activeField() + notes;
+      case 'item_kind':
+        return field('name', 'Display Name', input('name', 'text', 'maxlength="100"'), { required: true })
+          + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
+          + activeField() + notes;
       case 'category2':
         return field('category1_id', 'Category I', select('category1_id'), { required: true })
           + field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
@@ -239,29 +239,82 @@
   // MD Master form: Classification / Item Information / Pricing / Options. Field names are unchanged.
   function mdFormHtml() {
     const section = (heading, body, hint) => `<section class="col-12 pm-section">
-      <div class="pm-section-head"><h3>${heading}</h3>${hint ? `<span>${hint}</span>` : ''}</div>
+      ${heading ? `<div class="pm-section-head"><h3>${heading}</h3>${hint ? `<span>${hint}</span>` : ''}</div>` : ''}
       <div class="row g-3">${body}</div></section>`;
     const classification = field('category1_id', 'Category I', select('category1_id'), { required: true, col: 'col-md-4' })
       + field('category2_id', 'Category II', select('category2_id'), { col: 'col-md-4' })
       + field('category3_id', 'Category III', select('category3_id'), { col: 'col-md-4' })
       + input('default_tax_id', 'hidden')
-      + field('category_tax_display', 'Tax', '<div id="mgf_category_tax_display" class="form-control-plaintext" aria-live="polite"></div>', { col: 'col-md-6' })
-      + field('billing_cycle', 'Billing Cycle', select('billing_cycle'), { required: true, col: 'col-md-6' });
-    const info = field('name', 'Item Name', input('name', 'text', 'maxlength="200"'), { required: true, col: 'col-md-8' })
-      + field('item_kind', 'Item Kind', select('item_kind'), { required: true, col: 'col-md-4' })
+      + field('category_tax_display', 'Tax', '<div id="mgf_category_tax_display" class="form-control-plaintext" aria-live="polite"></div>', { col: 'col-md-6 mg-inline-field' });
+    // Barcode / PK/Size / Size have no name: they are saved to the Default Detail, not the MD payload.
+    const detailInput = (key, extra) => `<input class="form-control" id="mgf_default_${key}" type="text" maxlength="100" autocomplete="off" ${extra || ''}>`;
+    const code = field('record_code', 'Code', '<input class="form-control mg-record-code-input" id="mgf_record_code" type="text" readonly tabindex="-1" placeholder="Auto">', { col: 'col-md-3' })
+      + field('active', 'Status', select('active'), { col: 'col-md-3 ms-auto' })
+      + field('item_kind', 'Item Kind', select('item_kind'), { required: true, col: 'col-md-3' });
+    const info = field('name', 'Item Name', input('name', 'text', 'maxlength="200"'), { required: true, col: 'col-md-7' })
+      + field('second_name', 'Second Name', input('second_name', 'text', 'maxlength="200"'), { col: 'col-md-5' })
+      + field('default_barcode', 'Barcode', detailInput('barcode', 'data-awsum-barcode'), { col: 'col-6 col-md-3' })
+      + basePriceHtml(detailInput)
       + field('description', 'Description', textarea('description'), { col: 'col-12' });
-    const options = field('license_required', 'License Required', select('license_required'), { col: 'col-md-4' })
+    const license = field('billing_cycle', 'Billing Cycle', select('billing_cycle'), { required: true, col: 'col-md-4' })
+      + field('license_required', 'License Required', select('license_required'), { col: 'col-md-4' })
       + field('license_type', 'License Type', select('license_type'), { required: true, col: 'col-md-4' })
       + field('licenses_per_unit', 'Licenses per Unit', input('licenses_per_unit', 'number', 'min="1" step="1"'), { required: true, col: 'col-md-4' })
-      + field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6' })
-      + activeField()
-      + field('notes', 'Notes', textarea('notes'), { col: 'col-12' });
+      + field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6' });
+    const options = field('notes', 'Notes', textarea('notes'), { col: 'col-12' });
+    const details = `<section class="col-12 pm-section" id="mgDetailSection">
+          <div class="pm-section-head d-flex justify-content-between align-items-center">
+            <div><h3>MD Detail</h3><span>Barcode, packaging, cost and price by detail.</span></div>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="mgDetailAdd" disabled>Add Detail</button>
+          </div>
+          <div class="alert alert-danger py-2 d-none" id="mgDetailMessage" role="alert"></div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-2">
+              <thead><tr><th>Default</th><th>Barcode</th><th>Unit</th><th>PK/Size</th><th>Size</th><th>Cost</th><th>Price</th><th>Modifier</th><th class="text-end">Actions</th></tr></thead>
+              <tbody id="mgDetailBody"><tr><td colspan="9" class="text-center text-muted">Save the MD Master before adding details.</td></tr></tbody>
+            </table>
+          </div>
+          <div class="border rounded p-3 d-none" id="mgDetailEditor">
+            <div class="row g-2">
+              ${[['barcode', 'Barcode', 'text'], ['unit', 'Unit', 'text'], ['pkSize', 'PK/Size', 'text'], ['size', 'Size', 'text'], ['cost', 'Cost', 'number'], ['price', 'Price', 'number'], ['modifier', 'Modifier', 'text']].map(([key, text, type]) =>
+                `<div class="${key === 'modifier' ? 'col-12 col-md-6' : 'col-6 col-md-3'}"><label class="form-label" for="mgDetail${key[0].toUpperCase()}${key.slice(1)}">${text}</label><input id="mgDetail${key[0].toUpperCase()}${key.slice(1)}" class="form-control" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} ${['unit', 'price'].includes(key) ? 'required' : ''} ${key === 'barcode' ? 'maxlength="100" data-awsum-barcode' : ''}></div>`
+              ).join('')}
+              <div class="col-6 col-md-3 d-flex align-items-end"><label class="form-check mb-2"><input class="form-check-input" id="mgDetailDefault" type="checkbox"> Default Detail</label></div>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="mgDetailCancel">Cancel</button>
+              <button type="button" class="btn btn-sm btn-primary" id="mgDetailSave">Save Detail</button>
+            </div>
+          </div>
+        </section>`;
     return `<div class="col-12 mg-md-top">
-          <div class="mg-md-fields">${section('Classification', classification)}${section('Item Information', info)}</div>
+          <div class="mg-md-fields">${section('', code)}${section('', classification)}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>`
-      + section('Pricing', pricingHtml(), 'USD &middot; all prices are before tax')
-      + section('Options', options);
+        </div>
+        <div class="col-12 mg-md-pageframe">
+          <ul class="nav nav-tabs" id="mgMdTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="mgMdTabGeneral" data-bs-toggle="tab" data-bs-target="#mgMdPaneGeneral" type="button" role="tab" aria-controls="mgMdPaneGeneral" aria-selected="true">GENERAL</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="mgMdTabOption1" data-bs-toggle="tab" data-bs-target="#mgMdPaneOption1" type="button" role="tab" aria-controls="mgMdPaneOption1" aria-selected="false">OPTION 1</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="mgMdTabOption2" data-bs-toggle="tab" data-bs-target="#mgMdPaneOption2" type="button" role="tab" aria-controls="mgMdPaneOption2" aria-selected="false">OPTION 2</button>
+            </li>
+          </ul>
+          <div class="tab-content">
+            <div class="tab-pane fade show active" id="mgMdPaneGeneral" role="tabpanel" aria-labelledby="mgMdTabGeneral" tabindex="0">
+              <div class="row g-3">${details}${section('Options', options)}</div>
+            </div>
+            <div class="tab-pane fade" id="mgMdPaneOption1" role="tabpanel" aria-labelledby="mgMdTabOption1" tabindex="0">
+              <div class="row g-3">${section('Price Level', priceLevelsHtml(), 'USD &middot; all prices are before tax')}</div>
+            </div>
+            <div class="tab-pane fade" id="mgMdPaneOption2" role="tabpanel" aria-labelledby="mgMdTabOption2" tabindex="0">
+              <div class="row g-3">${section('License', license)}</div>
+            </div>
+          </div>
+        </div>`;
   }
   const f = (name) => $('mgf_' + name);
   const setOptions = (name, opts, selected, blank) => {
@@ -314,14 +367,17 @@
     });
   }
 
-  function pricingHtml() {
-    const moneyInput = (name) => `<div class="input-group"><span class="input-group-text">$</span>${input(name, 'text', `data-awsum-money data-money-min="0" ${name === 'retail_price' ? 'required' : ''} inputmode="decimal" autocomplete="off"`)}</div>`;
+  // Unit / Price stay MD fields (the backend mirrors them to the Default Detail); Cost is edited only in Detail.
+  function basePriceHtml(detailInput) {
     const canCost = !!(state.options && state.options.can_view_cost);
-    const colW = canCost ? 'col-md-4' : 'col-md-6';
-    let html = field('unit', 'Unit', input('unit', 'text', 'maxlength="30"'), { required: true, col: colW })
-      + field('retail_price', 'Retail Price', moneyInput('retail_price'), { required: true, col: colW })
-      + (canCost ? field('cost', 'Cost', moneyInput('cost'), { col: colW, help: 'Purchase cost. Visible to authorized users only.' }) : '');
-    html += '<div class="col-12"><div class="mg-price-table" role="table" aria-label="Agency price levels">'
+    return field('unit', 'Unit', input('unit', 'text', 'maxlength="30"'), { required: true, col: 'col-6 col-md-2' })
+      + field('default_pk_size', 'PK/Size', detailInput('pk_size'), { col: 'col-6 col-md-2' })
+      + field('default_size', 'Size', detailInput('size'), { col: 'col-6 col-md-2' })
+      + field('retail_price', 'Price', `<div class="input-group"><span class="input-group-text">$</span>${input('retail_price', 'text', 'data-awsum-money data-money-min="0" required inputmode="decimal" autocomplete="off"')}</div>`, { required: true, col: 'col-6 col-md-3' })
+      + (canCost ? input('cost', 'hidden') : '');
+  }
+  function priceLevelsHtml() {
+    let html = '<div class="col-12"><div class="mg-price-table" role="table" aria-label="Agency price levels">'
       + '<div class="mg-price-row mg-price-head" role="row"><div>Price Level</div><div>Pricing Mode</div><div>Discount %</div><div>Price</div></div>';
     [1, 2, 3].forEach((n) => {
       html += `<div class="mg-price-row" role="row" data-level="${n}">
@@ -381,6 +437,7 @@
     }
     if (entity === 'md') {
       f('description').value = val('description', '');
+      f('second_name').value = val('second_name', '');
       f('unit').value = val('unit', 'EA');
       f('retail_price').value = val('retail_price', '0.00');
       if (f('cost')) f('cost').value = val('cost', '');
@@ -391,7 +448,10 @@
       });
       refreshPricing();
       f('licenses_per_unit').value = val('licenses_per_unit', 1);
-      setOptions('item_kind', o.item_kinds.map((k) => [k, label(k)]), row && row.item_kind, 'Select kind');
+      // Active Item Kind System Master rows; a saved inactive code stays selectable on edit.
+      const kinds = (o.item_kinds || []).map((k) => (typeof k === 'string' ? [k, label(k)] : [k.code, k.name]));
+      if (editing && row.item_kind && !kinds.some(([k]) => k === row.item_kind)) kinds.push([row.item_kind, label(row.item_kind)]);
+      setOptions('item_kind', kinds, editing ? row.item_kind : (o.default_item_kind || (kinds[0] || [])[0]));
       setOptions('billing_cycle', o.billing_cycles.map((k) => [k, label(k)]), val('billing_cycle', 'ONE_TIME'));
       setOptions('license_type', o.license_types.map((k) => [k, label(k)]), row && row.license_type, 'Select type');
       setOptions('license_required', [['false', 'No'], ['true', 'Yes']], String(editing ? row.license_required : false));
@@ -425,22 +485,51 @@
     imageUploader = null;
   }
 
+  // MD form header reuses the list row actions for the selected record.
+  function syncMdActions() {
+    if (entity !== 'md') return;
+    const row = state.editing;
+    ['mgMdToggle', 'mgMdDelete'].forEach((id) => $(id).classList.toggle('d-none', !row));
+    if (row) $('mgMdToggle').textContent = row.active ? 'Deactivate' : 'Activate';
+  }
+  function resetMdForm() {
+    discardImage();
+    state.editing = null;
+    state.details = [];
+    $('mgFields').innerHTML = '';
+    $('mgModalTitle').textContent = `Select an ${title}`;
+    $('mgModalSub').textContent = `Select a record from the list or add a new ${title}.`;
+    $('mgSave').textContent = saveLabel();
+    $('mgSave').disabled = true;
+    syncMdActions();
+  }
+
   function openForm(row) {
     if (saving) return;
     discardImage();
     allowClose = false;
     state.editing = row || null;
+    syncMdActions();
+    if (entity === 'md') {
+      $('mgBody').querySelectorAll('tr[data-row-select]').forEach((tr) => {
+        tr.classList.toggle('selected', !!row && Number(tr.dataset.rowSelect) === row.id);
+      });
+    }
     $('mgModalTitle').textContent = row ? `Edit ${title}` : `Add ${title}`;
     $('mgModalSub').textContent = row ? `Update this ${title} record. The code stays the same.` : `Create a new ${title} record. The code is generated automatically.`;
     $('mgSave').textContent = saveLabel();
+    $('mgSave').disabled = false;
     $('mgFields').innerHTML = formHtml();
-    if (row) {
-      const codeTarget = entity === 'md' ? $('mgFields').querySelector('.mg-md-fields') : $('mgFields');
-      codeTarget.insertAdjacentHTML('afterbegin',
-        `<div class="col-12 mg-record-code"><span class="text-muted small">Code</span> <span class="mg-code fw-semibold">${esc(row.code)}</span> <span class="text-muted small">(auto-generated, not editable)</span></div>`);
+    if (entity === 'md') {
+      f('record_code').value = row ? row.code : '';
+    } else if (row) {
+      const codeNote = row.system ? 'System Code: logic key, not editable' : 'auto-generated, not editable';
+      $('mgFields').insertAdjacentHTML('afterbegin',
+        `<div class="col-12 mg-record-code"><span class="text-muted small">Code</span> <span class="mg-code fw-semibold">${esc(row.code)}</span> <span class="text-muted small">(${codeNote})</span></div>`);
     }
     fillForm(row);
     AwsumMoneyInput.refreshAll($('mgFields'));
+    if (window.AwsumBarcodeInput) AwsumBarcodeInput.bindAll($('mgFields'));
     clearErrors();
     bindFormEvents();
     if (entity === 'md') {
@@ -448,8 +537,143 @@
         idPrefix: 'mgImage', label: 'Item Image', previewSize: 120, fit: 'contain',
       });
       imageUploader.reset(row && row.image_url, !!(row && row.image_path));
+      loadMdDetails(row);
     }
-    modal.show();
+    if (modal) modal.show();
+  }
+
+  function detailMessage(text, kind = 'danger') {
+    const box = $('mgDetailMessage');
+    box.textContent = text;
+    box.className = `alert alert-${kind} py-2`;
+  }
+
+  function clearDetailMessage() {
+    const box = $('mgDetailMessage');
+    box.textContent = '';
+    box.className = 'alert alert-danger py-2 d-none';
+  }
+
+  function renderMdDetails() {
+    const body = $('mgDetailBody');
+    if (!state.details.length) {
+      body.innerHTML = `<tr><td colspan="9" class="text-center text-muted">${state.editing ? 'No details found.' : 'Save the MD Master before adding details.'}</td></tr>`;
+      return;
+    }
+    body.innerHTML = state.details.map((detail) => `<tr>
+      <td>${detail.is_default ? '<span class="badge text-bg-primary">Default</span>' : ''}</td>
+      <td>${esc(detail.barcode || '')}</td><td>${esc(detail.unit || '')}</td><td>${esc(detail.pk_size || '')}</td>
+      <td>${esc(detail.size || '')}</td><td>${money(detail.cost)}</td><td>${money(detail.price)}</td><td>${esc(detail.modifier || '')}</td>
+      <td class="text-end text-nowrap">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-detail-act="edit" data-id="${detail.id}">Edit</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-detail-act="delete" data-id="${detail.id}" ${detail.is_default ? 'disabled title="The Default Detail cannot be deleted."' : ''}>Delete</button>
+      </td></tr>`).join('');
+  }
+
+  async function loadMdDetails(row) {
+    const token = ++detailLoadToken;
+    state.details = [];
+    $('mgDetailAdd').disabled = !row;
+    $('mgDetailEditor').classList.add('d-none');
+    clearDetailMessage();
+    renderMdDetails();
+    if (!row) return;
+    try {
+      const data = await api('GET', `${BASE}/md/${row.id}/details`);
+      if (token !== detailLoadToken || !state.editing || state.editing.id !== row.id) return;
+      state.details = data.items;
+      const defaultDetail = state.details.find((detail) => detail.is_default);
+      if (defaultDetail) {
+        state.editing = {
+          ...state.editing,
+          unit: defaultDetail.unit,
+          retail_price: defaultDetail.price,
+          cost: defaultDetail.cost,
+        };
+        f('unit').value = defaultDetail.unit || '';
+        f('retail_price').value = defaultDetail.price ?? '';
+        if (f('cost')) f('cost').value = defaultDetail.cost ?? '';
+        f('default_barcode').value = defaultDetail.barcode || '';
+        f('default_pk_size').value = defaultDetail.pk_size || '';
+        f('default_size').value = defaultDetail.size || '';
+        refreshPricing();
+      }
+      renderMdDetails();
+    } catch (err) {
+      if (token === detailLoadToken) detailMessage(err.status === 401 ? 'Your session has expired. Please sign in again.' : err.message);
+    }
+  }
+
+  function showMdDetailEditor(detail) {
+    clearDetailMessage();
+    state.editingDetailId = detail ? detail.id : null;
+    const values = detail || { barcode: '', unit: 'EA', pk_size: '', size: '', cost: '', price: '', modifier: '', is_default: false };
+    [['Barcode', values.barcode], ['Unit', values.unit], ['PkSize', values.pk_size], ['Size', values.size],
+      ['Cost', values.cost], ['Price', values.price], ['Modifier', values.modifier]].forEach(([name, value]) => {
+      $(`mgDetail${name}`).value = value == null ? '' : value;
+    });
+    $('mgDetailDefault').checked = !!values.is_default;
+    $('mgDetailDefault').disabled = !!(detail && detail.is_default);
+    $('mgDetailSave').textContent = detail ? 'Save Changes' : 'Add Detail';
+    $('mgDetailEditor').classList.remove('d-none');
+    $('mgDetailUnit').focus();
+  }
+
+  async function saveMdDetail() {
+    if (!state.editing || saving) return;
+    const button = $('mgDetailSave');
+    const payload = {
+      barcode: $('mgDetailBarcode').value.trim(),
+      unit: $('mgDetailUnit').value.trim(),
+      pk_size: $('mgDetailPkSize').value.trim(),
+      size: $('mgDetailSize').value.trim(),
+      cost: $('mgDetailCost').value || null,
+      price: $('mgDetailPrice').value || null,
+      modifier: $('mgDetailModifier').value.trim(),
+      is_default: $('mgDetailDefault').checked,
+    };
+    button.disabled = true;
+    clearDetailMessage();
+    try {
+      const detailPath = `${BASE}/md/${state.editing.id}/details`;
+      if (state.editingDetailId) {
+        await api('PUT', `${detailPath}/${state.editingDetailId}`, payload);
+      } else {
+        await api('POST', detailPath, payload);
+      }
+      $('mgDetailEditor').classList.add('d-none');
+      await loadMdDetails(state.editing);
+      showMessage('MD Detail saved.', 'success');
+    } catch (err) {
+      detailMessage(err.status === 401 ? 'Your session has expired. Please sign in again.' : err.message);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  // Saves Barcode / PK/Size / Size to the Default Detail through the existing Detail API.
+  async function syncDefaultDetail(mdId, values) {
+    const data = await api('GET', `${BASE}/md/${mdId}/details`);
+    const detail = data.items.find((item) => item.is_default);
+    if (!detail || Object.keys(values).every((key) => (detail[key] || '') === values[key])) return;
+    await api('PUT', `${BASE}/md/${mdId}/details/${detail.id}`, {
+      barcode: detail.barcode || '', unit: detail.unit, pk_size: detail.pk_size || '', size: detail.size || '',
+      cost: detail.cost, price: detail.price, modifier: detail.modifier || '', is_default: true, ...values,
+    });
+  }
+
+  async function deleteMdDetail(id) {
+    const detail = state.details.find((item) => item.id === id);
+    if (!detail || detail.is_default) return;
+    if (!window.confirm('Delete this MD Detail? This cannot be undone.')) return;
+    clearDetailMessage();
+    try {
+      await api('DELETE', `${BASE}/md/${state.editing.id}/details/${id}`);
+      await loadMdDetails(state.editing);
+      showMessage('MD Detail deleted.', 'success');
+    } catch (err) {
+      detailMessage(err.status === 401 ? 'Your session has expired. Please sign in again.' : err.message);
+    }
   }
 
   function bindFormEvents() {
@@ -466,6 +690,17 @@
       [1, 2, 3].forEach((n) => {
         f(`p${n}_mode`).addEventListener('change', refreshPricing);
         f(`p${n}_discount_pct`).addEventListener('input', refreshPricing);
+      });
+      $('mgDetailAdd').addEventListener('click', () => showMdDetailEditor(null));
+      $('mgDetailCancel').addEventListener('click', () => $('mgDetailEditor').classList.add('d-none'));
+      $('mgDetailSave').addEventListener('click', saveMdDetail);
+      $('mgDetailBody').addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-detail-act]');
+        if (!button) return;
+        const detail = state.details.find((item) => item.id === Number(button.dataset.id));
+        if (!detail) return;
+        if (button.dataset.detailAct === 'edit') showMdDetailEditor(detail);
+        if (button.dataset.detailAct === 'delete') deleteMdDetail(detail.id);
       });
     }
   }
@@ -494,6 +729,9 @@
     try {
       let body = collect();
       const editing = state.editing;
+      const detailValues = entity === 'md'
+        ? Object.fromEntries(['barcode', 'pk_size', 'size'].map((key) => [key, f(`default_${key}`).value.trim()]))
+        : null;
       let path = `${BASE}/${entity}${editing ? '/' + editing.id : ''}`;
       if (entity === 'md') {
         body = imageUploader.formData(body);
@@ -502,10 +740,26 @@
       const data = editing
         ? await api('PUT', path, body)
         : await api('POST', path, body);
-      allowClose = true;
-      modal.hide();
+      if (modal) {
+        allowClose = true;
+        modal.hide();
+      } else if (entity === 'md') {
+        state.editing = data.item;
+        $('mgModalTitle').textContent = `Edit ${title}`;
+        $('mgModalSub').textContent = `Update this ${title} record. The code stays the same.`;
+        $('mgSave').textContent = saveLabel();
+        syncMdActions();
+      }
       if (entity.startsWith('category') || entity === 'tax') await loadOptions();
       showMessage(data.item.image_warning || `${data.item.code} saved.`, data.item.image_warning ? 'warning' : 'success');
+      if (entity === 'md') {
+        try {
+          await syncDefaultDetail(data.item.id, detailValues);
+        } catch (err) {
+          showMessage(`${data.item.code} saved, but Default Detail was not updated: ${err.message}`, 'warning');
+        }
+        await loadMdDetails(data.item);
+      }
       await load();
     } catch (err) {
       const box = $('mgFormError');
@@ -522,7 +776,7 @@
 
   // ---- row actions ----
   async function rowAction(act, id) {
-    const row = state.items.find((r) => r.id === id);
+    const row = state.items.find((r) => r.id === id) || (state.editing && state.editing.id === id ? state.editing : null);
     if (!row) return;
     clearMessage();
     if (act === 'edit') { openForm(row); return; }
@@ -531,7 +785,16 @@
         const body = { ...rowToPayload(row), active: !row.active };
         await api('PUT', `${BASE}/${entity}/${id}`, body);
         showMessage(`${row.code} ${row.active ? 'deactivated' : 'activated'}.`, 'success');
+        if (entity === 'md' && state.editing && state.editing.id === id) {
+          state.editing = { ...state.editing, active: !row.active };
+          if (f('active')) f('active').value = String(state.editing.active);
+          syncMdActions();
+        }
       } else if (act === 'delete') {
+        if (row.system) {
+          showMessage(`${row.code} is a System Code and cannot be deleted. Deactivate it instead.`, 'warning');
+          return;
+        }
         if (row.in_use) {
           showMessage(`${row.code} is in use and cannot be deleted. Deactivate it instead.`, 'warning');
           return;
@@ -539,6 +802,7 @@
         if (!window.confirm(`Delete ${row.code}? This cannot be undone.`)) return;
         const result = await api('DELETE', `${BASE}/${entity}/${id}`);
         showMessage(result.message === 'Deleted.' ? `${row.code} deleted.` : result.message, result.message === 'Deleted.' ? 'success' : 'warning');
+        if (entity === 'md' && result.message === 'Deleted.' && state.editing && state.editing.id === id) resetMdForm();
       }
       await loadOptions();
       await load();
@@ -551,7 +815,7 @@
     return {
       name: r.name, rate: r.rate, display_order: r.display_order, notes: r.notes, active: r.active,
       category1_id: r.category1_id, category2_id: r.category2_id, category3_id: r.category3_id,
-      description: r.description, item_kind: r.item_kind, unit: r.unit, retail_price: r.retail_price,
+      description: r.description, second_name: r.second_name, item_kind: r.item_kind, unit: r.unit, retail_price: r.retail_price,
       cost: r.cost,
       p1_mode: r.p1_mode, p1_discount_pct: r.p1_discount_pct, p1_price: r.p1_price,
       p2_mode: r.p2_mode, p2_discount_pct: r.p2_discount_pct, p2_price: r.p2_price,
@@ -600,16 +864,31 @@
 
   async function init() {
     $('mgSubtitle').textContent = SUBTITLES[entity];
-    modal = new bootstrap.Modal($('mgModal'));
-    $('mgModal').addEventListener('hide.bs.modal', (event) => {
-      if (saving && !allowClose) event.preventDefault();
-    });
-    $('mgModal').addEventListener('hidden.bs.modal', discardImage);
+    if (entity !== 'md') {
+      modal = new bootstrap.Modal($('mgModal'));
+      $('mgModal').addEventListener('hide.bs.modal', (event) => {
+        if (saving && !allowClose) event.preventDefault();
+      });
+      $('mgModal').addEventListener('hidden.bs.modal', discardImage);
+    } else {
+      $('mgSave').disabled = true;
+      document.querySelectorAll('[data-md-act]').forEach((btn) => {
+        btn.addEventListener('click', () => { if (state.editing) rowAction(btn.dataset.mdAct, state.editing.id); });
+      });
+      // The list card fills the viewport below the workspace top; only its table scrolls.
+      const workspace = document.querySelector('.mg-md-workspace');
+      const fitWorkspace = () => {
+        if (workspace) workspace.style.setProperty('--mg-md-offset', `${Math.round(workspace.getBoundingClientRect().top + window.scrollY)}px`);
+      };
+      fitWorkspace();
+      window.addEventListener('resize', fitWorkspace);
+    }
     $('mgBody').addEventListener('error', (event) => {
       if (event.target.tagName === 'IMG') event.target.hidden = true;
     }, true);
     renderHead();
     $('mgAddBtn').addEventListener('click', () => { clearMessage(); openForm(null); });
+    if (entity === 'item_kind') $('mgAddBtn').classList.add('d-none');
     document.querySelectorAll('[data-export-format]').forEach((item) => {
       item.addEventListener('click', () => exportList(item.dataset.exportFormat));
     });
@@ -630,10 +909,21 @@
     };
     $('mgHead').addEventListener('click', sortHandler);
     $('mgHead').addEventListener('keydown', sortHandler);
-    $('mgBody').addEventListener('click', (e) => {
+    const selectMdRow = (e) => {
       const btn = e.target.closest('button[data-act]');
-      if (btn) rowAction(btn.dataset.act, Number(btn.dataset.id));
-    });
+      if (btn) {
+        rowAction(btn.dataset.act, Number(btn.dataset.id));
+        return;
+      }
+      if (entity !== 'md' || (e.type === 'keydown' && !['Enter', ' '].includes(e.key))) return;
+      const tr = e.target.closest('tr[data-row-select]');
+      if (!tr || (e.type === 'keydown' && e.target !== tr)) return;
+      if (e.type === 'keydown') e.preventDefault();
+      const row = state.items.find((item) => item.id === Number(tr.dataset.rowSelect));
+      if (row) openForm(row);
+    };
+    $('mgBody').addEventListener('click', selectMdRow);
+    $('mgBody').addEventListener('keydown', selectMdRow);
     try { await loadOptions(); } catch (err) { showMessage(err.message, 'danger'); }
     await load();
   }

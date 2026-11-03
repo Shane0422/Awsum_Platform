@@ -67,7 +67,7 @@ class UserImageTests(unittest.TestCase):
     def test_user_and_md_submit_to_the_same_processor_and_transaction_service(self):
         from backend.services import master_group
         category = self.db.query(master_group.Category1).first()
-        payload = {"name": "Common framework", "item_kind": "HARDWARE", "category1_id": category.i_category1_id,
+        payload = {"name": "Common framework", "item_kind": "ITEM", "category1_id": category.i_category1_id,
                    "retail_price": "10", "unit": "EA", "billing_cycle": "ONE_TIME"}
         with patch.object(images, "process_image", wraps=images.process_image) as processor:
             user = self.create()

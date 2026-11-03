@@ -1,7 +1,7 @@
 .awsum-list {
-  --list-navy: #102e68;
-  --list-blue: #1263eb;
-  --list-border: #dce8f8;
+  --list-navy: var(--platform-navy, #102e68);
+  --list-blue: var(--platform-blue, #1263eb);
+  --list-border: var(--platform-border, #e1e7ef);
   --list-muted: #647895;
   color: #243f70;
 }
@@ -75,7 +75,7 @@ body.page-master:is(.module-agency, .module-merchant, .module-store, .module-age
 .awsum-list .awsum-filter-card {
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
-  background: #f8fbff !important;
+  background: var(--platform-surface, #ffffff) !important;
 }
 .awsum-list .awsum-table-card { padding: 1rem 1.1rem; }
 .awsum-list .awsum-filter-grid {
@@ -350,16 +350,18 @@ body.page-master:is(.module-agency, .module-merchant, .module-store, .module-age
 .awsum-admin .platform-users-header { flex-wrap: wrap; }
 .awsum-admin .platform-users-toolbar { flex-wrap: wrap; }
 .awsum-admin .platform-users-search { max-width: 100%; min-width: 0; }
-.awsum-admin .nav-tabs { border-color: var(--list-border); gap: 0.25rem; }
-.awsum-admin .nav-tabs .nav-link {
+.awsum-list .nav-tabs { border-color: var(--list-border); gap: 0.25rem; }
+.awsum-list .nav-tabs .nav-link {
   color: var(--list-muted);
   border-radius: 7px 7px 0 0;
   font-weight: 600;
 }
-.awsum-admin .nav-tabs .nav-link.active {
-  color: var(--list-blue);
-  background: #e7f0fe;
-  border-color: var(--list-border);
+.awsum-list .nav-tabs .nav-link:hover { color: var(--list-blue); border-color: transparent; }
+.awsum-list .nav-tabs .nav-link.active {
+  color: var(--list-navy);
+  background: var(--platform-surface, #ffffff);
+  border-color: var(--list-border) var(--list-border) var(--platform-surface, #ffffff);
+  box-shadow: inset 0 3px 0 var(--list-blue);
 }
 .awsum-admin .tree-node:hover, .awsum-admin .tree-node.selected {
   background-color: #e7f0fe;

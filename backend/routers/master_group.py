@@ -31,8 +31,10 @@ PAGES = {
     "category-2": ("category2", "Category II"),
     "category-3": ("category3", "Category III"),
     "md-master": ("md", "MD Master"),
+    "item-kind": ("item_kind", "Item Kind"),
 }
 ENTITY_TO_SLUG = {entity: slug for slug, (entity, _title) in PAGES.items()}
+PLATFORM_ONLY_ENTITIES = {"md": "MD Master", "item_kind": "Item Kind"}
 
 
 def _admin(request: Request, db: Session):
@@ -70,8 +72,8 @@ def _fail(exc: Exception) -> JSONResponse:
 def _entity(entity: str, request: Request | None = None) -> str:
     if entity not in svc.ENTITIES:
         raise HTTPException(status_code=404, detail="Unknown master type.")
-    if request is not None and getattr(request.state, "master_merchant_id", None) is not None and entity == "md":
-        raise HTTPException(403, "MD Master is Platform-only.")
+    if request is not None and getattr(request.state, "master_merchant_id", None) is not None and entity in PLATFORM_ONLY_ENTITIES:
+        raise HTTPException(403, f"{PLATFORM_ONLY_ENTITIES[entity]} is Platform-only.")
     return entity
 
 
@@ -235,6 +237,57 @@ def md_update_with_image(
         db.rollback()
         return _fail(exc)
     return JSONResponse({"item": item, "message": "Saved."})
+
+
+@router.get("/platform/api/master-group/md/{item_id}/details")
+def md_detail_list(item_id: int, request: Request, db: Session = Depends(get_db)):
+    _admin(request, db)
+    _entity("md", request)
+    try:
+        return _set_no_cache_headers(JSONResponse({"items": svc.list_md_details(db, item_id)}))
+    except svc.NotFound as exc:
+        return _fail(exc)
+
+
+@router.post("/platform/api/master-group/md/{item_id}/details")
+def md_detail_create(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = _admin(request, db)
+    _validate_origin(request)
+    _entity("md", request)
+    try:
+        item = svc.create_md_detail(db, item_id, payload, user.i_platform_user_id)
+    except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({"item": item, "message": "Saved."}, status_code=201)
+
+
+@router.put("/platform/api/master-group/md/{item_id}/details/{detail_id}")
+def md_detail_update(
+    item_id: int, detail_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+):
+    user = _admin(request, db)
+    _validate_origin(request)
+    _entity("md", request)
+    try:
+        item = svc.update_md_detail(db, item_id, detail_id, payload, user.i_platform_user_id)
+    except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({"item": item, "message": "Saved."})
+
+
+@router.delete("/platform/api/master-group/md/{item_id}/details/{detail_id}")
+def md_detail_delete(item_id: int, detail_id: int, request: Request, db: Session = Depends(get_db)):
+    _admin(request, db)
+    _validate_origin(request)
+    _entity("md", request)
+    try:
+        svc.delete_md_detail(db, item_id, detail_id)
+    except (svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({"message": "Deleted."})
 
 
 @router.put("/platform/api/master-group/{entity}/{item_id}")

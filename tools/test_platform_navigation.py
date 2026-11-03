@@ -13,6 +13,7 @@ from tools import test_image_components as browser
 MENU_LINKS = [
     ("Dashboard", "/platform/dashboard"),
     ("Tax", "/platform/master-group/tax"),
+    ("Item Kind", "/platform/master-group/item-kind"),
     ("Category I", "/platform/master-group/category-1"),
     ("Category II", "/platform/master-group/category-2"),
     ("Category III", "/platform/master-group/category-3"),

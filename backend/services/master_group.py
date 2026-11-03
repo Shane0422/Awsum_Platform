@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models_admin.invoice import InvoiceLine
-from backend.models_admin.master_group import Category1, Category2, Category3, MdMaster, Tax
+from backend.models_admin.master_group import Category1, Category2, Category3, ItemKind, MdDetail, MdMaster, Tax
 from backend.services import images
 from backend.services.paths import AwsumPathResolver
 from backend.services.money import format_money
@@ -23,7 +23,7 @@ from backend.services.image_service import commit_entity_image, master_image_loc
 
 # tb_license.c_license_type values (see platform_store_license TYPE_*).
 LICENSE_TYPES = ("POS", "KIOSK", "CUSTOMER_ORDERING")
-ITEM_KINDS = ("HARDWARE", "SOFTWARE", "SERVICE")
+DEFAULT_ITEM_KIND = "ITEM"  # tb_item_kind System Code
 BILLING_CYCLES = ("ONE_TIME", "MONTHLY", "ANNUAL")
 
 MAX_PRICE = Decimal("9999999999.99")
@@ -75,7 +75,11 @@ ENTITIES = {
     "category2": dict(model=Category2, pk="i_category2_id", code="c_category_code", name="c_category_name", prefix="CA2"),
     "category3": dict(model=Category3, pk="i_category3_id", code="c_category_code", name="c_category_name", prefix="CA3"),
     "md": dict(model=MdMaster, pk="i_md_id", code="c_item_code", name="c_item_name", prefix="MD"),
+    # System Master: rows are seeded; codes are logic keys and cannot be added, changed or deleted.
+    "item_kind": dict(model=ItemKind, pk="i_item_kind_id", code="c_item_kind_code", name="c_item_kind_name",
+                      prefix=None, system=True),
 }
+PLATFORM_ONLY_MODELS = (MdMaster, ItemKind)
 CODE_DIGITS = 5
 
 
@@ -87,9 +91,9 @@ def entity_config(entity: str) -> dict:
 
 
 def _scoped_query(db: Session, model, merchant_id: int | None):
-    if model is MdMaster:
+    if model in PLATFORM_ONLY_MODELS:
         if merchant_id is not None:
-            raise NotFound("MD Master is not available in this scope.")
+            raise NotFound("This master is not available in this scope.")
         return db.query(model)
     return db.query(model).filter(model.i_merchant_id == merchant_id)
 
@@ -240,6 +244,10 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
         values["c_category_name"] = _text(payload, "name", 100, errors, required=True, label="Name")
         values.update(_validate_common(payload, errors, ordered=True))
 
+    elif entity == "item_kind":
+        values["c_item_kind_name"] = _text(payload, "name", 100, errors, required=True, label="Display Name")
+        values.update(_validate_common(payload, errors, ordered=True))
+
     elif entity == "category2":
         values["c_category_name"] = _text(payload, "name", 100, errors, required=True, label="Name")
         c1 = _id(payload, "category1_id", errors, required=True, label="Category I")
@@ -327,11 +335,14 @@ def _validate_pricing(payload: dict, values: dict, errors: dict, retail) -> None
 
 def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict, can_cost: bool = False) -> None:
     values["c_item_name"] = _text(payload, "name", 200, errors, required=True, label="Item Name")
+    values["c_second_name"] = _text(payload, "second_name", 200, errors, label="Second Name")
     values["c_description"] = _text(payload, "description", 2000, errors)
 
-    kind = str(payload.get("item_kind") or "").strip().upper()
-    if kind not in ITEM_KINDS:
-        errors["item_kind"] = "Select Hardware, Software or Service."
+    kind = str(payload.get("item_kind") or DEFAULT_ITEM_KIND).strip().upper()
+    kind_row = db.query(ItemKind).filter(ItemKind.c_item_kind_code == kind).first()
+    keeps_current = current is not None and current.c_item_kind == kind
+    if kind_row is None or not (kind_row.b_active or keeps_current):
+        errors["item_kind"] = "Select an active Item Kind."
     values["c_item_kind"] = kind
 
     cycle = str(payload.get("billing_cycle") or "").strip().upper()
@@ -404,6 +415,133 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
     values.update(_validate_common(payload, errors, ordered=False))
 
 
+def _serialize_md_detail(row: MdDetail) -> dict:
+    return {
+        "id": row.i_md_detail_id,
+        "md_id": row.i_md_id,
+        "detail_no": row.i_detail_no,
+        "is_default": bool(row.b_is_default),
+        "barcode": row.c_barcode,
+        "unit": row.c_unit,
+        "pk_size": row.c_pk_size,
+        "size": row.c_size,
+        "cost": _dec(row.n_cost),
+        "price": _dec(row.n_price),
+        "modifier": row.c_modifier,
+    }
+
+
+def _md_parent_for_detail(db: Session, md_id: int, *, lock: bool = False) -> MdMaster:
+    query = db.query(MdMaster).filter(MdMaster.i_md_id == md_id)
+    if lock:
+        query = query.with_for_update()
+    row = query.first()
+    if row is None:
+        raise NotFound("MD Master record not found.")
+    return row
+
+
+def list_md_details(db: Session, md_id: int) -> list[dict]:
+    _md_parent_for_detail(db, md_id)
+    rows = db.query(MdDetail).filter(MdDetail.i_md_id == md_id).order_by(MdDetail.i_detail_no).all()
+    return [_serialize_md_detail(row) for row in rows]
+
+
+def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict) -> dict:
+    values = {}
+    values["c_barcode"] = _text(payload, "barcode", 100, errors)
+    values["c_unit"] = _text(payload, "unit", 30, errors, required=True, label="Unit")
+    values["c_pk_size"] = _text(payload, "pk_size", 100, errors)
+    values["c_size"] = _text(payload, "size", 100, errors)
+    values["n_cost"] = _decimal(
+        payload, "cost", errors, places=2, maximum=MAX_PRICE, label="Cost", required=False,
+    )
+    values["n_price"] = _decimal(
+        payload, "price", errors, places=2, maximum=MAX_PRICE, label="Price",
+    )
+    values["c_modifier"] = _text(payload, "modifier", 2000, errors)
+    if "is_default" in payload:
+        values["b_is_default"] = _bool(payload, "is_default", False)
+    elif current is not None:
+        values["b_is_default"] = current.b_is_default
+    else:
+        values["b_is_default"] = False
+    if errors:
+        raise FieldErrors(errors)
+    return values
+
+
+def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> dict:
+    parent = _md_parent_for_detail(db, md_id, lock=True)
+    current_default = db.query(MdDetail).filter(
+        MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True),
+    ).first()
+    values = _validate_md_detail(payload, None, {})
+    if current_default is None:
+        values["b_is_default"] = True
+    next_no = (db.query(func.max(MdDetail.i_detail_no))
+               .filter(MdDetail.i_md_id == md_id).scalar() or 0) + 1
+    if values["b_is_default"] and current_default is not None:
+        current_default.b_is_default = False
+        _stamp(current_default, user_id, created=False)
+        db.flush()
+    row = MdDetail(i_md_id=md_id, i_detail_no=next_no, **values)
+    _stamp(row, user_id, created=True)
+    db.add(row)
+    if row.b_is_default:
+        parent.c_unit = row.c_unit
+        parent.n_default_unit_price = row.n_price
+        parent.n_cost = row.n_cost
+        _stamp(parent, user_id, created=False)
+    db.commit()
+    db.refresh(row)
+    return _serialize_md_detail(row)
+
+
+def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, user_id: int) -> dict:
+    parent = _md_parent_for_detail(db, md_id, lock=True)
+    row = db.query(MdDetail).filter(
+        MdDetail.i_md_detail_id == detail_id, MdDetail.i_md_id == md_id,
+    ).with_for_update().first()
+    if row is None:
+        raise NotFound("MD Detail not found.")
+    values = _validate_md_detail(payload, row, {})
+    if row.b_is_default and not values["b_is_default"]:
+        raise FieldErrors({"is_default": "An MD must have one Default Detail."})
+    if values["b_is_default"] and not row.b_is_default:
+        defaults = db.query(MdDetail).filter(
+            MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True),
+        ).all()
+        for default in defaults:
+            default.b_is_default = False
+            _stamp(default, user_id, created=False)
+        db.flush()
+    for key, value in values.items():
+        setattr(row, key, value)
+    _stamp(row, user_id, created=False)
+    if row.b_is_default:
+        parent.c_unit = row.c_unit
+        parent.n_default_unit_price = row.n_price
+        parent.n_cost = row.n_cost
+        _stamp(parent, user_id, created=False)
+    db.commit()
+    db.refresh(row)
+    return _serialize_md_detail(row)
+
+
+def delete_md_detail(db: Session, md_id: int, detail_id: int) -> None:
+    _md_parent_for_detail(db, md_id, lock=True)
+    row = db.query(MdDetail).filter(
+        MdDetail.i_md_detail_id == detail_id, MdDetail.i_md_id == md_id,
+    ).with_for_update().first()
+    if row is None:
+        raise NotFound("MD Detail not found.")
+    if row.b_is_default:
+        raise Conflict("The Default Detail cannot be deleted.")
+    db.delete(row)
+    db.commit()
+
+
 # ---------- usage ----------
 
 def _category2_in_use(db: Session, cid: int) -> bool:
@@ -438,6 +576,8 @@ def is_in_use(db: Session, entity: str, row) -> bool:
         return _category2_in_use(db, row.i_category2_id)
     if entity == "category3":
         return _category3_in_use(db, row.i_category3_id)
+    if entity == "item_kind":
+        return False
     return bool(db.query(InvoiceLine.i_invoice_line_id).filter(InvoiceLine.i_md_id == row.i_md_id).first())
 
 
@@ -464,6 +604,9 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
         base.update(name=row.c_tax_name, rate=_dec(row.n_tax_rate))
         return base
     base["name"] = getattr(row, ENTITIES[entity]["name"])
+    if entity == "item_kind":
+        base.update(display_order=row.i_display_order, system=True)
+        return base
     if entity in ("category1", "category2", "category3"):
         base["display_order"] = row.i_display_order
     if entity in ("category2", "category3"):
@@ -480,6 +623,7 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
         c3 = db.get(Category3, row.i_category3_id) if row.i_category3_id else None
         tax = db.get(Tax, row.i_default_tax_id) if row.i_default_tax_id else None
         base.update(
+            second_name=row.c_second_name,
             description=row.c_description,
             image_path=row.c_image_path,
             image_url=images.image_url(row.c_image_path),
@@ -521,8 +665,10 @@ SORT_COLUMNS = {
         "retail_price": "n_default_unit_price", "p1_price": "n_p1_price", "p2_price": "n_p2_price",
         "p3_price": "n_p3_price", "billing_cycle": "c_billing_cycle", "active": "b_active",
     },
+    "item_kind": {"code": "c_item_kind_code", "name": "c_item_kind_name", "display_order": "i_display_order", "active": "b_active"},
 }
-DEFAULT_SORT = {"tax": "code", "category1": "display_order", "category2": "display_order", "category3": "display_order", "md": "code"}
+DEFAULT_SORT = {"tax": "code", "category1": "display_order", "category2": "display_order", "category3": "display_order", "md": "code",
+                "item_kind": "display_order"}
 
 
 def _filtered_query(db: Session, entity: str, q, active, sort, direction, merchant_id: int | None = None):
@@ -590,6 +736,8 @@ def _commit_md(db: Session, row: MdMaster, *, image_data: bytes | None = None,
 def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool = False,
                 *, image_data: bytes | None = None, merchant_id: int | None = None) -> dict:
     _scoped_query(db, entity_config(entity)["model"], merchant_id)
+    if entity_config(entity).get("system"):
+        raise Conflict("System codes are predefined and cannot be added.")
     if entity == "md":
         _lock_md_images(db)
     cfg = entity_config(entity)
@@ -606,6 +754,16 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
         try:
             if entity == "md":
                 db.flush()
+                detail = MdDetail(
+                    i_md_id=row.i_md_id,
+                    i_detail_no=1,
+                    b_is_default=True,
+                    c_unit=row.c_unit,
+                    n_cost=row.n_cost,
+                    n_price=row.n_default_unit_price,
+                )
+                _stamp(detail, user_id, created=True)
+                db.add(detail)
             else:
                 db.commit()
         except IntegrityError:
@@ -624,7 +782,6 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
 # ---------- export ----------
 
 NOT_SET = "Not set"  # an unset price is not the same as 0.00
-_KIND_LABEL = {"HARDWARE": "Hardware", "SOFTWARE": "Software", "SERVICE": "Service"}
 _CYCLE_LABEL = {"ONE_TIME": "One-time", "MONTHLY": "Monthly", "ANNUAL": "Annual"}
 _MODE_LABEL = {"FIXED": "Fixed Amount", "DISCOUNT": "Discount %"}
 
@@ -654,6 +811,11 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
     if entity == "tax":
         headers = ["Tax Code", "Tax Name", "Tax Rate (%)", "Status", "Notes"]
         data = [[r.c_tax_code, r.c_tax_name, _pct(r.n_tax_rate), status(r), r.c_notes or ""] for r in rows]
+        return headers, data
+
+    if entity == "item_kind":
+        headers = ["System Code", "Display Name", "Display Order", "Status", "Notes"]
+        data = [[r.c_item_kind_code, r.c_item_kind_name, str(r.i_display_order), status(r), r.c_notes or ""] for r in rows]
         return headers, data
 
     if entity in ("category1", "category2", "category3"):
@@ -688,6 +850,7 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
         headers += [f"P{n} Mode", f"P{n} Discount %", f"P{n} Price"]
     headers += ["License Required", "License Type", "Licenses per Unit", "Serial Number Required", "Status", "Notes"]
 
+    kind_names = {k.c_item_kind_code: k.c_item_kind_name for k in db.query(ItemKind)}
     data = []
     for r in rows:
         c1 = db.get(Category1, r.i_category1_id)
@@ -695,7 +858,7 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
         c3 = db.get(Category3, r.i_category3_id) if r.i_category3_id else None
         tax = db.get(Tax, r.i_default_tax_id) if r.i_default_tax_id else None
         line = [
-            r.c_item_code, r.c_item_name, r.c_description or "", _KIND_LABEL.get(r.c_item_kind, r.c_item_kind or ""),
+            r.c_item_code, r.c_item_name, r.c_description or "", kind_names.get(r.c_item_kind, r.c_item_kind or ""),
             c1.c_category_code if c1 else "", c1.c_category_name if c1 else "",
             c2.c_category_code if c2 else "", c2.c_category_name if c2 else "",
             c3.c_category_code if c3 else "", c3.c_category_name if c3 else "",
@@ -744,6 +907,16 @@ def update_item(db: Session, entity: str, item_id: int, payload: dict, user_id, 
     values = _validate_payload(db, entity, payload, row, can_cost, merchant_id)
     for key, value in values.items():
         setattr(row, key, value)  # the auto code is never part of values
+    if entity == "md":
+        default_detail = db.query(MdDetail).filter(
+            MdDetail.i_md_id == row.i_md_id, MdDetail.b_is_default.is_(True),
+        ).with_for_update().first()
+        if default_detail is not None:
+            default_detail.c_unit = row.c_unit
+            default_detail.n_price = row.n_default_unit_price
+            if "n_cost" in values:
+                default_detail.n_cost = row.n_cost
+            _stamp(default_detail, user_id, created=False)
     _stamp(row, user_id, created=False)
     warning = _commit_md(db, row, image_data=image_data, remove_image=remove_image) if entity == "md" else None
     if entity != "md":
@@ -760,9 +933,12 @@ def delete_item(db: Session, entity: str, item_id: int, *, merchant_id: int | No
     if entity == "md":
         _lock_md_images(db)
     row = _get(db, entity, item_id, merchant_id)
+    if entity_config(entity).get("system"):
+        raise Conflict("System codes cannot be deleted. Deactivate it instead.")
     if is_in_use(db, entity, row):
         raise Conflict("This record is in use and cannot be deleted. Deactivate it instead.")
     if entity == "md":
+        db.query(MdDetail).filter(MdDetail.i_md_id == row.i_md_id).delete(synchronize_session=False)
         return _commit_md(db, row, delete=True)
     db.delete(row)
     db.commit()
@@ -794,7 +970,12 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         ],
         "can_view_cost": can_cost,
         "price_levels": list(PRICE_LEVELS),
-        "item_kinds": list(ITEM_KINDS),
+        "item_kinds": [
+            {"code": r.c_item_kind_code, "name": r.c_item_kind_name}
+            for r in db.query(ItemKind).filter(ItemKind.b_active.is_(True))
+            .order_by(ItemKind.i_display_order, ItemKind.i_item_kind_id)
+        ],
+        "default_item_kind": DEFAULT_ITEM_KIND,
         "billing_cycles": list(BILLING_CYCLES),
         "license_types": list(LICENSE_TYPES),
     }

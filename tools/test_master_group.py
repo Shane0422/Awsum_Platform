@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -12,7 +13,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_admin.invoice import InvoiceLine
-from backend.models_admin.master_group import Category1, Category2, Category3, MdMaster, Tax
+from backend.models_admin.master_group import Category1, Category2, Category3, ItemKind, MdDetail, MdMaster, Tax
+from backend.database.item_kind_migration import migrate_item_kinds
 from backend.routers import master_group as router_module
 from backend.services import master_group as svc
 
@@ -25,16 +27,19 @@ class MasterGroupTests(unittest.TestCase):
         storage.start()
         self.addCleanup(storage.stop)
         engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
-        tables = [m.__table__ for m in (Tax, Category1, Category2, Category3, MdMaster, InvoiceLine)]
+        self.addCleanup(engine.dispose)
+        tables = [m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine)]
         PlatformBase.metadata.create_all(engine, tables=tables)
+        migrate_item_kinds(engine)
         self.Session = sessionmaker(bind=engine)
+        self.engine = engine
         self.db = self.Session()
         self.addCleanup(self.db.close)
 
     def md_payload(self, **kw):
         c1 = svc.create_item(self.db, "category1", {"name": "Hardware"}, 1)
         base = {
-            "name": "POS Terminal", "item_kind": "HARDWARE", "category1_id": c1["id"], "unit": "EA",
+            "name": "POS Terminal", "item_kind": "ITEM", "category1_id": c1["id"], "unit": "EA",
             "retail_price": "0", "billing_cycle": "ONE_TIME",
         }
         base.update(kw)
@@ -161,6 +166,125 @@ class MasterGroupTests(unittest.TestCase):
         self.assertFalse(item["license_required"])
         self.assertIsNone(item["license_type"])
         self.assertFalse(item["serial_required"])
+        details = svc.list_md_details(self.db, item["id"])
+        self.assertEqual(len(details), 1)
+        self.assertEqual(
+            (details[0]["detail_no"], details[0]["is_default"], details[0]["unit"], details[0]["price"]),
+            (1, True, "EA", "0.00"),
+        )
+
+    def test_md_detail_add_update_default_and_delete(self):
+        item = svc.create_item(self.db, "md", self.md_payload(retail_price="12.50"), 1)
+        default = svc.list_md_details(self.db, item["id"])[0]
+        second = svc.create_md_detail(self.db, item["id"], {
+            "barcode": "123456789012", "unit": "Pack", "pk_size": "6-pack",
+            "size": "Large", "cost": "4.25", "price": "25.00", "modifier": "Extra",
+        }, 1)
+        self.assertEqual((second["detail_no"], second["is_default"]), (2, False))
+        with self.assertRaises(svc.Conflict):
+            svc.delete_md_detail(self.db, item["id"], default["id"])
+
+        updated = svc.update_md_detail(self.db, item["id"], second["id"], {
+            "barcode": "123456789012", "unit": "Pack", "pk_size": "6-pack",
+            "size": "Large", "cost": "4.50", "price": "30.00", "modifier": "No ice",
+            "is_default": True,
+        }, 2)
+        self.assertTrue(updated["is_default"])
+        self.assertEqual(self.db.get(MdMaster, item["id"]).n_default_unit_price, Decimal("30.00"))
+        first = next(detail for detail in svc.list_md_details(self.db, item["id"]) if detail["id"] == default["id"])
+        self.assertFalse(first["is_default"])
+        with self.assertRaises(svc.FieldErrors):
+            svc.update_md_detail(self.db, item["id"], updated["id"], {
+                "unit": "Pack", "price": "30", "is_default": False,
+            }, 2)
+        svc.delete_md_detail(self.db, item["id"], default["id"])
+        self.assertEqual(len(svc.list_md_details(self.db, item["id"])), 1)
+
+    def test_md_create_and_legacy_update_keep_default_detail_compatible(self):
+        item = svc.create_item(
+            self.db, "md", self.md_payload(retail_price="15.25", cost="5.00"), 1, can_cost=True,
+        )
+        detail = svc.list_md_details(self.db, item["id"])[0]
+        self.assertEqual((detail["price"], detail["cost"]), ("15.25", "5.00"))
+        payload = self.md_payload(retail_price="19.50", cost="6.00")
+        svc.update_item(self.db, "md", item["id"], payload, 1, can_cost=True)
+        detail = svc.list_md_details(self.db, item["id"])[0]
+        self.assertEqual((detail["price"], detail["cost"]), ("19.50", "6.00"))
+
+    def test_md_detail_migration_backfills_legacy_values_idempotently(self):
+        from backend.database.md_detail_migration import migrate_md_details
+
+        item = svc.create_item(
+            self.db, "md", self.md_payload(retail_price="7.75", cost="2.25"), 1, can_cost=True,
+        )
+        self.db.query(MdDetail).filter(MdDetail.i_md_id == item["id"]).delete()
+        self.db.commit()
+        migrate_md_details(self.engine)
+        migrate_md_details(self.engine)
+        detail = svc.list_md_details(self.db, item["id"])[0]
+        self.assertEqual(
+            (detail["detail_no"], detail["is_default"], detail["unit"], detail["price"], detail["cost"]),
+            (1, True, "EA", "7.75", "2.25"),
+        )
+
+    def test_md_second_name_saved_and_migration_is_repeatable(self):
+        from sqlalchemy import create_engine, inspect, text
+        from backend.database.md_second_name_migration import migrate_md_second_name
+
+        item = svc.create_item(self.db, "md", self.md_payload(second_name="  Alt Name  "), 1)
+        self.assertEqual(item["second_name"], "Alt Name")
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(second_name=""), 1)
+        self.assertIsNone(item["second_name"])
+        self.assertIn("second_name", self.errors("md", self.md_payload(second_name="x" * 201)))
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, c_item_code VARCHAR(20))"))
+            conn.execute(text("INSERT INTO tb_md_master VALUES (42, 'MD00042')"))
+        migrate_md_second_name(engine)
+        migrate_md_second_name(engine)
+        with engine.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT * FROM tb_md_master")).one(), (42, "MD00042", None))
+        self.assertIn("c_second_name", {col["name"] for col in inspect(engine).get_columns("tb_md_master")})
+
+    def test_item_kind_seed_is_idempotent_and_keeps_display_names(self):
+        from backend.database.item_kind_migration import SYSTEM_ITEM_KINDS
+        item = self.db.query(ItemKind).filter(ItemKind.c_item_kind_code == "GIFT_CARD").one()
+        item.c_item_kind_name = "E-Gift Card"
+        self.db.commit()
+        migrate_item_kinds(self.engine)
+        self.db.expire_all()
+        rows = self.db.query(ItemKind).order_by(ItemKind.i_display_order).all()
+        self.assertEqual([r.c_item_kind_code for r in rows], [code for code, _ in SYSTEM_ITEM_KINDS])
+        self.assertEqual(rows[2].c_item_kind_name, "Admission / Ticket")
+        self.assertEqual(self.db.query(ItemKind).filter(ItemKind.c_item_kind_code == "GIFT_CARD").one().c_item_kind_name,
+                         "E-Gift Card")
+        listed = svc.list_items(self.db, "item_kind", size=100)
+        self.assertEqual(listed["total"], 9)
+        headers, data = svc.export_table(self.db, "item_kind")
+        self.assertEqual(headers[:2], ["System Code", "Display Name"])
+        with self.assertRaises(svc.FieldErrors):
+            svc.update_item(self.db, "item_kind", rows[0].i_item_kind_id, {"name": " "}, 1)
+        # MD Master Item Kind uses active System Master rows, default ITEM; legacy values are linked.
+        options = svc.lookup_options(self.db)
+        self.assertEqual(options["default_item_kind"], "ITEM")
+        self.assertEqual([k["code"] for k in options["item_kinds"]][:2], ["ITEM", "SERVICE"])
+        self.assertIn({"code": "GIFT_CARD", "name": "E-Gift Card"}, options["item_kinds"])
+        gift = self.db.query(ItemKind).filter(ItemKind.c_item_kind_code == "GIFT_CARD").one()
+        svc.update_item(self.db, "item_kind", gift.i_item_kind_id, {"name": gift.c_item_kind_name, "active": False}, 1)
+        self.assertNotIn("GIFT_CARD", [k["code"] for k in svc.lookup_options(self.db)["item_kinds"]])
+        self.assertIn("item_kind", self.errors("md", self.md_payload(item_kind="GIFT_CARD")))
+        self.assertIn("item_kind", self.errors("md", self.md_payload(item_kind="HARDWARE")))
+        md = svc.create_item(self.db, "md", {k: v for k, v in self.md_payload().items() if k != "item_kind"}, 1)
+        self.assertEqual(md["item_kind"], "ITEM")
+        svc.create_item(self.db, "md", self.md_payload(name="Setup", item_kind="SERVICE"), 1)
+        with self.engine.begin() as conn:
+            conn.execute(text("UPDATE tb_md_master SET c_item_kind = 'HARDWARE' WHERE c_item_name = 'POS Terminal'"))
+        migrate_item_kinds(self.engine)
+        self.db.expire_all()
+        kinds = {r.c_item_name: r.c_item_kind for r in self.db.query(MdMaster)}
+        self.assertEqual(kinds, {"POS Terminal": "ITEM", "Setup": "SERVICE"})
 
     def test_md_license_rules(self):
         p = self.md_payload(license_required=True)
@@ -184,7 +308,7 @@ class MasterGroupTests(unittest.TestCase):
         p = self.md_payload()
         self.assertIn("retail_price", self.errors("md", {**p, "retail_price": "-0.01"}))
         self.assertIn("retail_price", self.errors("md", {**p, "retail_price": "1.234"}))
-        self.assertIn("item_kind", self.errors("md", {**p, "item_kind": "OTHER"}))
+        self.assertIn("item_kind", self.errors("md", {**p, "item_kind": "UNKNOWN"}))
         self.assertIn("billing_cycle", self.errors("md", {**p, "billing_cycle": "WEEKLY"}))
         c2 = svc.create_item(self.db, "category2", {"name": "Two", "category1_id": p["category1_id"]}, 1)
         c3 = svc.create_item(self.db, "category3", {"name": "Three", "category1_id": p["category1_id"], "category2_id": c2["id"]}, 1)
@@ -310,9 +434,11 @@ class MasterGroupApiTests(unittest.TestCase):
         storage.start()
         self.addCleanup(storage.stop)
         engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+        self.addCleanup(engine.dispose)
         PlatformBase.metadata.create_all(
-            engine, tables=[m.__table__ for m in (Tax, Category1, Category2, Category3, MdMaster, InvoiceLine)]
+            engine, tables=[m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine)]
         )
+        migrate_item_kinds(engine)
         self.db = sessionmaker(bind=engine)()
         self.addCleanup(self.db.close)
         self.role = 1
@@ -357,7 +483,7 @@ class MasterGroupApiTests(unittest.TestCase):
         self.assertEqual(self.db.query(Tax).count(), 0)
 
     def test_cost_hidden_in_api_for_non_super_admin(self):
-        body = {"name": "Item", "item_kind": "HARDWARE", "unit": "EA", "billing_cycle": "ONE_TIME",
+        body = {"name": "Item", "item_kind": "ITEM", "unit": "EA", "billing_cycle": "ONE_TIME",
                 "retail_price": "10", "cost": "3"}
         c1 = svc.create_item(self.db, "category1", {"name": "C"}, 1)
         body["category1_id"] = c1["id"]
@@ -375,6 +501,41 @@ class MasterGroupApiTests(unittest.TestCase):
             )
             self.assertNotIn("cost", res["item"])
         self.assertEqual(str(self.db.get(MdMaster, 1).n_cost), "3.00")
+
+    def test_md_detail_common_api_list_add_update_delete(self):
+        category = svc.create_item(self.db, "category1", {"name": "Hardware"}, 1)
+        body = {
+            "name": "POS", "item_kind": "ITEM", "unit": "EA",
+            "category1_id": category["id"], "billing_cycle": "ONE_TIME", "retail_price": "10",
+        }
+        code, created = self.status(router_module.master_group_create, "md", body, self.req(), self.db)
+        self.assertEqual(code, 201)
+        md_id = created["item"]["id"]
+        code, result = self.status(router_module.md_detail_list, md_id, self.req(), self.db)
+        self.assertEqual(code, 200)
+        default = result["items"][0]
+        self.assertTrue(default["is_default"])
+        self.assertEqual(default["price"], "10.00")
+
+        payload = {
+            "unit": "Case", "pk_size": "12", "size": "Large", "cost": "3.50",
+            "price": "36", "barcode": "123", "modifier": "No ice",
+        }
+        code, result = self.status(router_module.md_detail_create, md_id, payload, self.req(), self.db)
+        self.assertEqual((code, result["item"]["detail_no"], result["item"]["is_default"]), (201, 2, False))
+        detail_id = result["item"]["id"]
+        code, result = self.status(
+            router_module.md_detail_update, md_id, detail_id,
+            {**payload, "price": "40", "is_default": True}, self.req(), self.db,
+        )
+        self.assertEqual((code, result["item"]["is_default"]), (200, True))
+        self.assertEqual(self.db.get(MdMaster, md_id).n_default_unit_price, Decimal("40.00"))
+
+        code, _ = self.status(router_module.md_detail_delete, md_id, detail_id, self.req(), self.db)
+        self.assertEqual(code, 409)
+        code, _ = self.status(router_module.md_detail_delete, md_id, default["id"], self.req(), self.db)
+        self.assertEqual(code, 200)
+        self.assertEqual(len(svc.list_md_details(self.db, md_id)), 1)
 
     def test_create_update_error_shapes_and_origin(self):
         code, body = self.status(router_module.master_group_create, "tax", {"name": "", "rate": "-1"}, self.req(), self.db)
@@ -397,6 +558,27 @@ class MasterGroupApiTests(unittest.TestCase):
         self.assertEqual(body["total"], 1)
         code, body = self.status(router_module.master_group_delete, "tax", item["id"], self.req(), self.db)
         self.assertEqual(code, 200)
+
+    def test_item_kind_system_master_api(self):
+        code, body = self.status(router_module.master_group_list, "item_kind", self.req(), db=self.db)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["items"][0]["code"], "ITEM")
+        self.assertTrue(body["items"][0]["system"])
+        item_id = body["items"][0]["id"]
+        self.assertEqual(self.status(router_module.master_group_create, "item_kind",
+                                     {"name": "New"}, self.req(), self.db)[0], 409)
+        self.assertEqual(self.status(router_module.master_group_delete, "item_kind", item_id, self.req(), self.db)[0], 409)
+        code, body = self.status(router_module.master_group_update, "item_kind", item_id,
+                                 {"name": "Merchandise", "code": "HACK", "display_order": 5}, self.req(), self.db)
+        self.assertEqual((code, body["item"]["code"], body["item"]["name"]), (200, "ITEM", "Merchandise"))
+        merchant_req = self.req()
+        merchant_req.state.master_merchant_id = 9
+        with self.assertRaises(HTTPException) as ctx:
+            router_module._entity("item_kind", merchant_req)
+        self.assertEqual(ctx.exception.status_code, 403)
+        with self.assertRaises(svc.NotFound):
+            svc.list_items(self.db, "item_kind", merchant_id=9)
+        self.assertEqual(router_module.PAGES["item-kind"], ("item_kind", "Item Kind"))
 
 
 if __name__ == "__main__":

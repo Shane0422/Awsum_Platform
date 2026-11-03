@@ -21,6 +21,7 @@ from starlette.datastructures import Headers
 
 from backend.database.pg_platform import PlatformBase, platform_engine
 from backend.database.md_image_migration import migrate_md_images
+from backend.database.item_kind_migration import migrate_item_kinds
 from backend.main import app
 from backend.models_admin.master_group import MdMaster
 from backend.routers import images as image_routes, master_group as routes
@@ -42,6 +43,7 @@ class MasterImageTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
         PlatformBase.metadata.create_all(self.engine)
+        migrate_item_kinds(self.engine)
         self.factory = sessionmaker(bind=self.engine)
         self.addCleanup(self.engine.dispose)
         seed(self.factory)
@@ -61,7 +63,7 @@ class MasterImageTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         cat = svc.create_item(self.db, "category1", {"name": "Hardware"}, 1)
         self.payload = {
-            "name": "Test item", "item_kind": "HARDWARE", "category1_id": cat["id"],
+            "name": "Test item", "item_kind": "ITEM", "category1_id": cat["id"],
             "retail_price": "10", "unit": "EA", "billing_cycle": "ONE_TIME",
         }
         self.blue = image_bytes()
@@ -455,6 +457,7 @@ class PostgresMasterImageTests(unittest.TestCase):
         self.factory = sessionmaker(bind=self.engine)
         self.addCleanup(self.cleanup_schema)
         PlatformBase.metadata.create_all(self.engine)
+        migrate_item_kinds(self.engine)
         seed(self.factory)
         self.temp = tempfile.TemporaryDirectory(prefix="awsum-md-pg-test-")
         self.addCleanup(self.temp.cleanup)
@@ -463,7 +466,7 @@ class PostgresMasterImageTests(unittest.TestCase):
         self.addCleanup(context.stop)
         with self.factory() as db:
             category = svc.create_item(db, "category1", {"name": "Category"}, 1)
-        self.payload = {"name": "Concurrent item", "item_kind": "HARDWARE", "category1_id": category["id"],
+        self.payload = {"name": "Concurrent item", "item_kind": "ITEM", "category1_id": category["id"],
                         "unit": "EA", "billing_cycle": "ONE_TIME", "retail_price": "10"}
 
     def cleanup_schema(self):

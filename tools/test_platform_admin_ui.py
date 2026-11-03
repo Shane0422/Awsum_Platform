@@ -152,7 +152,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
     }
     if(fixture.filename==='system_settings.html'){
       assert(root.querySelectorAll('[role="tab"]').length===4,'all settings tabs preserved');
-      assert(win.getComputedStyle(root.querySelector('.nav-link.active')).backgroundColor==='rgb(231, 240, 254)','shared active tab');
+      const activeTab=win.getComputedStyle(root.querySelector('.nav-link.active'));
+      assert(activeTab.backgroundColor==='rgb(255, 255, 255)'&&activeTab.color==='rgb(16, 46, 104)'&&activeTab.boxShadow.includes('rgb(18, 99, 235)'),'shared active tab');
     }
     frame.remove();
   }
