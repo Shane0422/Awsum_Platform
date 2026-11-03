@@ -566,6 +566,11 @@
     color: #111;
   }
 
+  body.page-master #masterRoleView #masterListTable.module-merchant .merchant-col-agency {
+    min-width: 260px;
+    white-space: nowrap;
+  }
+
   body.page-master #masterRoleView .merchant-row-name {
     font-weight: 500;
     color: #1f2937;
@@ -2577,14 +2582,8 @@
       </div>
 
       <div id="storeFilterBar" class="store-filter-bar d-none">
-        <div class="filter-combo" id="storeAgencyCombo">
-          <input type="text" class="form-control master-list-filter" placeholder="All Agencies" autocomplete="off" aria-label="Filter by Agency" role="combobox" aria-expanded="false">
-          <ul class="filter-combo-menu d-none" role="listbox"></ul>
-        </div>
-        <div class="filter-combo" id="storeMerchantCombo">
-          <input type="text" class="form-control master-list-filter" placeholder="All Merchants" autocomplete="off" aria-label="Filter by Merchant" role="combobox" aria-expanded="false">
-          <ul class="filter-combo-menu d-none" role="listbox"></ul>
-        </div>
+        <select id="storeAgencyCombo" class="form-select master-list-filter" aria-label="Filter by Agency"></select>
+        <select id="storeMerchantCombo" class="form-select master-list-filter" aria-label="Filter by Merchant"></select>
         <select id="storeSortSelect" class="form-select master-list-filter" aria-label="Sort stores">
           <option value="merchant_asc">Merchant Name (A–Z)</option>
           <option value="merchant_desc">Merchant Name (Z–A)</option>
@@ -3061,10 +3060,10 @@
       {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": "{{ agency.c_agency_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "merchantAgencies": [
-      {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": {{ (agency.c_agency_code ~ ' - ' ~ (agency.c_company_name or agency.c_agency_name))|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
+      {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": {{ (agency.c_agency_code ~ ' - ' ~ (agency.c_company_name or agency.c_agency_name))|tojson }}, "name": {{ (agency.c_company_name or agency.c_agency_name)|tojson }}, "code": {{ agency.c_agency_code|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "storeMerchants": [
-      {% for merchant in merchants %}{"value": "{{ merchant.i_merchant_id }}", "label": {{ (merchant.c_merchant_code ~ ' - ' ~ merchant.c_merchant_name)|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
+      {% for merchant in merchants %}{"value": "{{ merchant.i_merchant_id }}", "label": {{ (merchant.c_merchant_code ~ ' - ' ~ merchant.c_merchant_name)|tojson }}, "name": {{ merchant.c_merchant_name|tojson }}, "code": {{ merchant.c_merchant_code|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "agencyTypes": [
       {% for at in agency_types %}{"value": "{{ at.i_agency_type_id }}", "label": "{{ at.c_agency_type_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
@@ -3371,15 +3370,16 @@
     },
     merchant: {
       endpoint: 'merchant',
+      headerFields: ['id', 'merchant_code'],
       headers: ['Merchant ID', 'Merchant Code', 'Merchant Name', 'Primary Agency', 'Business Type', 'Status', 'Created Date'],
       statusIndex: 5,
       fields: [
-        { name: 'id', label: 'Merchant ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'col-12 col-md-6' },
-        { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
+        { name: 'id', label: 'Merchant ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'd-none' },
+        { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'd-none' },
         { name: 'merchant_name', label: 'Merchant Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter merchant name', colClass: 'col-12 col-md-6' },
         { name: 'primary_agency_id', label: 'Primary Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
         { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
-        { name: 'website', label: 'Website', type: 'text', icon: 'globe', placeholder: 'e.g. abcmarket.com', colClass: 'col-12 col-md-6' },
+        { name: 'website', label: 'Website', type: 'text', icon: 'globe', placeholder: 'e.g. abcmarket.com', colClass: 'col-12' },
         { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
         { name: 'first_name', label: 'Contact First Name', type: 'text', icon: 'user', placeholder: 'Enter first name', colClass: 'col-12 col-md-6' },
         { name: 'last_name', label: 'Contact Last Name', type: 'text', icon: 'user', placeholder: 'Enter last name', colClass: 'col-12 col-md-6' },
@@ -3395,7 +3395,7 @@
         { name: 'notes', label: 'Notes', type: 'textarea', rows: 9, placeholder: 'Enter internal notes about this merchant...', help: 'These notes are for internal AWSUM Platform use.', colClass: 'col-12' },
       ],
       tabs: [
-        { id: 'overview', label: 'Overview', title: 'Merchant Information', summary: 'Core merchant identity, primary agency and classification.', fields: ['id', 'merchant_code', 'merchant_name', 'primary_agency_id', 'business_type', 'status', 'website'] },
+        { id: 'overview', label: 'Overview', title: 'Merchant Information', summary: 'Core merchant identity, primary agency and classification.', fields: ['id', 'merchant_code', 'primary_agency_id', 'merchant_name', 'business_type', 'status', 'website'] },
         { id: 'contact', label: 'Contact', title: 'Primary Contact', summary: 'Merchant contact person and communication details.', fields: [] },
         { id: 'address', label: 'Address', title: 'Business Address', summary: 'Merchant business address. Enter a US ZIP Code to fill City and State.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone'] },
         { id: 'notes', label: 'Notes', title: 'Merchant Notes', summary: 'Internal notes and additional information for this merchant.', fields: ['notes'] },
@@ -3404,11 +3404,12 @@
     },
     store: {
       endpoint: 'store',
+      headerFields: ['id', 'store_code'],
       headers: ['Agency', 'Merchant Name', 'Store Name', 'Business Type', 'Status', 'Registered At'],
       statusIndex: 4,
       fields: [
-        { name: 'id', label: 'Store ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'col-12 col-md-6' },
-        { name: 'store_code', label: 'Store Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
+        { name: 'id', label: 'Store ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'd-none' },
+        { name: 'store_code', label: 'Store Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'd-none' },
         { name: 'store_name', label: 'Store Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter store name', colClass: 'col-12 col-md-6' },
         { name: 'merchant_id', label: 'Merchant', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Merchant' }, ...(masterSeedData.storeMerchants || [])], colClass: 'col-12 col-md-6' },
         { name: 'installed_by_agency_id', label: 'Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
@@ -3446,7 +3447,7 @@
         { name: 'opt_accounting', label: 'Accounting', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
       ],
       tabs: [
-        { id: 'basic', label: 'Overview', title: 'Store Information', summary: 'Core store identity and operating profile.', fields: ['id', 'store_code', 'store_name', 'merchant_id', 'installed_by_agency_id', 'business_type', 'operation_type', 'status'] },
+        { id: 'basic', label: 'Overview', title: 'Store Information', summary: 'Core store identity and operating profile.', fields: ['id', 'store_code', 'installed_by_agency_id', 'merchant_id', 'store_name', 'business_type', 'operation_type', 'status'] },
         { id: 'contact', label: 'Contact', title: 'Primary Contact', summary: 'Store contact person and communication details.', fields: [] },
         { id: 'address', label: 'Address', title: 'Store Address', summary: 'Store location details. Enter a US ZIP Code to fill City and State. You can adjust if needed.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone', 'default_tax_rate'] },
         { id: 'receipt', label: 'Receipt Info', title: 'Receipt Information', summary: 'Receipt header and footer information for printed output.', fields: ['receipt_store_name', 'receipt_phone', 'receipt_email', 'receipt_website_url', 'receipt_message'] },
@@ -3520,6 +3521,23 @@
   };
 
   const config = masterConfig[activeModule] || masterConfig.role;
+  const organizationGrid = {
+    merchant: {
+      agencyKey: 'primary_agency_id',
+      columns: [['Agency', 'primary_agency_name'], ['Merchant Code', 'merchant_code'],
+        ['Merchant Name', 'merchant_name'], ['Business Type', 'business_type'], ['Status', 'status'], ['Created Date', 'created_date']],
+    },
+    store: {
+      agencyKey: 'installed_by_agency_id',
+      columns: [['Agency', 'installed_by_agency_name'], ['Merchant', 'merchant_name'], ['Store ID', 'id'],
+        ['Store Code', 'store_code'], ['Store Name', 'store_name'], ['Status', 'status'], ['Created Date', 'created_at']],
+    },
+  }[activeModule];
+  if (organizationGrid) {
+    config.headers = organizationGrid.columns.map(([label]) => label);
+    config.statusIndex = config.headers.indexOf('Status');
+  }
+  const gridAgencies = new Map((masterSeedData.merchantAgencies || []).map(agency => [String(agency.value), agency]));
   const organizationFieldOrder = ['agency_id', 'primary_agency_id', 'installed_by_agency_id', 'merchant_id', 'store_id'];
   function orderOrganizationFields(fields, nameOf) {
     const ordered = fields.filter(field => organizationFieldOrder.includes(nameOf(field)))
@@ -3745,6 +3763,16 @@
       masterEditModalTitle.textContent = mode === 'create'
         ? `Add ${activeLabel.singular}`
         : `Edit ${activeLabel.singular}`;
+      if (mode === 'edit' && config.headerFields) {
+        const meta = document.createElement('span');
+        meta.className = 'ms-3 small fw-normal text-muted';
+        meta.textContent = config.headerFields.map(name => {
+          const field = config.fields.find(field => field.name === name);
+          const value = document.getElementById(`field_${name}`)?.value || '';
+          return `${name === 'id' ? 'ID' : field.label}: ${value || '-'}`;
+        }).join(' | ');
+        masterEditModalTitle.appendChild(meta);
+      }
     }
     applyAgencyModalState(mode);
     if (activeModule === 'merchant' || activeModule === 'store') {
@@ -3831,7 +3859,7 @@
   function configureCompactManagementFilters() {
     const fields = {
       agency: ['masterSearch', 'masterStatusFilter'],
-      merchant: ['masterSearch', 'masterStatusFilter'],
+      merchant: ['masterSearch', 'storeAgencyCombo', 'masterStatusFilter', 'storePageSize'],
       store: ['masterSearch', 'storeAgencyCombo', 'storeMerchantCombo', 'masterStatusFilter', 'storeSortSelect', 'storePageSize'],
     }[activeModule];
     if (!fields) return;
@@ -4338,6 +4366,15 @@
   }
 
   function getRowValues(item) {
+    if (organizationGrid) return organizationGrid.columns.map(([label, key]) => {
+      if (activeModule === 'merchant' && label === 'Agency') {
+        const agency = gridAgencies.get(String(item.primary_agency_id));
+        return agency ? [agency.name, agency.code].filter(Boolean).join(' - ') : (item[key] ?? '');
+      }
+      if (key === 'id') return item.id ?? item.store_id ?? item.i_store_id ?? '';
+      if (label === 'Created Date') return String(item[key] || '').replace('T', ' ').slice(0, 16);
+      return item[key] ?? '';
+    });
     const resolvedId = item.device_category_id ?? item.device_type_id ?? item.id ?? item.store_id ?? item.i_store_id ?? '';
     const name = item.name || item.merchant_name || item.store_name || item.email || item.user_email || `${item.first_name || ''} ${item.last_name || ''}`.trim() || '';
     const description = item.description || item.code || item.role || item.business_type || item.operation_type || item.channel_type || item.store_name || item.store_code || item.merchant_name || item.store_name || '';
@@ -4532,6 +4569,13 @@
     const isIdFirstColumn = firstHeader === 'id';
 
     return [...(items || [])].sort((a, b) => {
+      if (activeModule === 'merchant' && columnIndex === 0) {
+        const left = gridAgencies.get(String(a.primary_agency_id));
+        const right = gridAgencies.get(String(b.primary_agency_id));
+        const compare = (x, y) => String(x ?? '').localeCompare(String(y ?? ''), undefined, { sensitivity: 'base' });
+        return (compare(left?.name ?? a.primary_agency_name, right?.name ?? b.primary_agency_name)
+          || compare(left?.code, right?.code)) * directionMultiplier;
+      }
       if (columnIndex === 0 && isIdFirstColumn) {
         const leftId = Number(a?.device_category_id ?? a?.device_type_id ?? a?.id ?? a?.store_id ?? a?.i_store_id ?? 0);
         const rightId = Number(b?.device_category_id ?? b?.device_type_id ?? b?.id ?? b?.store_id ?? b?.i_store_id ?? 0);
@@ -4579,6 +4623,10 @@
     }
     updateMasterSortIndicators();
     announceMasterSortChange();
+    if (activeModule === 'merchant') {
+      reloadStoreFromFirstPage();
+      return;
+    }
     renderList(currentItems, selectedMasterId.value || null);
   }
 
@@ -4594,10 +4642,10 @@
     masterListHeader.innerHTML = '';
     const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
     if (activeModule === 'store') {
-      ['Merchant / Store', 'Agency', 'Business Type', 'Status'].forEach((label, i) => {
+      config.headers.forEach((label, i) => {
         const th = document.createElement('th');
         th.textContent = label;
-        if (i === 3) th.classList.add('status-col', 'store-col-status');
+        if (i === config.statusIndex) th.classList.add('status-col', 'store-col-status');
         masterListHeader.appendChild(th);
       });
       return;
@@ -4610,9 +4658,10 @@
       th.setAttribute('role', 'button');
       th.setAttribute('aria-label', `${col} sort`);
       th.setAttribute('aria-sort', 'none');
-      if (idx === 0) {
+      if (idx === 0 && activeModule !== 'merchant') {
         th.classList.add('role-col-id');
       }
+      if (activeModule === 'merchant' && idx === 0) th.classList.add('merchant-col-agency');
       if (idx === statusIdx) {
         th.classList.add('status-col');
       }
@@ -4720,10 +4769,24 @@
         storeGrid.totalPages = payload.total_pages;
         updateStorePager();
       }
+      if (activeModule === 'merchant') {
+        // The existing Merchant API returns an array; keep filtering/paging in the common UI.
+        items = items.filter(item => !storeGrid.agencyId || String(item[organizationGrid.agencyKey]) === storeGrid.agencyId);
+        items = getSortedMasterItems(items);
+        storeGrid.total = items.length;
+        storeGrid.totalPages = Math.max(1, Math.ceil(items.length / storeGrid.pageSize));
+        if (highlightId) {
+          const index = items.findIndex(item => String(item.id) === String(highlightId));
+          if (index >= 0) storeGrid.page = Math.floor(index / storeGrid.pageSize) + 1;
+        }
+        storeGrid.page = Math.min(storeGrid.page, storeGrid.totalPages);
+        items = items.slice((storeGrid.page - 1) * storeGrid.pageSize, storeGrid.page * storeGrid.pageSize);
+        updateStorePager();
+      }
       renderList(items, highlightId);
     } catch (error) {
       console.error('Failed to load master list:', error);
-      masterListBody.innerHTML = `<tr><td class="text-center text-danger py-4" colspan="${activeModule === 'store' ? 4 : config.headers.length}">Failed to load data. Refresh or sign in again.</td></tr>`;
+      masterListBody.innerHTML = `<tr><td class="text-center text-danger py-4" colspan="${config.headers.length}">Failed to load data. Refresh or sign in again.</td></tr>`;
     }
   }
 
@@ -4733,7 +4796,7 @@
     const prev = document.getElementById('storePagerPrev');
     const next = document.getElementById('storePagerNext');
     if (!info || !pageLabel || !prev || !next) return;
-    info.textContent = `${storeGrid.total} store${storeGrid.total === 1 ? '' : 's'}`;
+    info.textContent = `${storeGrid.total} ${activeModule}${storeGrid.total === 1 ? '' : 's'}`;
     pageLabel.textContent = `Page ${storeGrid.page} / ${storeGrid.totalPages}`;
     prev.disabled = storeGrid.page <= 1;
     next.disabled = storeGrid.page >= storeGrid.totalPages;
@@ -4745,10 +4808,12 @@
   }
 
   function setupStoreGridControls() {
-    if (activeModule !== 'store') return;
-    document.getElementById('storeFilterBar')?.classList.remove('d-none');
+    if (!organizationGrid) return;
     document.getElementById('storeListPager')?.classList.remove('d-none');
-    masterSearch.placeholder = 'Search Agency, Merchant or Store name/code...';
+    if (activeModule === 'store') {
+      document.getElementById('storeFilterBar')?.classList.remove('d-none');
+      masterSearch.placeholder = 'Search Agency, Merchant or Store name/code...';
+    }
 
     const sortSelect = document.getElementById('storeSortSelect');
     sortSelect.value = storeGrid.sort;
@@ -4775,22 +4840,38 @@
       loadList();
     });
 
-    const merchantFilter = createFilterCombo('storeMerchantCombo', 'All Merchants', masterSeedData.storeMerchants || [], (value) => {
-      storeGrid.merchantId = value;
+    const filterOptions = (options) => options.map(option => ({
+      ...option, label: [option.name, option.code].filter(Boolean).join(' - '),
+    }));
+    const merchantOptions = filterOptions(masterSeedData.storeMerchants || []);
+    const agencyOptions = filterOptions(masterSeedData.merchantAgencies || []);
+    const merchantFilter = document.getElementById('storeMerchantCombo');
+    const agencyFilter = document.getElementById('storeAgencyCombo');
+    const allMerchants = { value: '', label: 'All Merchants' };
+    setSelectOptions(merchantFilter, [allMerchants, ...merchantOptions]);
+    setSelectOptions(agencyFilter, [{ value: '', label: 'All Agencies' }, ...agencyOptions]);
+    merchantFilter.addEventListener('change', () => {
+      storeGrid.merchantId = merchantFilter.value;
       reloadStoreFromFirstPage();
     });
-    createFilterCombo('storeAgencyCombo', 'All Agencies', masterSeedData.merchantAgencies || [], (value) => {
+    agencyFilter.addEventListener('change', () => {
+      const value = agencyFilter.value;
       storeGrid.agencyId = value;
       const merchantIds = new Set(masterStoreOptions
         .filter(store => String(store.installed_by_agency_id ?? '') === value)
         .map(store => String(store.merchant_id)));
-      const options = (masterSeedData.storeMerchants || []).filter(merchant => !value || merchantIds.has(String(merchant.value)));
-      storeGrid.merchantId = merchantFilter.setOptions(options);
+      const options = merchantOptions.filter(merchant => !value || merchantIds.has(String(merchant.value)));
+      if (activeModule === 'store') {
+        const selected = options.some(option => String(option.value) === storeGrid.merchantId)
+          ? storeGrid.merchantId : '';
+        setSelectOptions(merchantFilter, [allMerchants, ...options], selected);
+        storeGrid.merchantId = merchantFilter.value;
+      }
       reloadStoreFromFirstPage();
     });
   }
 
-  // Type-to-search select; options are { value, label } where label is "CODE - Name".
+  // Type-to-search select; options are { value, label }.
   function createFilterCombo(containerId, allLabel, options, onChange) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -4840,6 +4921,7 @@
     };
 
     input.addEventListener('focus', () => { input.select(); renderMenu(''); });
+    input.addEventListener('click', () => renderMenu(''));
     input.addEventListener('input', () => renderMenu(input.value));
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
@@ -4877,7 +4959,7 @@
     currentItems = items || [];
     masterListBody.innerHTML = '';
     if (!items || items.length === 0) {
-      masterListBody.innerHTML = `<tr><td class="text-center text-muted py-4" colspan="${activeModule === 'store' ? 4 : config.headers.length}">No items found.</td></tr>`;
+      masterListBody.innerHTML = `<tr><td class="text-center text-muted py-4" colspan="${config.headers.length}">No items found.</td></tr>`;
       return;
     }
 
@@ -4895,19 +4977,13 @@
       const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
       if (activeModule === 'store') {
         const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-        const [agency, merchant, storeName, bizType, statusValue, registered] = getRowValues(item);
-        const normalized = String(statusValue ?? '').toLowerCase() === 'active' ? 'active' : 'inactive';
-        tr.innerHTML = `
-          <td class="store-cell-main">
-            <div class="store-cell-merchant" title="${esc(merchant)}">${esc(merchant)}</div>
-            <div class="store-cell-store" title="${esc(storeName)}">${esc(storeName)}</div>
-          </td>
-          <td><span class="cell-ellipsis" title="${esc(agency)}">${esc(agency)}</span></td>
-          <td><span class="cell-ellipsis" title="${esc(bizType)}">${esc(bizType)}</span></td>
-          <td class="store-col-status">
-            <span class="store-status-badge ${normalized}">${normalized}</span>
-            <div class="store-cell-date" title="Registered At">${esc(registered)}</div>
-          </td>`;
+        tr.innerHTML = getRowValues(item).map((value, index) => {
+          if (index === config.statusIndex) {
+            const normalized = String(value).toLowerCase() === 'active' ? 'active' : 'inactive';
+            return `<td class="store-col-status"><span class="store-status-badge ${normalized}">${normalized}</span></td>`;
+          }
+          return `<td><span class="cell-ellipsis" title="${esc(value)}">${esc(value)}</span></td>`;
+        }).join('');
         tr.addEventListener('click', () => selectItem(item, tr));
         tr.addEventListener('dblclick', () => {
           selectItem(item, tr);
@@ -4956,6 +5032,10 @@
         }
         if (activeModule === 'store' && idx === 5) {
           return `<td class="text-nowrap">${value ?? ''}</td>`;
+        }
+        if (activeModule === 'merchant' && idx === 0) {
+          const text = String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+          return `<td class="merchant-col-agency">${text}</td>`;
         }
         if (activeModule === 'merchant' && idx === 1) {
           return `<td><span class="merchant-row-code">${value ?? ''}</span></td>`;
@@ -7990,7 +8070,7 @@
   }
 
   async function handleExport(format) {
-    if (activeModule === 'store') {
+    if (organizationGrid) {
       // Export the full filtered/sorted result set, not just the visible page.
       try {
         const res = await fetch(getCollectionUrl(buildQuery({ all: true })), {
@@ -8002,6 +8082,10 @@
         const allItems = await res.json();
         const pageItems = currentItems;
         currentItems = Array.isArray(allItems) ? allItems : [];
+        if (activeModule === 'merchant') {
+          currentItems = getSortedMasterItems(currentItems.filter(item =>
+            !storeGrid.agencyId || String(item[organizationGrid.agencyKey]) === storeGrid.agencyId));
+        }
         try {
           runExport(format);
         } finally {
@@ -8472,12 +8556,12 @@
   });
   masterSearch.addEventListener('keyup', (e) => {
     if (e.key !== 'Enter') return;
-    if (activeModule === 'store') reloadStoreFromFirstPage();
+    if (organizationGrid) reloadStoreFromFirstPage();
     else loadList();
   });
   if (masterStatusFilter) {
     masterStatusFilter.addEventListener('change', () => {
-      if (activeModule === 'store') reloadStoreFromFirstPage();
+      if (organizationGrid) reloadStoreFromFirstPage();
       else loadList();
     });
   }

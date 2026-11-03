@@ -37,6 +37,12 @@ Platform navigation
   its Merchant filter includes Merchants with Stores installed by that Agency.
   Common License/Subscription Store options follow the selected Merchant; License
   Merchant options follow its Agency. Installation Agency is not Merchant ownership.
+- Merchant/Store list columns use one organization-grid configuration with Agency
+  first, then Merchant/Store identity, Status and Created Date. Merchant Agency is
+  Primary Agency; Store Agency is Assigned/Installation Agency. Merchant Agency
+  filtering and Rows paging run in the common UI over the existing array API;
+  Store retains server-side filtering, sorting and pagination. Exports include
+  the full filtered result rather than only the displayed page.
 - List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
 - The same stylesheet is attached by `platform_base.html` for existing management,
   Users, Sessions, Store Management, Merchants Tree, and System Settings pages.
