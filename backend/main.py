@@ -142,7 +142,6 @@ def favicon():
 @app.on_event("startup")
 def on_startup():
     from backend.services.web_sessions import idle_timeout, max_minutes
-    idle_timeout()
     max_minutes()
     from backend.services.session_metadata import trusted_proxy_networks
     trusted_proxy_networks()
@@ -156,6 +155,8 @@ def on_startup():
 
     ensure_platform_database_exists()
     init_platform_db()
+    with PlatformSessionLocal() as db:
+        idle_timeout(db)
 
 
 # ✅ 플랫폼 홈

@@ -91,6 +91,62 @@ def login_token(factory, user_id=1, client="device-A"):
         return svc.create_session(db, user, request(client=client), claims)
 
 
+class WebSessionConfirmationBrowserTests(unittest.TestCase):
+    def test_common_login_confirmation_cancel_approve_and_close(self):
+        import json
+        import re
+        from tools import test_image_components as browser
+
+        if not browser.BROWSER.is_file():
+            self.skipTest("Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+        source = (browser.ROOT / "templates" / "platform" / "platform_home.html").read_text(encoding="utf-8")
+        panel = source[source.index('              <div id="loginSessionConflict"'):
+                       source.index('              <div class="login-modal-remember">')]
+        handler = source[source.index("  let loginPending = false;"):
+                         source.index('  document.getElementById("registerForm").addEventListener')]
+        handler = re.sub(r"\s+$", "", handler)
+        script = "const panel=" + json.dumps(panel) + ";\n" + r"""
+document.body.insertAdjacentHTML('beforeend','<div id="modal"><form id="form"><input name="store_code" value="TEST"><input name="email" value="test@example.test"><input name="password" value="test-only"><button type="submit">Login</button>'+panel+'</form></div>');
+const loginForm=document.getElementById('form'),loginModalEl=document.getElementById('modal');
+const storeInput=loginForm.querySelector('[name="store_code"]'),emailInput=loginForm.querySelector('[name="email"]');
+const loginEndpoint='/auth/login',rememberStore=null,rememberEmail=null;
+let error='',mode='conflict',calls=[];
+function setLoginError(text){error=text;}
+function navigatePostToStableAuth(){throw Error('Unexpected fallback');}
+window.fetch=async(path,options)=>{
+  calls.push({path,approved:options.body.get('replace_active_session')});
+  if(mode==='conflict')return new Response(JSON.stringify({code:'ACTIVE_SESSION_EXISTS',message:'Conflict'}),{status:409});
+  if(mode==='invalid')return new Response(JSON.stringify({message:'Invalid credentials.'}),{status:401});
+  return new Response(JSON.stringify({message:'Approved response'}),{status:400});
+};
+""" + handler + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+const tick=()=>new Promise(r=>setTimeout(r,20));
+const wait=async(check)=>{for(let n=0;n<100;n++){if(check())return;await tick();}throw Error('UI timeout');};
+const prompt=document.getElementById('loginSessionConflict'),submit=()=>loginForm.dispatchEvent(new Event('submit',{cancelable:true}));
+(async()=>{
+  assert(document.getElementById('loginSessionContinue').textContent==='Sign Out Other Device & Continue','explicit approval label');
+  submit();await wait(()=>!prompt.classList.contains('d-none'));
+  assert(calls.length===1&&!calls[0].approved,'initial request never takes over');
+  submit();assert(calls.length===1,'duplicate submission blocked');
+  document.getElementById('loginSessionCancel').click();await wait(()=>!loginPending);
+  assert(calls.length===1&&prompt.classList.contains('d-none'),'cancel sends no new login');
+  submit();await wait(()=>!prompt.classList.contains('d-none'));
+  mode='approved';document.getElementById('loginSessionContinue').click();await wait(()=>!loginPending);
+  assert(calls.length===3&&calls[2].approved==='true','only approval resubmits with flag');
+  assert(error==='Approved response','response handled by existing error flow');
+  mode='conflict';submit();await wait(()=>!prompt.classList.contains('d-none'));
+  loginModalEl.dispatchEvent(new Event('hidden.bs.modal'));await wait(()=>!loginPending);
+  assert(calls.length===4,'closing prompt cancels without request');
+  mode='invalid';submit();await wait(()=>!loginPending);
+  assert(error==='Invalid credentials.'&&prompt.classList.contains('d-none'),'wrong credentials never prompt');
+  assert(!loginForm.querySelector('[type="submit"]').disabled,'submit restored');
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
+"""
+        browser.SharedImageComponentTests.run_component_script(self, script)
+
+
 class WebSessionTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
@@ -175,6 +231,117 @@ class WebSessionTests(unittest.TestCase):
             self.assertEqual(row.c_ip_address, "192.0.2.10")
             self.assertEqual(row.c_user_agent, "Test Browser")
             self.assertEqual(row.c_client_id, "device-A")
+
+    def test_confirmed_replacement_for_all_login_scopes(self):
+        for context, user_id, extra in (
+            ("platform", 1, {}),
+            ("store", 3, {}),
+            ("merchant", 3, {"merchant_id": 1}),
+            ("agency", 3, {"agency_id": 1}),
+        ):
+            with self.subTest(context=context):
+                with self.factory() as db:
+                    user = db.get(PlatformUser, user_id)
+                    if context == "merchant":
+                        db.add(Role(i_role_id=98, c_name="Merchant Admin", c_status="active"))
+                        db.get(Merchant, 1).c_status = "active"
+                        user.i_role_id, user.i_merchant_id, user.i_store_id = 98, 1, ADMIN_STORE_ID
+                    elif context == "agency":
+                        db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
+                        db.get(Agency, 1).c_status = "active"
+                        user.i_role_id, user.i_agency_id = 99, 1
+                        user.i_merchant_id, user.i_store_id = None, ADMIN_STORE_ID
+                    db.commit()
+                    claims = {"scope_type": context, **extra}
+                    old_token = svc.create_session(db, user, request(client="device-A"), claims)
+                    settings = db.get(SystemSettings, 1)
+                    settings.i_web_session_idle_minutes = 45
+                    row = db.query(SessionTbl).filter_by(i_platform_user_id=user_id, c_status="ACTIVE").one()
+                    row.dt_last_active = svc.utcnow() - timedelta(minutes=10)
+                    db.commit()
+                    svc.authenticate(request(old_token), db)
+                    row.dt_last_active = svc.utcnow() - timedelta(minutes=10)
+                    settings.i_web_session_idle_minutes = 5
+                    db.commit()
+                    with self.assertRaises(HTTPException):
+                        svc.authenticate(request(old_token), db)
+                    self.assertEqual(db.get(SessionTbl, row.i_session_id).c_status, "EXPIRED")
+                    settings.i_web_session_idle_minutes = 30
+                    db.commit()
+                    old_token = svc.create_session(db, user, request(client="device-A"), claims)
+                    with self.assertRaises(svc.ActiveSessionExists):
+                        svc.create_session(db, user, request(client="device-B"), claims)
+                    self.assertEqual(svc.authenticate(request(old_token), db).i_platform_user_id, user_id)
+                    new_token = svc.create_session(db, user, request(client="device-B"), claims,
+                                                   replace_active_session=True)
+                    active = db.query(SessionTbl).filter_by(i_platform_user_id=user_id, c_status="ACTIVE").all()
+                    self.assertEqual(len(active), 1)
+                    self.assertEqual(active[0].c_client_id, "device-B")
+                    old_row = db.query(SessionTbl).filter_by(
+                        c_session_key=svc.decode_web_token(old_token)["sid"]).one()
+                    self.assertEqual(old_row.c_status, "REPLACED")
+                    self.assertEqual(old_row.i_terminated_by, user_id)
+                    self.assertIsNotNone(old_row.dt_terminated)
+                    from backend.services.web_session_http import session_error_response
+                    with patch("backend.services.web_session_http.PlatformSessionLocal", self.factory):
+                        ended = session_error_response(request(old_token), svc.SESSION_ENDED)
+                    self.assertIn("reason=signed_in_elsewhere", ended.headers["X-Awsum-Login"])
+                    with self.assertRaises(HTTPException) as exc:
+                        svc.authenticate(request(old_token), db)
+                    self.assertEqual(exc.exception.status_code, 401)
+                    self.assertEqual(svc.authenticate(request(new_token), db).i_platform_user_id, user_id)
+                    svc.logout_session(request(new_token), db)
+
+    def test_only_replaced_sessions_show_other_device_reason(self):
+        from backend.services.web_session_http import session_error_response
+        token = login_token(self.factory)
+        for status in ("REPLACED", "LOGGED_OUT", "EXPIRED", "TERMINATED"):
+            with self.subTest(status=status), self.factory() as db:
+                row = db.query(SessionTbl).one()
+                row.c_status = status
+                db.commit()
+                with patch("backend.services.web_session_http.PlatformSessionLocal", self.factory):
+                    response = session_error_response(request(token), svc.SESSION_ENDED)
+                expected = "signed_in_elsewhere" if status == "REPLACED" else "session_expired"
+                self.assertIn("reason=" + expected, response.headers["X-Awsum-Login"])
+
+    def test_http_confirmed_replacement_revalidates_credentials_and_redirects_old_device(self):
+        def dependency():
+            with self.factory() as db:
+                yield db
+        with patch.dict(app.dependency_overrides, {auth.get_db: dependency}), \
+             patch("backend.main.PlatformSessionLocal", self.factory), \
+             patch("backend.services.web_session_http.PlatformSessionLocal", self.factory):
+            first = TestClient(app, follow_redirects=False)
+            second = TestClient(app, follow_redirects=False)
+            self.addCleanup(first.close)
+            self.addCleanup(second.close)
+            data = {"access_code": "ADMIN", "login_mode": "platform_admin",
+                    "email": "user1@example.test", "password": PASSWORD}
+            self.assertEqual(first.post("/platform-admin/login", data=data).status_code, 303)
+            conflict = second.post("/platform-admin/login", data=data)
+            self.assertEqual(conflict.status_code, 409)
+            self.assertEqual(conflict.json()["code"], "ACTIVE_SESSION_EXISTS")
+            self.assertNotIn("access_token", second.cookies)
+            bad = second.post("/platform-admin/login", data={
+                **data, "password": "wrong", "replace_active_session": "true",
+            })
+            self.assertEqual(bad.status_code, 401)
+            with self.factory() as db:
+                svc.authenticate(request(first.cookies.get("access_token")), db)
+            approved = second.post("/platform-admin/login", data={**data, "replace_active_session": "true"})
+            self.assertEqual(approved.status_code, 303)
+            old_token = first.cookies.get("access_token")
+            old_page = first.get("/platform/dashboard", headers={"Accept": "text/html"})
+            self.assertEqual(old_page.status_code, 303)
+            self.assertIn("/platform-admin", old_page.headers["location"])
+            self.assertIn("reason=signed_in_elsewhere", old_page.headers["location"])
+            first.cookies.set("access_token", old_token)
+            old_fetch = first.get("/platform/sessions")
+            self.assertEqual(old_fetch.status_code, 401)
+            self.assertIn("reason=signed_in_elsewhere", old_fetch.headers["X-Awsum-Login"])
+            with self.factory() as db:
+                svc.authenticate(request(second.cookies.get("access_token")), db)
 
     def test_logout_immediately_allows_other_device_and_old_jwt_is_denied(self):
         token = login_token(self.factory)

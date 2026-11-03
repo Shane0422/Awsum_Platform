@@ -66,11 +66,14 @@ def password_matches(user: PlatformUser, password: str) -> bool:
         return False
 
 
-def _finish_login(db: Session, user: PlatformUser, request: Request, claims: dict, target: str):
+def _finish_login(db: Session, user: PlatformUser, request: Request, claims: dict, target: str,
+                  *, replace_active_session: bool = False):
     try:
-        token = web_sessions.create_session(db, user, request, claims)
+        token = web_sessions.create_session(db, user, request, claims,
+                                            replace_active_session=replace_active_session)
     except web_sessions.ActiveSessionExists as exc:
-        return _login_error(str(exc), status_code=409)
+        return JSONResponse({"success": False, "message": str(exc), "code": "ACTIVE_SESSION_EXISTS"},
+                            status_code=409)
     except SQLAlchemyError:
         db.rollback()
         logger.exception("Unable to create web login session")
@@ -320,6 +323,7 @@ def platform_admin_login(
     login_mode: str = Form("platform_admin"),
     email: str = Form(...),
     password: str = Form(...),
+    replace_active_session: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     if login_mode != "platform_admin":
@@ -365,14 +369,16 @@ def platform_admin_login(
         "principal_type": "platform_user",
     }
 
-    return _finish_login(db, user, request, claims, "/platform/dashboard")
+    return _finish_login(db, user, request, claims, "/platform/dashboard",
+                         replace_active_session=replace_active_session)
 
 # ==========================
 # 🔑 Login Page (GET)
 # ==========================
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    suffix = "?reason=session_expired" if request.query_params.get("reason") == "session_expired" else ""
+    reason = request.query_params.get("reason")
+    suffix = "?reason=" + reason if reason in {"session_expired", "signed_in_elsewhere"} else ""
     return RedirectResponse("/login" + suffix, status_code=303)
 
 
@@ -414,6 +420,7 @@ def login(
     store_id: str = Form(None),
     email: str = Form(...),
     password: str = Form(...),
+    replace_active_session: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     # Normalise store identifier: strip whitespace, case-insensitive comparison
@@ -448,7 +455,8 @@ def login(
             "scope_type": owner_type.lower(), f"{owner_type.lower()}_id": owner_id,
             "access_code": getattr(owner, code_field), "principal_type": "platform_user",
         }
-        return _finish_login(db, user, request, claims, _organization_login_target(db, user))
+        return _finish_login(db, user, request, claims, _organization_login_target(db, user),
+                             replace_active_session=replace_active_session)
 
     # Store operation-user authentication remains unchanged.
     return _login_error(

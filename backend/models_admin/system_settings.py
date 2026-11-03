@@ -42,6 +42,7 @@ class SystemSettings(PlatformBase):
     c_default_timezone = Column(String(100), nullable=True)
     c_date_format = Column(String(30), nullable=True)
     c_time_format = Column(String(10), nullable=True)
+    i_web_session_idle_minutes = Column(Integer, nullable=True)
 
     i_updated_by = Column(
         Integer,

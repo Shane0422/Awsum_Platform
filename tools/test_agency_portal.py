@@ -182,7 +182,7 @@ class AgencyPortalTests(unittest.TestCase):
                             i_platform_user_id=user_id, c_status="ACTIVE").one()
                         expired_key = active.c_session_key
                         if timeout == "idle":
-                            active.dt_last_active = web_sessions.utcnow() - web_sessions.idle_timeout()
+                            active.dt_last_active = web_sessions.utcnow() - web_sessions.idle_timeout(db)
                         else:
                             active.dt_expires = web_sessions.utcnow() - timedelta(seconds=1)
                         db.commit()

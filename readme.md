@@ -32,6 +32,11 @@ Platform navigation
   using its observed height (`--platform-header-height`) at every viewport size.
   Icon, title, description and actions stick together; messages, filters and tables
   scroll normally. Other management page headers are unchanged.
+- Common organization selectors use Agency / Merchant / Store order without adding
+  fields absent from a screen. Store List's Agency remains the installation Agency:
+  its Merchant filter includes Merchants with Stores installed by that Agency.
+  Common License/Subscription Store options follow the selected Merchant; License
+  Merchant options follow its Agency. Installation Agency is not Merchant ownership.
 - List UI checks: `.venv\Scripts\python.exe -m unittest tools.test_master_group_ui`.
 - The same stylesheet is attached by `platform_base.html` for existing management,
   Users, Sessions, Store Management, Merchants Tree, and System Settings pages.
@@ -555,20 +560,33 @@ delegate to this service. New protected modules must use `authenticate()` (or
 an existing common `get_current_user` dependency); never validate JWTs alone.
 
 After password and login-permission checks, login must call `create_session()`.
-It locks the user row and expires abandoned sessions. Platform Admin and Agency
+It locks the user row and expires abandoned sessions. Platform, Agency, Merchant and Store
 share the same policy: successful login from the same browser terminates its
 ACTIVE session and creates a replacement atomically; the old token is invalid.
 The existing persistent HttpOnly `awsum_web_client` cookie identifies the browser,
 not IP or User-Agent. It survives browser/PC restart without logout. If the cookie
 is cleared, a private window or another browser is treated as a different client.
 Only another client's unexpired ACTIVE session blocks login with HTTP 409.
+The common login form recognizes `ACTIVE_SESSION_EXISTS` and asks whether to
+sign out the other device. Cancel makes no replacement request. Approval resubmits
+credentials with `replace_active_session=true`; credentials and scope permissions
+are checked again before the same locked transaction terminates old sessions and
+creates the new one. Terminated devices redirect to their login on the next
+protected page request, or through the common Fetch 401 handler.
+Cross-client replacement records `REPLACED` (retaining termination audit fields).
+Its login redirect uses `reason=signed_in_elsewhere` and the common Signed Out
+notice. Logout remains `LOGGED_OUT`, timeout `EXPIRED`, and administrative
+termination `TERMINATED`; these do not show the other-device notice.
 A wrong password never terminates an existing session. Session changes and
 login timestamp commit together. A PostgreSQL partial unique index
 also enforces one ACTIVE row per user across concurrent processes.
 
 Runtime configuration (positive integer minutes):
 
-- `AWSUM_WEB_SESSION_IDLE_MINUTES`: **30** by default.
+- System Settings > Security > Web Session Idle Timeout: **5-480 minutes**.
+  Priority is saved DB setting, then `AWSUM_WEB_SESSION_IDLE_MINUTES`, then **30**.
+  Active Platform/Agency/Merchant/Store web sessions use the new value at their
+  next authentication request. POS/KIOSK device authentication is excluded.
 - `AWSUM_WEB_SESSION_MAX_MINUTES`: **480** by default (absolute lifetime).
 
 UTC login/activity/logout/termination timestamps are stored in the existing

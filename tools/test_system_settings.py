@@ -59,8 +59,92 @@ class LocalEnvKeyTests(unittest.TestCase):
                 with patch.dict(os.environ, {ENCRYPTION_KEY_ENV: "from-env"}, clear=True):
                     self.assertEqual(encryption_key_value(), "from-env")
 
+class SecuritySettingsBrowserTests(unittest.TestCase):
+    def test_security_uses_common_dirty_and_save_flow(self):
+        import re
+        from tools import test_image_components as browser
+
+        if not browser.BROWSER.is_file():
+            self.skipTest("Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+        html = (browser.ROOT / "templates" / "platform" / "system_settings.html").read_text(encoding="utf-8")
+        pane = re.search(r'<section class="tab-pane fade" id="security-pane".*?</section>', html, re.S).group()
+        source = (browser.ROOT / "static" / "js" / "system_settings.js").read_text(encoding="utf-8")
+        values = source[source.index("  function valuesFor("):source.index("  function setMessage(")]
+        save = source[source.index("  async function saveSection("):source.index("  function setEmailTestResult(")]
+        script = "document.body.insertAdjacentHTML('beforeend'," + json.dumps(pane) + ");\n" + r"""
+const $=id=>document.getElementById(id);
+let settings={revision:3},snapshots={security:{web_session_idle_minutes:'30'}};
+const sections=['security'],API='/platform/api/system-settings',pendingLogoFile=null;
+let calls=[],message='';
+function updateSettings(response){settings=response;$('web_session_idle_minutes').value=response.security.web_session_idle_minutes;}
+function markSaved(section){snapshots[section]=valuesFor(section);}
+function setMessage(text){message=text;}
+async function api(path,options){
+  const payload=JSON.parse(options.body);calls.push({path,method:options.method,payload});
+  if(Number(payload.web_session_idle_minutes)<5)throw Error('Web Session Idle Timeout must be an integer from 5 to 480 minutes.');
+  return {revision:4,security:{web_session_idle_minutes:payload.web_session_idle_minutes}};
+}
+""" + values + save + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+(async()=>{
+ const input=$('web_session_idle_minutes');assert(input.min==='5'&&input.max==='480'&&input.step==='1','input range');
+ input.value='30';assert(!isDirty('security'),'initial snapshot');
+ input.value='45';assert(isDirty('security'),'unsaved Security setting detected');
+ await saveSection('security');
+ assert(calls[0].path===API+'/security'&&calls[0].method==='PUT','common settings endpoint');
+ assert(calls[0].payload.revision===3&&calls[0].payload.web_session_idle_minutes==='45','revision and setting posted');
+ assert(!isDirty('security')&&message==='Security settings saved.','saved snapshot');
+ input.value='4';await saveSection('security');
+ assert(document.querySelector('[data-save-result="security"]').textContent.includes('Save failed'),'validation surfaced');
+ assert(isDirty('security')&&!document.querySelector('[type="submit"]').disabled,'failed save keeps changes and enables retry');
+ document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
+"""
+        browser.SharedImageComponentTests.run_component_script(self, script)
+
 
 class SmtpPasswordPersistenceTests(unittest.TestCase):
+    def test_security_idle_timeout_precedence_validation_and_audit(self):
+        from backend.services.system_settings import web_session_idle_minutes
+        from backend.models_admin.system_settings_audit import SystemSettingsAudit
+
+        request = SimpleNamespace(headers={}, url=SimpleNamespace(netloc="x"))
+        user = SimpleNamespace(i_platform_user_id=1)
+        with self.Session() as db, patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(web_session_idle_minutes(db), 30)
+            with patch.dict(os.environ, {"AWSUM_WEB_SESSION_IDLE_MINUTES": "45"}):
+                self.assertEqual(web_session_idle_minutes(db), 45)
+            for value in (5, "480", 30):
+                row = system_settings_router.get_or_create_settings(db)
+                revision = row.i_revision if row else 0
+                with patch.object(system_settings_router, "_require_super_admin", return_value=user), \
+                     patch.object(system_settings_router, "_response_settings", return_value={}):
+                    system_settings_router.save_system_settings("security", {
+                        "revision": revision, "web_session_idle_minutes": value,
+                    }, request, db)
+                self.assertEqual(web_session_idle_minutes(db), int(value))
+                with patch.dict(os.environ, {"AWSUM_WEB_SESSION_IDLE_MINUTES": "invalid"}):
+                    self.assertEqual(web_session_idle_minutes(db), int(value))
+            audit_count = db.query(SystemSettingsAudit).count()
+            self.assertEqual(audit_count, 3)
+            self.assertEqual(db.query(SystemSettingsAudit).first().c_changed_fields, "web_session_idle_minutes")
+            for invalid in (4, 481, 30.5, True, None, "30.5", "", "invalid"):
+                with patch.object(system_settings_router, "_require_super_admin", return_value=user):
+                    with self.assertRaises(HTTPException) as exc:
+                        system_settings_router.save_system_settings("security", {
+                            "revision": db.get(SystemSettings, 1).i_revision,
+                            "web_session_idle_minutes": invalid,
+                        }, request, db)
+                self.assertEqual(exc.exception.status_code, 400)
+                self.assertEqual(web_session_idle_minutes(db), 30)
+                self.assertEqual(db.query(SystemSettingsAudit).count(), audit_count)
+            db.get(SystemSettings, 1).i_web_session_idle_minutes = None
+            db.commit()
+            for invalid in ("4", "481", "invalid"):
+                with patch.dict(os.environ, {"AWSUM_WEB_SESSION_IDLE_MINUTES": invalid}):
+                    with self.assertRaises(ValueError):
+                        web_session_idle_minutes(db)
+
     def test_website_normalization(self):
         from backend.routers.system_settings import _normalize_website
 
@@ -471,6 +555,7 @@ class SystemSettingsServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 patch.object(system_settings_router, "_row_or_defaults", return_value=None) as read_row,
+                patch("backend.services.system_settings.get_or_create_settings", return_value=None),
                 patch.object(system_settings_router, "get_storage_root", return_value=(Path(directory), "default")),
                 patch.object(system_settings_router, "smtp_public_status", return_value=status),
                 patch.object(system_settings_router, "smtp_environment_mode", return_value=False),

@@ -96,6 +96,20 @@ def get_or_create_settings(db: Session, *, create: bool = False) -> SystemSettin
     return row
 
 
+def web_session_idle_minutes(db: Session) -> int:
+    row = get_or_create_settings(db)
+    value = row.i_web_session_idle_minutes if row else None
+    if value is None:
+        raw = os.getenv("AWSUM_WEB_SESSION_IDLE_MINUTES", "30")
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError("AWSUM_WEB_SESSION_IDLE_MINUTES must be an integer from 5 to 480.") from exc
+    if isinstance(value, bool) or not isinstance(value, int) or not 5 <= value <= 480:
+        raise ValueError("Web Session Idle Timeout must be an integer from 5 to 480 minutes.")
+    return value
+
+
 def get_storage_root(db: Session | None = None) -> tuple[Path, str]:
     environment_path = os.getenv("AWSUM_STORAGE_ROOT", "").strip()
     if os.getenv("AWSUM_DATA_ROOT", "").strip():

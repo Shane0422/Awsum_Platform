@@ -58,7 +58,8 @@
   gap: 1rem;
   margin-bottom: 1rem;
 }
-.mg-page > .awsum-page-header {
+.mg-page > .awsum-page-header,
+body.page-master:is(.module-agency, .module-merchant, .module-store, .module-agency-type, .module-business-type) .platform-view > .awsum-page-header {
   position: sticky;
   top: var(--platform-header-height, 0px);
   z-index: 990;
@@ -319,6 +320,32 @@
 .awsum-admin :is(.master-list-toolbar, .store-filter-bar, .store-list-pager) {
   border-color: var(--list-border) !important;
   background-color: #f8fbff !important;
+}
+.awsum-admin #masterRoleView > #storeToolsArea.awsum-compact-filter {
+  padding: 0.65rem 0.85rem;
+}
+.awsum-admin #masterRoleView .awsum-compact-filter .awsum-filter-grid {
+  gap: 0.6rem;
+}
+.awsum-admin #masterRoleView .awsum-compact-filter .awsum-filter-field {
+  flex: 1 1 125px;
+  min-width: 0;
+}
+.awsum-admin #masterRoleView .awsum-compact-filter .awsum-filter-search {
+  flex: 3 1 260px;
+}
+.awsum-admin #masterRoleView .awsum-compact-filter .awsum-filter-sort {
+  flex: 1 1 175px;
+}
+.awsum-admin #masterRoleView .awsum-compact-filter .awsum-filter-rows {
+  flex: 0 1 105px;
+}
+.awsum-admin #masterRoleView #storeToolsArea.awsum-compact-filter .awsum-filter-grid :is(.form-control, .form-select) {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  font-size: 0.85rem;
 }
 .awsum-admin .platform-users-header { flex-wrap: wrap; }
 .awsum-admin .platform-users-toolbar { flex-wrap: wrap; }

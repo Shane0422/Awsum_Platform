@@ -39,6 +39,7 @@ from backend.services.system_settings import (
     require_encryption_key,
     safe_mail_error,
     send_configured_email,
+    web_session_idle_minutes,
     smtp_environment_mode,
     smtp_public_status,
 )
@@ -219,11 +220,13 @@ def _response_settings(db: Session) -> dict:
             "admin_timezone_note": "No per-admin timezone setting is currently implemented; this default applies to platform display settings.",
         },
         "timezones": sorted(available_timezones()),
+        "security": {"web_session_idle_minutes": web_session_idle_minutes(db)},
         "apply_notice": {
             "company": "Company information and logo apply immediately.",
             "storage": "Storage path changes apply immediately. Existing owner data, images (media), and image/path recovery maps are not moved; copy or migrate them before switching roots.",
             "email": "Email settings apply immediately to new messages. Existing SMTP environment settings take precedence until removed from the server environment.",
             "general": "General defaults apply to future platform displays. Database timestamps remain stored in UTC.",
+            "security": "Applies to all web sessions on their next authentication request. POS/KIOSK device authentication is excluded.",
         },
         "encryption_key_configured": bool(encryption_key_value()),
     }
@@ -440,6 +443,16 @@ def _save_section(
             if not row.c_from_email:
                 row.c_from_email = DEFAULT_FROM_EMAIL
                 changed_fields.append("from_email")
+    elif section == "security":
+        _validate_payload_fields(payload, {"web_session_idle_minutes"})
+        value = payload.get("web_session_idle_minutes")
+        if isinstance(value, str) and value.isascii() and value.isdigit():
+            value = int(value)
+        if isinstance(value, bool) or not isinstance(value, int) or not 5 <= value <= 480:
+            raise HTTPException(status_code=400, detail="Web Session Idle Timeout must be an integer from 5 to 480 minutes.")
+        if row.i_web_session_idle_minutes != value:
+            row.i_web_session_idle_minutes = value
+            changed_fields.append("web_session_idle_minutes")
     elif section == "general":
         _validate_payload_fields(payload, set(GENERAL_FIELDS))
         timezone_name = _clean_text(payload, "default_timezone", 100)

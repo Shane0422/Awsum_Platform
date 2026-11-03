@@ -4435,7 +4435,7 @@ def list_sessions(
     )
 
     normalized_status = (status or "").strip().upper()
-    if normalized_status and normalized_status not in {"ACTIVE", "LOGGED_OUT", "EXPIRED", "TERMINATED"}:
+    if normalized_status and normalized_status not in {"ACTIVE", "LOGGED_OUT", "EXPIRED", "TERMINATED", "REPLACED"}:
         raise HTTPException(status_code=422, detail="Invalid session status.")
     if normalized_status:
         query = query.filter(SessionTbl.c_status == normalized_status)

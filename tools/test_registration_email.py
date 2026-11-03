@@ -70,6 +70,46 @@ class RegistrationEmailTests(unittest.TestCase):
                         self.assertEqual(organization_admin_query(db, owner_type, 10).one().c_password, original)
             smtp.assert_not_called()
 
+    def test_organization_logins_share_explicit_session_replacement(self):
+        from fastapi import HTTPException
+        from fastapi.testclient import TestClient
+        from backend.services import web_sessions
+        from tools.test_web_sessions import request
+
+        self.client.put("/platform/agency/1", json={"status": "active"})
+        self.activate("MERCHANT")
+        self.activate("STORE")
+        for code, email, password in (
+            ("AGT00001", "Jane@example.test", "Awsum@0100"),
+            ("MER26ABCD", "primary@example.test", "Awsum@5858"),
+            ("STR26ABCD", "primary@example.test", "Awsum@5858"),
+        ):
+            with self.subTest(code=code):
+                first = TestClient(self.app, follow_redirects=False)
+                second = TestClient(self.app, follow_redirects=False)
+                self.addCleanup(first.close)
+                self.addCleanup(second.close)
+                data = {"store_code": code, "email": email, "password": password}
+                self.assertEqual(first.post("/auth/login", data=data).status_code, 303)
+                old_token = first.cookies.get("access_token")
+                rejected = second.post("/auth/login", data=data)
+                self.assertEqual(rejected.status_code, 409)
+                self.assertEqual(rejected.json()["code"], "ACTIVE_SESSION_EXISTS")
+                self.assertEqual(second.post("/auth/login", data={
+                    **data, "password": "wrong", "replace_active_session": "true",
+                }).status_code, 401)
+                with self.factory() as db:
+                    web_sessions.authenticate(request(old_token), db)
+                self.assertEqual(second.post("/auth/login", data={
+                    **data, "replace_active_session": "true",
+                }).status_code, 303)
+                with self.factory() as db:
+                    with self.assertRaises(HTTPException):
+                        web_sessions.authenticate(request(old_token), db)
+                    user = web_sessions.authenticate(request(second.cookies.get("access_token")), db)
+                    self.assertEqual(db.query(SessionTbl).filter_by(
+                        i_platform_user_id=user.i_platform_user_id, c_status="ACTIVE").count(), 1)
+
     def test_shared_preview_send_recipient_is_ephemeral_and_resend_supported(self):
         for owner_type in ("MERCHANT", "STORE"):
             with self.subTest(owner_type=owner_type):

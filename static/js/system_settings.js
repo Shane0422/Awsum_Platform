@@ -2,7 +2,7 @@
   'use strict';
 
   const API = '/platform/api/system-settings';
-  const sections = ['company', 'storage', 'email', 'general'];
+  const sections = ['company', 'storage', 'email', 'general', 'security'];
   let settings = null;
   let activeSection = 'company';
   let snapshots = {};
@@ -177,6 +177,7 @@
     fillStorage(response.storage);
     fillEmail(response.email);
     fillGeneral(response.general, response.timezones || ['UTC']);
+    $('web_session_idle_minutes').value = response.security.web_session_idle_minutes;
     sections.forEach((section) => {
       snapshots[section] = valuesFor(section);
       const result = document.querySelector('[data-save-result="' + section + '"]');

@@ -2774,7 +2774,6 @@
                 <label class="form-label">Business Type</label>
                 <select id="field_merchant_store_business_type" class="form-select">
                   <option value=""></option>
-                  {% for bt in business_types %}<option value="{{ bt.c_name }}">{{ bt.c_name }}</option>{% endfor %}
                 </select>
               </div>
               <div class="col-12 col-md-6">
@@ -3056,7 +3055,7 @@
       {% for bt in business_types %}"{{ bt.c_name }}"{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "merchants": [
-      {% for merchant in merchants %}{"value": "{{ merchant.i_merchant_id }}", "label": "{{ merchant.c_merchant_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
+      {% for merchant in merchants %}{"value": "{{ merchant.i_merchant_id }}", "label": "{{ merchant.c_merchant_name }}", "agency_id": {{ merchant.i_agency_id|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "agencies": [
       {% for agency in agencies %}{"value": "{{ agency.i_agency_id }}", "label": "{{ agency.c_agency_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
@@ -3071,7 +3070,7 @@
       {% for at in agency_types %}{"value": "{{ at.i_agency_type_id }}", "label": "{{ at.c_agency_type_name }}"}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "stores": [
-      {% for s in stores %}{"value": "{{ s.i_store_id }}", "label": "{{ s.c_store_name }}", "merchant_id": {{ s.i_merchant_id if s.i_merchant_id is not none else 'null' }}}{% if not loop.last %},{% endif %}{% endfor %}
+      {% for s in stores %}{"value": "{{ s.i_store_id }}", "label": "{{ s.c_store_name }}", "merchant_id": {{ s.i_merchant_id if s.i_merchant_id is not none else 'null' }}, "installed_by_agency_id": {{ s.i_installed_by_agency_id|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
     ],
     "pricingPlans": [
       {% for p in pricing_plans %}{"value": "{{ p.i_plan_id }}", "label": "{{ p.c_plan_code }} - {{ p.c_plan_name }}", "plan_code": "{{ p.c_plan_code }}", "plan_name": "{{ p.c_plan_name }}", "store_base_fee": {{ p.n_store_base_fee }}, "included_pos_count": {{ p.i_included_pos_count }}, "pos_fee": {{ p.n_pos_fee }}, "included_kiosk_count": {{ p.i_included_kiosk_count }}, "kiosk_fee": {{ p.n_kiosk_fee }}, "included_mobile_order_count": {{ p.i_included_mobile_order_count }}, "mobile_order_fee": {{ p.n_mobile_order_fee }}, "included_user_count": {{ p.i_included_user_count }}, "extra_user_fee": {{ p.n_extra_user_fee }}, "setup_fee": {{ p.n_setup_fee }}, "contract_term_month": {{ p.i_contract_term_month }}, "transaction_fee_rate": {{ p.n_transaction_fee_rate }}, "sort_order": {{ p.i_sort_order }}, "is_default": {{ 'true' if p.b_is_default else 'false' }}, "extra_device_fee": {{ p.n_extra_device_fee }}, "currency": "{{ p.c_currency }}"}{% if not loop.last %},{% endif %}{% endfor %}
@@ -3156,11 +3155,16 @@
   const merchantStoreDeviceModalTitle = document.getElementById('merchantStoreDeviceModalTitle');
 
   const masterSeedData = JSON.parse(document.getElementById('masterSeedData')?.textContent || '{}');
+  function normalizeLookupOptions(options) {
+    return options.map(option => typeof option === 'object'
+      ? { value: option.value, label: option.label }
+      : { value: option, label: option });
+  }
   const masterRoleOptions = masterSeedData.roles || [];
-  const masterBusinessTypeOptions = masterSeedData.businessTypes || [];
+  const masterBusinessTypeOptions = normalizeLookupOptions(masterSeedData.businessTypes || []);
   const masterMerchantOptions = masterSeedData.merchants || [];
   const masterAgencyOptions = masterSeedData.agencies || [];
-  const masterAgencyTypeOptions = masterSeedData.agencyTypes || [];
+  const masterAgencyTypeOptions = normalizeLookupOptions(masterSeedData.agencyTypes || []);
   const masterStoreOptions = masterSeedData.stores || [];
   const masterStoreLookup = {};
   masterStoreOptions.forEach((s) => { masterStoreLookup[String(s.value)] = s; });
@@ -3173,7 +3177,7 @@
   const masterDeviceTypeOptions = masterSeedData.deviceTypes || [];
   const masterDeviceTypeLookup = {};
   masterDeviceTypeOptions.forEach(t => { masterDeviceTypeLookup[String(t.value)] = t; });
-  const merchantScopedStoreModules = new Set(['subscription']);
+  const merchantScopedStoreModules = new Set(['subscription', 'license']);
 
   const masterConfig = {
     role: {
@@ -3374,7 +3378,7 @@
         { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'col-12 col-md-6' },
         { name: 'merchant_name', label: 'Merchant Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter merchant name', colClass: 'col-12 col-md-6' },
         { name: 'primary_agency_id', label: 'Primary Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
-        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions.map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
+        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
         { name: 'website', label: 'Website', type: 'text', icon: 'globe', placeholder: 'e.g. abcmarket.com', colClass: 'col-12 col-md-6' },
         { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
         { name: 'first_name', label: 'Contact First Name', type: 'text', icon: 'user', placeholder: 'Enter first name', colClass: 'col-12 col-md-6' },
@@ -3408,7 +3412,7 @@
         { name: 'store_name', label: 'Store Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter store name', colClass: 'col-12 col-md-6' },
         { name: 'merchant_id', label: 'Merchant', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Merchant' }, ...(masterSeedData.storeMerchants || [])], colClass: 'col-12 col-md-6' },
         { name: 'installed_by_agency_id', label: 'Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
-        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions.map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
+        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
         { name: 'operation_type', label: 'Operation Type', type: 'select', icon: 'building', options: [{ value: '', label: 'Select Operation Type' }, ...['Single Store', 'Branch', 'Franchise', 'HQ', 'Warehouse', 'Online Only', 'Other'].map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
         { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
         { name: 'email', label: 'Contact Email', type: 'email', icon: 'mail', placeholder: 'Enter contact email', colClass: 'col-12 col-md-6' },
@@ -3516,6 +3520,17 @@
   };
 
   const config = masterConfig[activeModule] || masterConfig.role;
+  const organizationFieldOrder = ['agency_id', 'primary_agency_id', 'installed_by_agency_id', 'merchant_id', 'store_id'];
+  function orderOrganizationFields(fields, nameOf) {
+    const ordered = fields.filter(field => organizationFieldOrder.includes(nameOf(field)))
+      .sort((a, b) => organizationFieldOrder.indexOf(nameOf(a)) - organizationFieldOrder.indexOf(nameOf(b)));
+    let index = 0;
+    return fields.map(field => organizationFieldOrder.includes(nameOf(field)) ? ordered[index++] : field);
+  }
+  config.fields = orderOrganizationFields(config.fields, field => field.type === 'select' ? field.name : '');
+  (config.tabs || []).forEach(tab => {
+    tab.fields = orderOrganizationFields(tab.fields, name => name);
+  });
   const isListCentricModule = true;
   const moduleLabels = {
     role: { list: 'Roles', singular: 'Role' },
@@ -3811,6 +3826,45 @@
     }).join('');
 
     masterStatusFilter.value = values.includes(current) ? current : '';
+  }
+
+  function configureCompactManagementFilters() {
+    const fields = {
+      agency: ['masterSearch', 'masterStatusFilter'],
+      merchant: ['masterSearch', 'masterStatusFilter'],
+      store: ['masterSearch', 'storeAgencyCombo', 'storeMerchantCombo', 'masterStatusFilter', 'storeSortSelect', 'storePageSize'],
+    }[activeModule];
+    if (!fields) return;
+    const surface = document.getElementById('storeToolsArea');
+    const bar = surface.querySelector('.awsum-filter-grid');
+    const labels = {
+      storeAgencyCombo: 'Agency', storeMerchantCombo: 'Merchant',
+      storeSortSelect: 'Sort', storePageSize: 'Rows',
+    };
+    fields.forEach(id => {
+      const control = document.getElementById(id);
+      let field;
+      if (id === 'masterSearch') field = document.getElementById('masterSearchWrap');
+      else if (id === 'masterStatusFilter') field = document.getElementById('masterStatusField');
+      else {
+        field = document.createElement('div');
+        const label = document.createElement('label');
+        label.className = 'awsum-list-filter-label';
+        label.textContent = labels[id];
+        const input = control.matches('input, select') ? control : control.querySelector('input');
+        if (!input.id) input.id = `${id}Input`;
+        label.htmlFor = input.id;
+        field.append(label, control);
+      }
+      field.classList.add('awsum-filter-field');
+      field.classList.toggle('awsum-filter-search', id === 'masterSearch');
+      field.classList.toggle('awsum-filter-sort', id === 'storeSortSelect');
+      field.classList.toggle('awsum-filter-rows', id === 'storePageSize');
+      bar.appendChild(field);
+    });
+    document.getElementById('storeFilterBar').classList.add('d-none');
+    masterListToolbar.classList.add('d-none');
+    surface.classList.add('awsum-compact-filter');
   }
 
   function configureMasterCategoryFilter() {
@@ -4721,12 +4775,17 @@
       loadList();
     });
 
-    createFilterCombo('storeAgencyCombo', 'All Agencies', masterSeedData.merchantAgencies || [], (value) => {
-      storeGrid.agencyId = value;
+    const merchantFilter = createFilterCombo('storeMerchantCombo', 'All Merchants', masterSeedData.storeMerchants || [], (value) => {
+      storeGrid.merchantId = value;
       reloadStoreFromFirstPage();
     });
-    createFilterCombo('storeMerchantCombo', 'All Merchants', masterSeedData.storeMerchants || [], (value) => {
-      storeGrid.merchantId = value;
+    createFilterCombo('storeAgencyCombo', 'All Agencies', masterSeedData.merchantAgencies || [], (value) => {
+      storeGrid.agencyId = value;
+      const merchantIds = new Set(masterStoreOptions
+        .filter(store => String(store.installed_by_agency_id ?? '') === value)
+        .map(store => String(store.merchant_id)));
+      const options = (masterSeedData.storeMerchants || []).filter(merchant => !value || merchantIds.has(String(merchant.value)));
+      storeGrid.merchantId = merchantFilter.setOptions(options);
       reloadStoreFromFirstPage();
     });
   }
@@ -4800,6 +4859,18 @@
       input.value = selectedLabel;
       closeMenu();
     });
+    return {
+      setOptions(nextOptions) {
+        options = nextOptions;
+        if (selectedValue && !options.some(option => String(option.value) === selectedValue)) {
+          selectedValue = '';
+          selectedLabel = '';
+          input.value = '';
+        }
+        closeMenu();
+        return selectedValue;
+      },
+    };
   }
 
   function renderList(items, highlightId) {
@@ -5431,6 +5502,10 @@
     const merchantInput = document.getElementById('field_merchant_id');
     const storeInput = document.getElementById('field_store_id');
     if (!merchantInput || !storeInput) return;
+    const agencyInput = document.getElementById('field_agency_id');
+    if (agencyInput && !agencyInput.value) {
+      setSelectOptions(merchantInput, [{ value: '', label: '' }, ...masterMerchantOptions], merchantInput.value);
+    }
 
     const merchantId = String(merchantInput.value || '').trim();
     const nextStoreId = String(preservedStoreId || storeInput.value || '').trim();
@@ -5450,6 +5525,16 @@
     merchantInput.addEventListener('change', () => {
       syncScopedStoreOptions('');
     });
+    const agencyInput = document.getElementById('field_agency_id');
+    if (agencyInput) {
+      agencyInput.addEventListener('change', () => {
+        const options = masterMerchantOptions.filter(merchant =>
+          !agencyInput.value || String(merchant.agency_id ?? '') === agencyInput.value);
+        const selected = options.some(merchant => String(merchant.value) === merchantInput.value) ? merchantInput.value : '';
+        setSelectOptions(merchantInput, [{ value: '', label: '' }, ...options], selected);
+        syncScopedStoreOptions('');
+      });
+    }
 
     syncScopedStoreOptions('');
   }
@@ -7347,6 +7432,8 @@
 
   function initMerchantStorePanelHandlers() {
     if (activeModule !== 'merchant') return;
+    setSelectOptions(document.getElementById('field_merchant_store_business_type'),
+      [{ value: '', label: '' }, ...masterBusinessTypeOptions]);
     initMerchantStoreDeviceSortHandlers();
     initMerchantStoreDeviceInfoTabs();
     getStoreLogoUploader(true);
@@ -7702,6 +7789,10 @@
   }
 
   function populateForm(item) {
+    const scopedMerchant = document.getElementById('field_merchant_id');
+    if (merchantScopedStoreModules.has(activeModule) && scopedMerchant) {
+      setSelectOptions(scopedMerchant, [{ value: '', label: '' }, ...masterMerchantOptions], '');
+    }
     const resolvedId = item.device_category_id ?? item.device_type_id ?? item.id ?? item.store_id ?? item.i_store_id ?? '';
     selectedMasterId.value = resolvedId;
     selectedOriginalRecord = { ...item, id: resolvedId };
@@ -8403,6 +8494,7 @@
   configureMasterCategoryFilter();
   applyListCentricLabels();
   setupStoreGridControls();
+  configureCompactManagementFilters();
   renderListHeader();
   renderForm();
   attachFormChangeWatchers();

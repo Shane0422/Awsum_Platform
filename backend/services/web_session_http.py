@@ -55,7 +55,22 @@ def login_path(request: Request) -> str:
 
 
 def session_error_response(request: Request, message: str):
-    target = login_path(request) + "?reason=session_expired"
+    from backend.services.web_sessions import decode_web_token
+    reason = "session_expired"
+    with PlatformSessionLocal() as db:
+        target = session_login_path(request, db)
+        try:
+            payload = decode_web_token(request.cookies.get("access_token") or "")
+        except HTTPException:
+            payload = None
+        if payload:
+            row = db.query(SessionTbl).filter(
+                SessionTbl.c_session_key == payload["sid"],
+                SessionTbl.i_platform_user_id == int(payload["uid"]),
+            ).first()
+            if row and row.c_status == "REPLACED":
+                reason = "signed_in_elsewhere"
+    target += "?reason=" + reason
     if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
         response = RedirectResponse(target, status_code=303)
     else:

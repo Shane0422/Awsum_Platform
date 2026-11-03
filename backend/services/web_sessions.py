@@ -13,6 +13,7 @@ from backend.models_admin.platform_user import PlatformUser
 from backend.models_admin.role import Role
 from backend.models_admin.session import SessionTbl
 from backend.services.session_context import login_identity
+from backend.services.system_settings import web_session_idle_minutes
 from backend.services.session_metadata import TrustedClientMetadata, collect_session_metadata
 from backend.utils.jwt_handler import ALGORITHM, SECRET_KEY, create_access_token
 
@@ -39,8 +40,8 @@ def _minutes(name: str, default: int) -> int:
     return value
 
 
-def idle_timeout() -> timedelta:
-    return timedelta(minutes=_minutes("AWSUM_WEB_SESSION_IDLE_MINUTES", 30))
+def idle_timeout(db: Session) -> timedelta:
+    return timedelta(minutes=web_session_idle_minutes(db))
 
 
 def max_minutes() -> int:
@@ -53,7 +54,7 @@ def expire_sessions(db: Session, *, user_id: int | None = None, now: datetime | 
         SessionTbl.c_status == "ACTIVE",
         or_(
             SessionTbl.dt_expires.is_(None), SessionTbl.dt_last_active.is_(None),
-            SessionTbl.dt_expires <= now, SessionTbl.dt_last_active <= now - idle_timeout(),
+            SessionTbl.dt_expires <= now, SessionTbl.dt_last_active <= now - idle_timeout(db),
         ),
     )
     if user_id is not None:
@@ -63,7 +64,7 @@ def expire_sessions(db: Session, *, user_id: int | None = None, now: datetime | 
 
 def create_session(
     db: Session, user: PlatformUser, request: Request, claims: dict,
-    *, trusted_client: TrustedClientMetadata | None = None,
+    *, trusted_client: TrustedClientMetadata | None = None, replace_active_session: bool = False,
 ) -> str:
     """Call only after validating credentials and login permissions. Commits atomically."""
     now = utcnow()
@@ -79,11 +80,13 @@ def create_session(
         SessionTbl.i_platform_user_id == locked_user.i_platform_user_id,
         SessionTbl.c_status == "ACTIVE",
     ).all()
-    if any(active.c_client_id != client_id for active in active_sessions):
+    if not replace_active_session and any(active.c_client_id != client_id for active in active_sessions):
         db.commit()  # persist expiry transitions, never terminate an active session
         raise ActiveSessionExists(ALREADY_SIGNED_IN)
     for active_session in active_sessions:
         _mark_session_terminated(active_session, locked_user.i_platform_user_id, now)
+        if active_session.c_client_id != client_id:
+            active_session.c_status = "REPLACED"
     # Release the ACTIVE uniqueness slot before inserting the replacement.
     db.flush()
     session_key = str(uuid4())
@@ -185,7 +188,7 @@ def authenticate(request: Request, db: Session, *, allow_password_change=False) 
     now = utcnow()
     if (
         row.dt_expires is None or row.dt_expires <= now
-        or row.dt_last_active is None or row.dt_last_active <= now - idle_timeout()
+        or row.dt_last_active is None or row.dt_last_active <= now - idle_timeout(db)
         or float(payload["exp"]) <= now.replace(tzinfo=timezone.utc).timestamp()
     ):
         row.c_status = "EXPIRED"

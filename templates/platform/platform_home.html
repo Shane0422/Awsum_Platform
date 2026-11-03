@@ -628,6 +628,20 @@
                 </div>
               </div>
               <div id="loginError" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+              {% if request.query_params.get('reason') == 'signed_in_elsewhere' %}
+              <div class="alert alert-warning" role="status">
+                <h3 class="h6">Signed Out</h3>
+                <p class="mb-0">Your account was signed in on another device.<br>This session has been signed out for security.</p>
+              </div>
+              {% endif %}
+              <div id="loginSessionConflict" class="alert alert-warning d-none" role="group" aria-labelledby="loginSessionConflictTitle" aria-describedby="loginSessionConflictText">
+                <h3 id="loginSessionConflictTitle" class="h6">Already Signed In</h3>
+                <p id="loginSessionConflictText">This account is currently signed in on another device.<br>Would you like to sign out the other device and continue here?</p>
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" id="loginSessionCancel" class="btn btn-outline-secondary">Cancel</button>
+                  <button type="button" id="loginSessionContinue" class="btn btn-primary">Sign Out Other Device &amp; Continue</button>
+                </div>
+              </div>
 
               <div class="login-modal-remember">
                 <div class="form-check">
@@ -719,7 +733,7 @@
   populateLoginFromStorage();
 
   const loginModalEl = document.getElementById('loginModal');
-  if (loginModalEl && (new URLSearchParams(location.search).get('reason') === 'session_expired' || {{ 'true' if login_entry_page|default(false) else 'false' }})) {
+  if (loginModalEl && (['session_expired', 'signed_in_elsewhere'].includes(new URLSearchParams(location.search).get('reason')) || {{ 'true' if login_entry_page|default(false) else 'false' }})) {
     if (new URLSearchParams(location.search).get('reason') === 'session_expired') setLoginError('Your session has ended or expired. Please sign in again.');
     bootstrap.Modal.getOrCreateInstance(loginModalEl).show();
   }
@@ -794,8 +808,36 @@
     form.submit();
   }
 
+  let loginPending = false;
+  function confirmSessionReplacement() {
+    const panel = document.getElementById("loginSessionConflict");
+    const cancel = document.getElementById("loginSessionCancel");
+    const proceed = document.getElementById("loginSessionContinue");
+    return new Promise(resolve => {
+      function finish(approved) {
+        panel.classList.add("d-none");
+        cancel.removeEventListener("click", onCancel);
+        proceed.removeEventListener("click", onContinue);
+        loginModalEl.removeEventListener("hidden.bs.modal", onCancel);
+        resolve(approved);
+      }
+      const onCancel = () => finish(false);
+      const onContinue = () => finish(true);
+      cancel.addEventListener("click", onCancel);
+      proceed.addEventListener("click", onContinue);
+      loginModalEl.addEventListener("hidden.bs.modal", onCancel);
+      panel.classList.remove("d-none");
+      cancel.focus();
+    });
+  }
+
   loginForm.addEventListener("submit", async function(e) {
     e.preventDefault();
+    if (loginPending) return;
+    loginPending = true;
+    const submit = loginForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
     setLoginError("");
 
     if (storeInput) storeInput.value = storeInput.value.trim();
@@ -817,6 +859,24 @@
     } catch (_) {
       navigatePostToStableAuth(loginEndpoint, formData);
       return;
+    }
+
+    if (response.status === 409) {
+      const conflict = await response.clone().json();
+      if (conflict.code === "ACTIVE_SESSION_EXISTS") {
+        if (!await confirmSessionReplacement()) return;
+        formData.set("replace_active_session", "true");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+          response = await fetch(loginEndpoint, { method: "POST", body: formData, signal: controller.signal });
+        } catch (_) {
+          setLoginError("Unable to complete sign in. Please try again.");
+          return;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
     }
 
     if (response.redirected) {
@@ -851,6 +911,12 @@
         }
       }
       setLoginError(message);
+    }
+    } catch (_) {
+      setLoginError("Unable to complete sign in. Please try again.");
+    } finally {
+      loginPending = false;
+      submit.disabled = false;
     }
   });
 
