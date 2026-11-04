@@ -72,10 +72,18 @@ in the Svelte starter screens.
 ### Input lifecycle
 
 - Unfocused input displays grouped fixed-two-decimal presentation.
-- Focus removes grouping for editing. Typing does not reformat on every
-  keystroke or move the caret.
+- Focus removes grouping for editing.
+- **Cents-based entry:** typed digits fill from the right — `1` → `0.01`,
+  `123` → `1.23`, `12345` → `123.45`. Backspace removes the last digit; deleting
+  every digit (or the whole selection) leaves the field blank, and typing `0`
+  enters `0.00`. Other typed characters, including `.`, are ignored; `-` flips the
+  sign only when no non-negative `data-money-min` applies. Each keystroke still
+  fires `input`, so live calculations (e.g. MD discount prices) keep working.
+  Read-only and disabled inputs are unaffected.
 - Blur validates and restores `#,##0.00`.
-- Correctly grouped pasted values are accepted.
+- Pasted digits only are treated as cents (`12345` → `123.45`); a pasted amount
+  with a point or grouping keeps its decimal meaning, and correctly grouped
+  values such as `2,500.50` are accepted.
 - Malformed grouping, alphabetic text, currency symbols, non-finite amounts,
   exponent strings, or more than two typed fractional digits are rejected with
   explicit native validity/accessible error state. Invalid text is not silently
@@ -84,6 +92,38 @@ in the Svelte starter screens.
   preserve domain-specific required/min/max rules.
 - Display of calculated values uses decimal half-up rounding to two places.
   This is presentation only; backend business arithmetic remains authoritative.
+
+### Common Money Keypad
+
+[static/js/money-keypad.js](../static/js/money-keypad.js) (global `AwsumMoneyKeypad`,
+styles `static/css/awsum-money-keypad.css`) adds an on-screen keypad to any
+`AwsumMoneyInput` field. It is loaded by the Platform, shared Dashboard and Store base
+layouts right after `money.js`. It reuses the common cents helpers
+(`minorUnitsOf` / `pushDigit` / `popDigit`), `format`, `validate` and `setValue`; it
+contains no formatting or validation of its own.
+
+Opt in by making the field's `$` prefix a button (clicks are delegated, so dynamic
+forms need no binding):
+
+```html
+<div class="input-group">
+  <button type="button" class="input-group-text" data-money-keypad
+          aria-label="Open amount keypad" aria-haspopup="dialog" aria-expanded="false">$</button>
+  <input class="form-control" data-awsum-money data-money-min="0">
+</div>
+<!-- or data-money-keypad="<input id>" when the button is not in the same input-group -->
+```
+
+- Opens with the field's current amount; the first digit starts a new amount
+  (cents-based: `1` → `0.01`, `123` → `1.23`). `00`, `C` (clear all), Backspace and
+  OK; physical digits, Backspace, Delete/C, Enter and Escape also work while open.
+- OK validates with the field's own required/min/max rules (errors stay in the keypad),
+  then writes through `setValue` and fires `input` + `change`, so live calculations and
+  dirty state behave like typing. Escape or an outside click closes without changes.
+- Placed below the field (above when there is no room) and clamped inside the viewport;
+  repositions on scroll/resize. Read-only and disabled inputs do not open it.
+- Applied first in MD Master: Price, P1–P3 Price, MD Detail Cost and Price. Other
+  screens adopt it by switching their `$` prefix to the button above.
 
 ### Existing HTML or dynamically created inputs
 
@@ -148,7 +188,7 @@ bundles and obsolete scratch tools.
 
 | Surface | Migrated money inputs |
 |---|---|
-| MD Master | Retail Price, Cost (permission-controlled), P1, P2, P3 |
+| MD Master | Retail Price, Cost (permission-controlled), P1, P2, P3, MD Detail Cost and Price |
 | License | Monthly Fee, Agency Commission amount, Platform Fee |
 | Subscription | Read-only Subscription Fee Snapshot |
 | Contract | Setup, monthly base/device/user/total fees, Tax Amount, Total Monthly Fee |
@@ -156,7 +196,7 @@ bundles and obsolete scratch tools.
 | Device Type | Default Monthly Fee |
 | Invoice | Subtotal, Tax amount, Total |
 
-There are **27 monetary controls** (5 MD and 22 metadata-defined controls,
+There are **29 monetary controls** (7 MD and 22 metadata-defined controls,
 including read-only controls). No current monetary input was found in the
 Svelte starter, Merchant/Store dashboards or the quantity-only Device/License
 issue dialogs. No not-yet-built Sales/Payment/Refund/Employee/POS/KIOSK UI was

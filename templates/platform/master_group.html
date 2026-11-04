@@ -4,26 +4,12 @@
 {% block page_title %}{{ mg_title }}{% endblock %}
 
 {% block content %}
+{# Master-Detail entities (left Tree + right form) share the MD Master layout; keep in sync with TREE_LEVELS in master_group.js. #}
+{% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind'] %}
 <link rel="stylesheet" href="/static/css/awsum-list.css?v=5">
+{% if mg_split %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=1">{% endif %}
 <style>
-  {% if mg_entity == 'md' %}
-  .mg-md-workspace { display: grid; grid-template-columns: minmax(240px, 26fr) minmax(0, 74fr); align-items: start; gap: .65rem; }
-  .mg-md-filter { margin-bottom: .4rem; }
-  .mg-md-filter .row { --bs-gutter-x: .5rem; --bs-gutter-y: 0; align-items: end; }
-  .mg-md-filter .awsum-list-filter-label { margin-bottom: .15rem; font-size: 10px; }
-  .mg-md-filter .form-control, .mg-md-filter .form-select { min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
-  .mg-md-pager { gap: .35rem !important; padding-top: .4rem; }
-  .mg-md-pager #mgPageSize { width: auto; min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
-  .mg-md-list-panel, .mg-md-form-panel { min-width: 0; padding: .55rem !important; }
-  .mg-md-row { cursor: pointer; }
-  .mg-md-row.selected > * { background: #edf4ff; }
-  .mg-md-row:focus-visible { outline: 2px solid #93bfff; outline-offset: -2px; }
-  .mg-md-form-header { gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
-  .mg-md-form-title { padding-left: .45rem; border-left: 3px solid var(--platform-blue, #1263eb); color: var(--list-navy); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; }
-  .mg-md-list-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
-  .mg-md-list-panel > .mg-md-filter, .mg-md-list-panel > .mg-md-pager { flex: 0 0 auto; }
-  .mg-md-list-panel > .awsum-list-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
-  .mg-md-list-panel thead th { position: sticky; top: 0; z-index: 1; }
+  {% if mg_split %}
   /* Tab panes share one grid cell, so the PageFrame keeps the tallest tab's height. */
   .mg-md-form .mg-md-pageframe .tab-content { display: grid; }
   .mg-md-form .mg-md-pageframe .tab-content > .tab-pane { display: block; grid-area: 1 / 1; visibility: hidden; }
@@ -44,6 +30,15 @@
   .mg-md-form #mgDetailSection .table { font-size: 11px; }
   .mg-md-form #mgDetailSection .table > :not(caption) > * > * { padding: .25rem .3rem; }
   .mg-md-form #mgDetailSection .btn { padding: .15rem .35rem; font-size: 11px; }
+  /* Light visual consistency for the MD form; structure and fields are unchanged. */
+  .mg-md-form-header .btn { padding: .25rem .7rem; font-size: 12px; line-height: 1.4; }
+  .mg-md-form .pm-section-head h3 { color: var(--list-navy); font-weight: 700; letter-spacing: .01em; }
+  .mg-md-form .form-label { color: #496486; font-weight: 600; }
+  /* Common required marker (.pm-req; its color is scoped to .pm-modal, which this inline form is not in). */
+  .mg-md-form .pm-req { color: #DC2626; }
+  .mg-md-form #mgDetailSection .table-responsive { border: 1px solid var(--list-border); border-radius: 6px; }
+  .mg-md-form #mgDetailSection .table { margin-bottom: 0 !important; }
+  .mg-md-form #mgDetailEditor { border-color: var(--list-border) !important; background: #f8fbff; }
   .mg-md-form .mg-md-top { display: grid; grid-template-columns: minmax(0, 1fr) 154px; gap: 20px; }
   .mg-md-form .mg-image-panel { justify-self: end; }
   .mg-md-form .mg-record-code { margin-bottom: 6px; }
@@ -68,9 +63,6 @@
   .mg-md-form .mg-record-code-input { background: var(--bs-secondary-bg, #f8f9fa); color: var(--list-muted); font-size: 11px; font-weight: 600; }
   .mg-md-form .mg-md-top { gap: 12px; }
   .mg-md-form #mgDetailSection .form-control, .mg-md-form #mgDetailSection .form-select { min-height: 26px; height: 26px; padding-top: 1px; padding-bottom: 1px; }
-  .mg-md-list-panel .table { font-size: 12px; }
-  .mg-md-list-panel .table > :not(caption) > * > * { padding: .22rem .4rem; }
-  @media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel { height: auto; max-height: 70vh; } }
   @media (max-width: 575.98px) { .mg-md-form .mg-md-top { grid-template-columns: 1fr; } .mg-md-form .mg-image-panel { justify-self: start; } }
   {% endif %}
   .mg-md-form .mg-price-table { display: grid; gap: 3px; }
@@ -101,7 +93,7 @@
 
   <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
 
-  {% if mg_entity != 'md' %}
+  {% if not mg_split %}
   {% call surface('filter') %}
       <div class="row g-2 flex-nowrap">
         <div class="col-6 col-lg-4">
@@ -127,7 +119,7 @@
       </div>
   {% endcall %}
   {% endif %}
-  {% if mg_entity == 'md' %}
+  {% if mg_split %}
   <div class="mg-md-workspace">
     {% call surface('table', '', 'mg-md-list-panel') %}
       <div class="row g-2 flex-nowrap mg-md-filter">
@@ -168,10 +160,10 @@
     {% call surface('table', '', 'mg-md-form-panel') %}
       <form id="mgForm" class="mg-md-form" novalidate>
         <div class="mg-md-form-header d-flex justify-content-between align-items-center">
-          <div class="mg-md-form-title">MD INFORMATION</div>
+          <div class="mg-md-form-title">{{ 'MD' if mg_entity == 'md' else mg_title | upper }} INFORMATION</div>
           <div class="visually-hidden">
-            <h2 class="h5 mb-1" id="mgModalTitle">Select an MD Master</h2>
-            <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new MD Master.</div>
+            <h2 class="h5 mb-1" id="mgModalTitle">Select {{ 'an' if mg_entity == 'md' else 'a' }} {{ mg_title }}</h2>
+            <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new {{ mg_title }}.</div>
           </div>
           <div class="d-flex gap-1 flex-shrink-0">
             <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="mgMdToggle" data-md-act="toggle">Deactivate</button>
@@ -204,8 +196,8 @@
   {% endif %}
 </div>
 
-{% if mg_entity != 'md' %}
-<div class="modal fade pm-modal{% if mg_entity == 'md' %} pm-modal-lg{% endif %}" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">
+{% if not mg_split %}
+<div class="modal fade pm-modal" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <form id="mgForm" novalidate>
@@ -230,5 +222,5 @@
   </div>
 </div>
 {% endif %}
-<script src="/static/js/master_group.js?v=29"></script>
+<script src="/static/js/master_group.js?v=45"></script>
 {% endblock %}

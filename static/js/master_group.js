@@ -13,6 +13,8 @@
   const yes = (v) => (v ? 'Yes' : 'No');
   const badge = (on) => `<span class="badge ${on ? 'text-bg-success' : 'text-bg-secondary'}">${on ? 'Active' : 'Inactive'}</span>`;
   // An unset price is shown as "Not set", never as $0.00.
+  // "$" prefix that opens the Common Money Keypad (static/js/money-keypad.js) for the money input next to it.
+  const MONEY_KEYPAD_BUTTON = '<button type="button" class="input-group-text" data-money-keypad aria-label="Open amount keypad" aria-haspopup="dialog" aria-expanded="false">$</button>';
   const money = (v) => (v == null || v === '' ? '<span class="text-muted">Not set</span>' : '$' + esc(AwsumMoneyInput.format(v)));
   const levelCell = (r, n) => {
     const price = r[`p${n}_price`];
@@ -44,50 +46,25 @@
 
   const taxLabel = (tax) => tax ? `${tax.name} (${Number(tax.rate)}%)` : '';
 
+  // Master-Detail (left Tree + right form) entities and the parent Category levels grouped in their tree
+  // (Tax, Category I and Item Kind have no parent, so their tree is a flat list). An entity not listed here
+  // would use the full-width list with the modal form.
+  const TREE_LEVELS = { tax: [], category1: [], category2: [1], category3: [1, 2], md: [1, 2, 3], item_kind: [] };
+  const split = Object.prototype.hasOwnProperty.call(TREE_LEVELS, entity);
+  const nameColumn = (text) => [['name', text, (r) => esc(r.name), true]];
+  const TREE_NAME_COLUMN = nameColumn('Category / Name');
+
   const COLUMNS = {
-    tax: [
-      ['code', 'Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['name', 'Tax Name', (r) => esc(r.name), true],
-      ['rate', 'Rate (%)', (r) => esc(r.rate), true],
-      ['active', 'Status', (r) => badge(r.active), true],
-    ],
-    category1: [
-      ['code', 'Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['name', 'Name', (r) => esc(r.name), true],
-      ['display_order', 'Order', (r) => esc(r.display_order), true],
-      ['active', 'Status', (r) => badge(r.active), true],
-    ],
-    category2: [
-      ['code', 'Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['', 'Category I', (r) => esc(r.category1_name), false],
-      ['name', 'Name', (r) => esc(r.name), true],
-      ['display_order', 'Order', (r) => esc(r.display_order), true],
-      ['active', 'Status', (r) => badge(r.active), true],
-    ],
-    category3: [
-      ['code', 'Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['', 'Category I', (r) => esc(r.category1_name), false],
-      ['', 'Category II', (r) => esc(r.category2_name), false],
-      ['name', 'Name', (r) => esc(r.name), true],
-      ...[1, 2, 3].map((n) => ['', `Tax ${n}`, (r) => esc(taxLabel(
-        (state.options.taxes || []).find((t) => t.id === r[`tax${n}_id`]),
-      )), false]),
-      ['display_order', 'Order', (r) => esc(r.display_order), true],
-      ['active', 'Status', (r) => badge(r.active), true],
-    ],
-    md: [
-      ['', 'Category', (r) => esc([r.category1_name, r.category2_name, r.category3_name].filter(Boolean).join(' > ')), false],
-      ['name', 'Name', (r) => esc(r.name), true],
-    ],
-    item_kind: [
-      ['code', 'System Code', (r) => `<span class="mg-code">${esc(r.code)}</span>`, true],
-      ['name', 'Display Name', (r) => esc(r.name), true],
-      ['display_order', 'Order', (r) => esc(r.display_order), true],
-      ['active', 'Status', (r) => badge(r.active), true],
-    ],
+    // Master-Detail lists show only the Name; parent Categories are group rows (see treeHtml).
+    tax: nameColumn('Tax Name'),
+    category1: TREE_NAME_COLUMN,
+    category2: TREE_NAME_COLUMN,
+    category3: TREE_NAME_COLUMN,
+    md: TREE_NAME_COLUMN,
+    item_kind: nameColumn('Display Name'),
   };
 
-  const state = { q: '', active: '', sort: '', direction: 'asc', page: 1, size: 20, items: [], options: null, editing: null, details: [], editingDetailId: null };
+  const state = { q: '', active: '', sort: '', direction: 'asc', page: 1, size: 20, items: [], options: null, editing: null, details: [], editingDetailId: null, collapsed: new Set(), lastData: null };
   let modal = null;
   let saving = false;
   let allowClose = false;
@@ -126,19 +103,55 @@
       const sorted = sortable && state.sort === key;
       const cls = sortable ? `sortable${sorted ? ' sorted' : ''}${sorted && state.direction === 'desc' ? ' desc' : ''}` : '';
       return `<th class="${cls}" ${sortable ? `data-sort="${key}" tabindex="0"` : ''}>${text}</th>`;
-    }).join('') + (entity === 'md' ? '' : '<th class="text-end">Actions</th>') + '</tr>';
+    }).join('') + (split ? '' : '<th class="text-end">Actions</th>') + '</tr>';
+  }
+
+  function rowHtml(r, columns, depth) {
+    return `<tr${split ? ` class="mg-md-row${state.editing && state.editing.id === r.id ? ' selected' : ''}" data-row-select="${r.id}" tabindex="0" aria-label="Edit ${esc(r.name)}" style="--mg-depth:${depth || 0}"` : ''}>${columns.map((c) => `<td>${c[2](r)}</td>`).join('')}
+          ${split ? '' : `<td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${r.id}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="toggle" data-id="${r.id}">${r.active ? 'Deactivate' : 'Activate'}</button>
+            ${r.system ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" data-id="${r.id}">Delete</button>`}
+          </td>`}</tr>`;
+  }
+
+  // ---- Master-Detail list: the current page's items grouped by their parent Categories (expand / collapse) ----
+  // Grouping is client-side over the same paged API result, so Search / Status / Sort / Paging stay unchanged.
+  const catKey = (level, r) => {
+    const id = r[`category${level}_id`];
+    const name = r[`category${level}_name`];
+    return id != null ? `c${level}:${id}` : (name ? `c${level}:${name}` : null);
+  };
+  // Tree levels for this entity, rendered by the Common AwsumMasterDetail tree (static/js/master-detail.js).
+  const treeLevels = (TREE_LEVELS[entity] || []).map((level) => ({
+    key: (r) => catKey(level, r),
+    name: (r) => r[`category${level}_name`] || `Category ${'I'.repeat(level)} not found`,
+    order: (r) => catOrder(level, r),
+  }));
+  // Category display order comes from the existing options lookup; unknown categories keep page order.
+  function catOrder(level, r) {
+    const list = (state.options && state.options[`category${level}`]) || [];
+    const index = list.findIndex((c) => c.id === r[`category${level}_id`]);
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+  }
+  const treeHtml = (items, columns) => AwsumMasterDetail.treeHtml({
+    items, levels: treeLevels, collapsed: state.collapsed, colspan: columns.length,
+    rowHtml: (r, depth) => rowHtml(r, columns, depth),
+  });
+  const expandTreePaths = (items) => AwsumMasterDetail.expandTree(state.collapsed, items, treeLevels);
+  function toggleTreeGroup(key) {
+    AwsumMasterDetail.toggleTree(state.collapsed, key);
+    if (state.lastData) renderRows(state.lastData);
+    const row = [...$('mgBody').querySelectorAll('tr[data-tree-toggle]')].find((tr) => tr.dataset.treeToggle === key);
+    if (row) row.focus();
   }
 
   function renderRows(data) {
     const columns = cols();
+    state.lastData = data;
     $('mgBody').innerHTML = data.items.length
-      ? data.items.map((r) => `<tr${entity === 'md' ? ` class="mg-md-row${state.editing && state.editing.id === r.id ? ' selected' : ''}" data-row-select="${r.id}" tabindex="0" aria-label="Edit ${esc(r.name)}"` : ''}>${columns.map((c) => `<td>${c[2](r)}</td>`).join('')}
-          ${entity === 'md' ? '' : `<td class="text-end text-nowrap">
-            <button type="button" class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${r.id}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="toggle" data-id="${r.id}">${r.active ? 'Deactivate' : 'Activate'}</button>
-            ${r.system ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" data-id="${r.id}">Delete</button>`}
-          </td>`}</tr>`).join('')
-      : `<tr><td colspan="${columns.length + (entity === 'md' ? 0 : 1)}" class="text-center text-muted py-4">No records found.</td></tr>`;
+      ? (split ? treeHtml(data.items, columns) : data.items.map((r) => rowHtml(r, columns)).join(''))
+      : `<tr><td colspan="${columns.length + (split ? 0 : 1)}" class="text-center text-muted py-4">No records found.</td></tr>`;
     $('mgSummary').textContent = `${data.total} record(s)`;
     $('mgPageLabel').textContent = `${data.page} / ${data.pages}`;
     $('mgPrev').disabled = data.page <= 1;
@@ -155,6 +168,10 @@
       state.page = data.page;
       state.sort = data.sort;
       state.direction = data.direction;
+      if (split) {
+        if (state.q.trim()) expandTreePaths(data.items);
+        if (state.editing) expandTreePaths([state.editing]);
+      }
       renderHead();
       renderRows(data);
     } catch (err) {
@@ -184,7 +201,7 @@
   const FIELD_ICON = {
     name: 'tag', rate: 'percent', display_order: 'list', active: 'check', notes: 'text', description: 'text',
     category1_id: 'layers', category2_id: 'layers', category3_id: 'layers', default_tax_id: 'percent',
-    billing_cycle: 'clock', item_kind: 'box', unit: 'box', retail_price: 'dollar', cost: 'dollar',
+    billing_cycle: 'clock', item_kind: 'box', unit: 'box', inventory_type: 'layers', keep: 'shield', retail_price: 'dollar', cost: 'dollar',
     license_required: 'key', license_type: 'key', licenses_per_unit: 'hash', serial_required: 'hash'
   };
   const labelIcon = (name) => FIELD_ICON[name]
@@ -229,11 +246,27 @@
           + field('category2_id', 'Category II', select('category2_id'), { required: true })
           + field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
           + [1, 2, 3].map((n) => field(`tax${n}_id`, `Tax ${n}`, select(`tax${n}_id`))).join('')
+          + inventoryFieldsHtml(false, ['col-12', 'col-12'])
           + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
           + activeField() + notes;
       default:
         return mdFormHtml();
     }
+  }
+
+  // Inventory Type / Keep (Common Option Group): value = Inventory Type number / Keep code, label = server name.
+  // '' is stored as NULL: MD inherits Category III, Category III falls back to the system default (None / Dry).
+  // The Common Reset/Clear button returns to that state; the value then in effect is marked by setInherited.
+  function inventoryFieldsHtml(inherit, cols) {
+    const o = state.options || {};
+    return field('inventory_type', 'Inventory Type', AwsumOptionGroup.html({
+      id: 'mgf_inventory_type', name: 'inventory_type', ariaLabel: 'Inventory Type', clearable: true, inherits: inherit,
+      options: (o.inventory_types || []).map((t) => ({ value: t.type_id, label: t.name })),
+    }), { col: cols[0] })
+      + field('keep', 'Keep <span class="pm-req d-none" id="mgKeepReq" aria-hidden="true">*</span>', AwsumOptionGroup.html({
+        id: 'mgf_keep', name: 'keep', ariaLabel: 'Keep', clearable: true, inherits: inherit,
+        options: (o.keep_types || []).map((k) => ({ value: k.code, label: k.name })),
+      }), { col: cols[1] });
   }
 
   // MD Master form: Classification / Item Information / Pricing / Options. Field names are unchanged.
@@ -261,7 +294,8 @@
       + field('license_type', 'License Type', select('license_type'), { required: true, col: 'col-md-4' })
       + field('licenses_per_unit', 'Licenses per Unit', input('licenses_per_unit', 'number', 'min="1" step="1"'), { required: true, col: 'col-md-4' })
       + field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6' });
-    const options = field('notes', 'Notes', textarea('notes'), { col: 'col-12' });
+    const options = inventoryFieldsHtml(true, ['col-12', 'col-12 col-md-5'])
+      + field('notes', 'Notes', textarea('notes'), { col: 'col-12 col-md-7' });
     const details = `<section class="col-12 pm-section" id="mgDetailSection">
           <div class="pm-section-head d-flex justify-content-between align-items-center">
             <div><h3>MD Detail</h3><span>Barcode, packaging, cost and price by detail.</span></div>
@@ -276,8 +310,8 @@
           </div>
           <div class="border rounded p-3 d-none" id="mgDetailEditor">
             <div class="row g-2">
-              ${[['barcode', 'Barcode', 'text'], ['unit', 'Unit', 'text'], ['pkSize', 'PK/Size', 'text'], ['size', 'Size', 'text'], ['cost', 'Cost', 'number'], ['price', 'Price', 'number'], ['modifier', 'Modifier', 'text']].map(([key, text, type]) =>
-                `<div class="${key === 'modifier' ? 'col-12 col-md-6' : 'col-6 col-md-3'}"><label class="form-label" for="mgDetail${key[0].toUpperCase()}${key.slice(1)}">${text}</label><input id="mgDetail${key[0].toUpperCase()}${key.slice(1)}" class="form-control" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} ${['unit', 'price'].includes(key) ? 'required' : ''} ${key === 'barcode' ? 'maxlength="100" data-awsum-barcode' : ''}></div>`
+              ${[['barcode', 'Barcode', 'text'], ['unit', 'Unit', 'text'], ['pkSize', 'PK/Size', 'text'], ['size', 'Size', 'text'], ['cost', 'Cost', 'money'], ['price', 'Price', 'money'], ['modifier', 'Modifier', 'text']].map(([key, text, type]) =>
+                `<div class="${key === 'modifier' ? 'col-12 col-md-6' : 'col-6 col-md-3'}"><label class="form-label" for="mgDetail${key[0].toUpperCase()}${key.slice(1)}">${text}</label>${type === 'money' ? `<div class="input-group">${MONEY_KEYPAD_BUTTON}` : ''}<input id="mgDetail${key[0].toUpperCase()}${key.slice(1)}" class="form-control" type="${type === 'money' ? 'text' : type}" ${type === 'money' ? 'data-awsum-money data-money-min="0" inputmode="decimal" autocomplete="off"' : ''} ${['unit', 'price'].includes(key) ? 'required' : ''} ${key === 'barcode' ? 'maxlength="100" data-awsum-barcode' : ''}>${type === 'money' ? '</div>' : ''}</div>`
               ).join('')}
               <div class="col-6 col-md-3 d-flex align-items-end"><label class="form-check mb-2"><input class="form-check-input" id="mgDetailDefault" type="checkbox"> Default Detail</label></div>
             </div>
@@ -357,6 +391,33 @@
       const tax = state.options.taxes.find((t) => t.id === category?.[`tax${n}_id`]);
       return taxLabel(tax);
     }).filter(Boolean).join(' \u00b7 ') || 'None';
+    refreshInheritLabels();
+  }
+  const inventoryTypeOf = (id) => ((state.options && state.options.inventory_types) || []).find((t) => t.type_id === Number(id));
+  const selectedCategory3 = () => (entity === 'md' && f('category3_id') && state.options
+    ? state.options.category3.find((c) => c.id === Number(f('category3_id').value)) : null);
+  // Without an override, mark the value in effect: MD -> Category III, else system default (None / Dry).
+  function refreshInheritLabels() {
+    if (!f('inventory_type') || !state.options) return;
+    const o = state.options, c3 = selectedCategory3();
+    const mark = (group, fromCategory, fallback) => AwsumOptionGroup.setInherited(group,
+      fromCategory != null && fromCategory !== '' ? fromCategory : fallback,
+      fromCategory != null && fromCategory !== '' ? 'Inherited from Category III' : 'System default');
+    mark(f('inventory_type'), c3 && c3.inventory_type, o.default_inventory_type);
+    mark(f('keep'), c3 && c3.keep, o.default_keep);
+    refreshKeepRequired();
+  }
+  // Keep requirement comes from the Common Inventory behavior (keep_required) of the effective
+  // Inventory Type (MD override, else Category III, else default), never from a type number.
+  function refreshKeepRequired() {
+    const group = f('keep');
+    if (!group) return;
+    const c3 = selectedCategory3();
+    const typeId = AwsumOptionGroup.getValue(f('inventory_type')) || (c3 && c3.inventory_type) || state.options.default_inventory_type;
+    const behavior = inventoryTypeOf(typeId);
+    const required = !!(behavior && behavior.keep_required);
+    AwsumOptionGroup.setRequired(group, required);
+    $('mgKeepReq').classList.toggle('d-none', !required);
   }
   function refreshLicenseFields() {
     if (entity !== 'md') return;
@@ -373,7 +434,7 @@
     return field('unit', 'Unit', input('unit', 'text', 'maxlength="30"'), { required: true, col: 'col-6 col-md-2' })
       + field('default_pk_size', 'PK/Size', detailInput('pk_size'), { col: 'col-6 col-md-2' })
       + field('default_size', 'Size', detailInput('size'), { col: 'col-6 col-md-2' })
-      + field('retail_price', 'Price', `<div class="input-group"><span class="input-group-text">$</span>${input('retail_price', 'text', 'data-awsum-money data-money-min="0" required inputmode="decimal" autocomplete="off"')}</div>`, { required: true, col: 'col-6 col-md-3' })
+      + field('retail_price', 'Price', `<div class="input-group">${MONEY_KEYPAD_BUTTON}${input('retail_price', 'text', 'data-awsum-money data-money-min="0" required inputmode="decimal" autocomplete="off"')}</div>`, { required: true, col: 'col-6 col-md-3' })
       + (canCost ? input('cost', 'hidden') : '');
   }
   function priceLevelsHtml() {
@@ -384,7 +445,7 @@
         <div class="mg-level" data-label="Price Level">P${n}</div>
         <div data-label="Pricing Mode" data-field-wrap="p${n}_mode">${select(`p${n}_mode`, `aria-label="P${n} pricing mode"`)}<div class="invalid-feedback" data-error-for="p${n}_mode"></div></div>
         <div data-label="Discount %" data-field-wrap="p${n}_discount_pct"><div class="input-group">${input(`p${n}_discount_pct`, 'text', `inputmode="decimal" aria-label="P${n} discount percent" autocomplete="off"`)}<span class="input-group-text">%</span></div><div class="invalid-feedback" data-error-for="p${n}_discount_pct"></div></div>
-        <div data-label="Price" data-field-wrap="p${n}_price"><div class="input-group"><span class="input-group-text">$</span>${input(`p${n}_price`, 'text', `data-awsum-money data-money-min="0" inputmode="decimal" aria-label="P${n} price" autocomplete="off"`)}</div><div class="invalid-feedback" data-error-for="p${n}_price"></div></div>
+        <div data-label="Price" data-field-wrap="p${n}_price"><div class="input-group">${MONEY_KEYPAD_BUTTON}${input(`p${n}_price`, 'text', `data-awsum-money data-money-min="0" inputmode="decimal" aria-label="P${n} price" autocomplete="off"`)}</div><div class="invalid-feedback" data-error-for="p${n}_price"></div></div>
       </div>`;
     });
     html += '</div><div class="form-text">Discount mode: Price = Retail Price &times; (1 &minus; Discount % &divide; 100), rounded to cents. Not set is different from $0.00.</div></div>';
@@ -435,16 +496,23 @@
           row && row[key], 'None');
       });
     }
+    if (f('inventory_type')) {
+      // NULL -> '' (nothing selected): MD = inherit Category III, Category III = system default.
+      AwsumOptionGroup.setValue(f('inventory_type'), row && row.inventory_type != null ? row.inventory_type : '');
+      AwsumOptionGroup.setValue(f('keep'), (row && row.keep) || '');
+      refreshInheritLabels();
+      refreshKeepRequired();
+    }
     if (entity === 'md') {
       f('description').value = val('description', '');
       f('second_name').value = val('second_name', '');
       f('unit').value = val('unit', 'EA');
-      f('retail_price').value = val('retail_price', '0.00');
+      AwsumMoneyInput.setValue(f('retail_price'), val('retail_price', '0.00'));
       if (f('cost')) f('cost').value = val('cost', '');
       [1, 2, 3].forEach((n) => {
         setOptions(`p${n}_mode`, [['', 'Not set'], ['FIXED', 'Fixed Amount'], ['DISCOUNT', 'Discount %']], editing ? (row[`p${n}_mode`] || '') : '');
         f(`p${n}_discount_pct`).value = val(`p${n}_discount_pct`, '');
-        f(`p${n}_price`).value = val(`p${n}_price`, '');
+        AwsumMoneyInput.setValue(f(`p${n}_price`), val(`p${n}_price`, ''));
       });
       refreshPricing();
       f('licenses_per_unit').value = val('licenses_per_unit', 1);
@@ -485,19 +553,21 @@
     imageUploader = null;
   }
 
-  // MD form header reuses the list row actions for the selected record.
+  // The Master-Detail form header reuses the list row actions for the selected record.
   function syncMdActions() {
-    if (entity !== 'md') return;
+    if (!split) return;
     const row = state.editing;
-    ['mgMdToggle', 'mgMdDelete'].forEach((id) => $(id).classList.toggle('d-none', !row));
+    $('mgMdToggle').classList.toggle('d-none', !row);
+    $('mgMdDelete').classList.toggle('d-none', !row || !!row.system);
     if (row) $('mgMdToggle').textContent = row.active ? 'Deactivate' : 'Activate';
   }
+  const article = (text) => (/^(md|[aeiou])/i.test(text) ? 'an' : 'a');
   function resetMdForm() {
     discardImage();
     state.editing = null;
     state.details = [];
     $('mgFields').innerHTML = '';
-    $('mgModalTitle').textContent = `Select an ${title}`;
+    $('mgModalTitle').textContent = `Select ${article(title)} ${title}`;
     $('mgModalSub').textContent = `Select a record from the list or add a new ${title}.`;
     $('mgSave').textContent = saveLabel();
     $('mgSave').disabled = true;
@@ -510,7 +580,7 @@
     allowClose = false;
     state.editing = row || null;
     syncMdActions();
-    if (entity === 'md') {
+    if (split) {
       $('mgBody').querySelectorAll('tr[data-row-select]').forEach((tr) => {
         tr.classList.toggle('selected', !!row && Number(tr.dataset.rowSelect) === row.id);
       });
@@ -530,6 +600,7 @@
     fillForm(row);
     AwsumMoneyInput.refreshAll($('mgFields'));
     if (window.AwsumBarcodeInput) AwsumBarcodeInput.bindAll($('mgFields'));
+    if (window.AwsumOptionGroup) AwsumOptionGroup.bindAll($('mgFields'));
     clearErrors();
     bindFormEvents();
     if (entity === 'md') {
@@ -591,7 +662,7 @@
           cost: defaultDetail.cost,
         };
         f('unit').value = defaultDetail.unit || '';
-        f('retail_price').value = defaultDetail.price ?? '';
+        AwsumMoneyInput.setValue(f('retail_price'), defaultDetail.price ?? '');
         if (f('cost')) f('cost').value = defaultDetail.cost ?? '';
         f('default_barcode').value = defaultDetail.barcode || '';
         f('default_pk_size').value = defaultDetail.pk_size || '';
@@ -610,13 +681,16 @@
     const values = detail || { barcode: '', unit: 'EA', pk_size: '', size: '', cost: '', price: '', modifier: '', is_default: false };
     [['Barcode', values.barcode], ['Unit', values.unit], ['PkSize', values.pk_size], ['Size', values.size],
       ['Cost', values.cost], ['Price', values.price], ['Modifier', values.modifier]].forEach(([name, value]) => {
-      $(`mgDetail${name}`).value = value == null ? '' : value;
+      const el = $(`mgDetail${name}`);
+      if (el.hasAttribute('data-awsum-money')) AwsumMoneyInput.setValue(el, value == null ? '' : value);
+      else el.value = value == null ? '' : value;
     });
     $('mgDetailDefault').checked = !!values.is_default;
     $('mgDetailDefault').disabled = !!(detail && detail.is_default);
     $('mgDetailSave').textContent = detail ? 'Save Changes' : 'Add Detail';
     $('mgDetailEditor').classList.remove('d-none');
-    $('mgDetailUnit').focus();
+    // Add Detail starts at Barcode (first field, scanner-ready); Edit Detail keeps focusing Unit.
+    $(detail ? 'mgDetailUnit' : 'mgDetailBarcode').focus();
   }
 
   async function saveMdDetail() {
@@ -627,13 +701,20 @@
       unit: $('mgDetailUnit').value.trim(),
       pk_size: $('mgDetailPkSize').value.trim(),
       size: $('mgDetailSize').value.trim(),
-      cost: $('mgDetailCost').value || null,
-      price: $('mgDetailPrice').value || null,
+      cost: null,
+      price: null,
       modifier: $('mgDetailModifier').value.trim(),
       is_default: $('mgDetailDefault').checked,
     };
-    button.disabled = true;
     clearDetailMessage();
+    try {
+      payload.cost = AwsumMoneyInput.getValue($('mgDetailCost')) || null;
+      payload.price = AwsumMoneyInput.getValue($('mgDetailPrice')) || null;
+    } catch (err) {
+      detailMessage(err.message);
+      return;
+    }
+    button.disabled = true;
     try {
       const detailPath = `${BASE}/md/${state.editing.id}/details`;
       if (state.editingDetailId) {
@@ -683,6 +764,7 @@
       c1.addEventListener('change', () => refreshCategory2(null)); // parent change resets children
     }
     if (c2 && f('category3_id')) c2.addEventListener('change', () => refreshCategory3(null));
+    if (f('inventory_type')) f('inventory_type').addEventListener('change', refreshKeepRequired);
     if (entity === 'md') {
       f('category3_id').addEventListener('change', refreshCategoryTaxDisplay);
       f('license_required').addEventListener('change', refreshLicenseFields);
@@ -708,8 +790,11 @@
   function collect() {
     const payload = {};
     $('mgFields').querySelectorAll('[name]').forEach((el) => {
-      if (el.disabled) return;
+      if (el.disabled || el.type === 'radio') return;
       payload[el.name] = el.hasAttribute('data-awsum-money') ? AwsumMoneyInput.getValue(el) : el.value;
+    });
+    $('mgFields').querySelectorAll('[data-awsum-option-group]').forEach((group) => {
+      payload[group.dataset.name] = AwsumOptionGroup.getValue(group);
     });
     ['active', 'license_required', 'serial_required'].forEach((k) => {
       if (k in payload) payload[k] = payload[k] === 'true';
@@ -732,6 +817,18 @@
       const detailValues = entity === 'md'
         ? Object.fromEntries(['barcode', 'pk_size', 'size'].map((key) => [key, f(`default_${key}`).value.trim()]))
         : null;
+      // The Barcode belongs to the Default Detail (saved after the MD), so a duplicate is caught before
+      // anything is saved. The Detail API re-checks it on the server and the DB index is the final guard.
+      if (entity === 'md' && detailValues.barcode) {
+        const params = new URLSearchParams({ barcode: detailValues.barcode });
+        if (editing) params.set('md_id', editing.id);
+        const check = await api('GET', `${BASE}/md/barcode-check?${params}`);
+        if (!check.available) {
+          const err = new Error(check.message);
+          err.errors = { default_barcode: check.message };
+          throw err;
+        }
+      }
       let path = `${BASE}/${entity}${editing ? '/' + editing.id : ''}`;
       if (entity === 'md') {
         body = imageUploader.formData(body);
@@ -743,7 +840,7 @@
       if (modal) {
         allowClose = true;
         modal.hide();
-      } else if (entity === 'md') {
+      } else if (split) {
         state.editing = data.item;
         $('mgModalTitle').textContent = `Edit ${title}`;
         $('mgModalSub').textContent = `Update this ${title} record. The code stays the same.`;
@@ -785,7 +882,7 @@
         const body = { ...rowToPayload(row), active: !row.active };
         await api('PUT', `${BASE}/${entity}/${id}`, body);
         showMessage(`${row.code} ${row.active ? 'deactivated' : 'activated'}.`, 'success');
-        if (entity === 'md' && state.editing && state.editing.id === id) {
+        if (split && state.editing && state.editing.id === id) {
           state.editing = { ...state.editing, active: !row.active };
           if (f('active')) f('active').value = String(state.editing.active);
           syncMdActions();
@@ -802,7 +899,7 @@
         if (!window.confirm(`Delete ${row.code}? This cannot be undone.`)) return;
         const result = await api('DELETE', `${BASE}/${entity}/${id}`);
         showMessage(result.message === 'Deleted.' ? `${row.code} deleted.` : result.message, result.message === 'Deleted.' ? 'success' : 'warning');
-        if (entity === 'md' && result.message === 'Deleted.' && state.editing && state.editing.id === id) resetMdForm();
+        if (split && result.message === 'Deleted.' && state.editing && state.editing.id === id) resetMdForm();
       }
       await loadOptions();
       await load();
@@ -820,7 +917,8 @@
       p1_mode: r.p1_mode, p1_discount_pct: r.p1_discount_pct, p1_price: r.p1_price,
       p2_mode: r.p2_mode, p2_discount_pct: r.p2_discount_pct, p2_price: r.p2_price,
       p3_mode: r.p3_mode, p3_discount_pct: r.p3_discount_pct, p3_price: r.p3_price,
-      default_tax_id: r.default_tax_id, billing_cycle: r.billing_cycle, license_required: r.license_required,
+      default_tax_id: r.default_tax_id, billing_cycle: r.billing_cycle,
+      inventory_type: r.inventory_type, keep: r.keep, license_required: r.license_required,
       license_type: r.license_type, licenses_per_unit: r.licenses_per_unit, serial_required: r.serial_required,
     };
   }
@@ -864,7 +962,7 @@
 
   async function init() {
     $('mgSubtitle').textContent = SUBTITLES[entity];
-    if (entity !== 'md') {
+    if (!split) {
       modal = new bootstrap.Modal($('mgModal'));
       $('mgModal').addEventListener('hide.bs.modal', (event) => {
         if (saving && !allowClose) event.preventDefault();
@@ -875,13 +973,7 @@
       document.querySelectorAll('[data-md-act]').forEach((btn) => {
         btn.addEventListener('click', () => { if (state.editing) rowAction(btn.dataset.mdAct, state.editing.id); });
       });
-      // The list card fills the viewport below the workspace top; only its table scrolls.
-      const workspace = document.querySelector('.mg-md-workspace');
-      const fitWorkspace = () => {
-        if (workspace) workspace.style.setProperty('--mg-md-offset', `${Math.round(workspace.getBoundingClientRect().top + window.scrollY)}px`);
-      };
-      fitWorkspace();
-      window.addEventListener('resize', fitWorkspace);
+      AwsumMasterDetail.fitWorkspace(document.querySelector('.mg-md-workspace'));
     }
     $('mgBody').addEventListener('error', (event) => {
       if (event.target.tagName === 'IMG') event.target.hidden = true;
@@ -915,7 +1007,16 @@
         rowAction(btn.dataset.act, Number(btn.dataset.id));
         return;
       }
-      if (entity !== 'md' || (e.type === 'keydown' && !['Enter', ' '].includes(e.key))) return;
+      if (!split || (e.type === 'keydown' && !['Enter', ' '].includes(e.key))) return;
+      const group = e.target.closest('tr[data-tree-toggle]');
+      if (group) {
+        if (e.type === 'keydown') {
+          if (e.target !== group) return;
+          e.preventDefault();
+        }
+        toggleTreeGroup(group.dataset.treeToggle);
+        return;
+      }
       const tr = e.target.closest('tr[data-row-select]');
       if (!tr || (e.type === 'keydown' && e.target !== tr)) return;
       if (e.type === 'keydown') e.preventDefault();

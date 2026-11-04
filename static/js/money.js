@@ -89,6 +89,85 @@
     if (validate(input)) input.value = format(input.value);
   }
 
+  // Cents-based entry: digits fill from the right (1 -> 0.01, 123 -> 1.23, 12345 -> 123.45).
+  // Shared by keyboard entry here and the Common Money Keypad (money-keypad.js). null = blank.
+  function minorUnitsOf(value) {
+    try {
+      const text = normalize(value);
+      return text ? toMinorUnits(text) : null;
+    } catch (error) {
+      if (error instanceof TypeError) return null;
+      throw error;
+    }
+  }
+
+  function pushDigit(cents, char) {
+    const digit = BigInt(char);
+    const base = cents ?? 0n;
+    return base < 0n ? base * 10n - digit : base * 10n + digit;
+  }
+
+  function popDigit(cents) {
+    if (cents == null) return null;
+    const next = cents / 10n;
+    return next === 0n ? null : next;
+  }
+
+  const centsOf = (input) => minorUnitsOf(input.value);
+
+  function allowsNegative(input) {
+    if (input.dataset.moneyMin === undefined) return true;
+    try { return toMinorUnits(input.dataset.moneyMin) < 0n; } catch (error) { return true; }
+  }
+
+  function writeCents(input, cents) {
+    input.value = cents == null ? '' : fromMinorUnits(cents);
+    if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
+    // The default edit was cancelled, so announce the change like a normal keystroke.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function enterCents(input, event) {
+    if (input.readOnly || input.disabled) return;
+    const type = event.inputType || '';
+    if (type.startsWith('history')) return;
+    const length = input.value.length;
+    const replaceAll = length > 0 && input.selectionStart === 0 && input.selectionEnd === length;
+    const current = replaceAll ? null : centsOf(input);
+    event.preventDefault();
+    if (type.startsWith('delete')) {
+      if (replaceAll || current == null) { if (length) writeCents(input, null); return; }
+      if (type === 'deleteContentForward') return;
+      writeCents(input, popDigit(current));
+      return;
+    }
+    const data = String(event.data ?? (event.dataTransfer ? event.dataTransfer.getData('text/plain') : '') ?? '').trim();
+    if (!data) return;
+    const pasted = type === 'insertFromPaste' || type === 'insertFromDrop';
+    if (pasted && !/^[\d-]+$/.test(data)) {
+      // A pasted amount such as 2,500.50 keeps the existing decimal rules; invalid text gets an explicit error.
+      try {
+        const text = normalize(data);
+        writeCents(input, text ? toMinorUnits(text) : null);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        input.value = data;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
+    let cents = current;
+    for (const char of data) {
+      if (char === '-') {
+        if (cents && allowsNegative(input)) cents = -cents;
+        continue;
+      }
+      if (char < '0' || char > '9') continue;
+      cents = pushDigit(cents, char);
+    }
+    writeCents(input, cents);
+  }
+
   function bind(input) {
     if (bindings.has(input)) return input;
     input.type = 'text';
@@ -106,10 +185,12 @@
       if (validate(input)) input.value = decimal(input.value);
     };
     const onBlur = () => refresh(input);
+    const onBeforeInput = (event) => enterCents(input, event);
+    input.addEventListener('beforeinput', onBeforeInput);
     input.addEventListener('input', onInput);
     input.addEventListener('focus', onFocus);
     input.addEventListener('blur', onBlur);
-    bindings.set(input, { onInput, onFocus, onBlur });
+    bindings.set(input, { onBeforeInput, onInput, onFocus, onBlur });
     refresh(input);
     return input;
   }
@@ -140,11 +221,12 @@
   function destroy(input) {
     const handlers = bindings.get(input);
     if (!handlers) return;
+    input.removeEventListener('beforeinput', handlers.onBeforeInput);
     input.removeEventListener('input', handlers.onInput);
     input.removeEventListener('focus', handlers.onFocus);
     input.removeEventListener('blur', handlers.onBlur);
     bindings.delete(input);
   }
 
-  return Object.freeze({ format, normalize, toMinorUnits, fromMinorUnits, bind, bindAll, refreshAll, setValue, getValue, validate, destroy });
+  return Object.freeze({ format, normalize, toMinorUnits, fromMinorUnits, minorUnitsOf, pushDigit, popDigit, bind, bindAll, refreshAll, setValue, getValue, validate, destroy });
 });

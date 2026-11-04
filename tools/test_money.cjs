@@ -148,3 +148,99 @@ test('active JS and template surfaces contain no independent two-place formatter
     assert.match(fs.readFileSync(path.join(root, `templates/${name}.html`), 'utf8'), /js\/money\.js/);
   }
 });
+
+function type(input, inputType, data = null) {
+  const event = new Event('beforeinput', { cancelable: true });
+  event.inputType = inputType;
+  event.data = data;
+  input.dispatchEvent(event);
+  return event;
+}
+
+test('cents-based entry fills digits from the right', () => {
+  const input = new Input();
+  input.setAttribute('min', '0');
+  money.bind(input);
+  let inputs = 0;
+  input.addEventListener('input', () => { inputs += 1; });
+  input.dispatchEvent(new Event('focus'));
+  const event = type(input, 'insertText', '1');
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(input.value, '0.01');
+  for (const digit of '2345') type(input, 'insertText', digit);
+  assert.equal(input.value, '123.45');
+  assert.equal(inputs, 5, 'each keystroke still fires input for live calculations');
+  input.dispatchEvent(new Event('blur'));
+  assert.equal(input.value, '123.45');
+  assert.equal(money.getValue(input), '123.45');
+  for (const digit of '678') type(input, 'insertText', digit);
+  input.dispatchEvent(new Event('blur'));
+  assert.equal(input.value, '123,456.78');
+  for (const [digits, expected] of [['1', '0.01'], ['123', '1.23'], ['12345', '123.45']]) {
+    input.value = '';
+    for (const digit of digits) type(input, 'insertText', digit);
+    input.dispatchEvent(new Event('blur'));
+    assert.equal(input.value, expected, digits);
+  }
+});
+
+test('cents-based backspace, non-digits, paste, sign and read-only', () => {
+  const input = new Input();
+  input.setAttribute('min', '0');
+  money.bind(input);
+  input.dispatchEvent(new Event('focus'));
+  for (const digit of '12345') type(input, 'insertText', digit);
+  type(input, 'deleteContentBackward');
+  assert.equal(input.value, '12.34');
+  type(input, 'insertText', 'a');
+  type(input, 'insertText', '.');
+  type(input, 'insertText', '-');
+  assert.equal(input.value, '12.34', 'letters, point and disallowed minus are ignored');
+  for (let i = 0; i < 4; i += 1) type(input, 'deleteContentBackward');
+  assert.equal(input.value, '', 'deleting every digit leaves blank, not zero');
+  type(input, 'insertText', '0');
+  assert.equal(input.value, '0.00', 'zero can still be entered');
+  input.value = '';
+  type(input, 'insertFromPaste', '2,500.50');
+  assert.equal(input.value, '2500.50', 'pasted amount keeps decimal meaning');
+  input.value = '';
+  type(input, 'insertFromPaste', '12345');
+  assert.equal(input.value, '123.45', 'pasted digits are cents');
+  input.value = '';
+  type(input, 'insertFromPaste', '1,23');
+  assert.equal(input.value, '1,23');
+  assert.ok(input.validationMessage, 'invalid paste is explicit, not stripped');
+
+  const signed = new Input();
+  money.bind(signed);
+  signed.dispatchEvent(new Event('focus'));
+  for (const char of '25-0') type(signed, 'insertText', char);
+  assert.equal(signed.value, '-2.50', 'minus allowed without a minimum');
+
+  const readonly = new Input('5');
+  readonly.readOnly = true;
+  money.bind(readonly);
+  const event = type(readonly, 'insertText', '1');
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(readonly.value, '5.00');
+});
+
+test('Common Money Keypad placement stays inside the viewport', () => {
+  const keypad = require('../static/js/money-keypad.js');
+  const size = { width: 232, height: 260 };
+  const viewport = { width: 1000, height: 760 };
+  assert.deepEqual(keypad.place({ left: 100, top: 100, bottom: 130 }, size, viewport), { left: 100, top: 134 }, 'below the field');
+  assert.deepEqual(keypad.place({ left: 900, top: 700, bottom: 730 }, size, viewport), { left: 760, top: 436 }, 'flips above and clamps right edge');
+  assert.deepEqual(keypad.place({ left: -50, top: 10, bottom: 600 }, size, viewport), { left: 8, top: 492 }, 'clamps left/bottom when neither side fits');
+  assert.deepEqual(keypad.place({ left: 0, top: 0, bottom: 20 }, size, { width: 200, height: 200 }), { left: 8, top: 8 }, 'tiny viewport');
+});
+
+test('shared cents digit helpers', () => {
+  assert.equal(money.pushDigit(null, '1'), 1n);
+  assert.equal(money.pushDigit(123n, '4'), 1234n);
+  assert.equal(money.pushDigit(-12n, '3'), -123n);
+  assert.equal(money.popDigit(123n), 12n);
+  assert.equal(money.popDigit(5n), null);
+  assert.equal(money.minorUnitsOf('95,000.00'), 9500000n);
+  assert.equal(money.minorUnitsOf('bad'), null);
+});

@@ -5,6 +5,8 @@
 {% block page_title %}Master Management{% endblock %}
 
 {% block content %}
+{# Common Master-Detail layout (left Tree + right form); keep in sync with MASTER_DETAIL in the script below. #}
+{% if active_module == 'merchant' %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=1">{% endif %}
 <style>
   body.page-master {
     font-size: 13px;
@@ -3688,7 +3690,190 @@
     if (btnModalDelete) btnModalDelete.disabled = !hasSelection;
   }
 
+  // ---- Common Master-Detail layout (left Tree + right detail form), static/js/master-detail.js + awsum-master-detail.css ----
+  // Modules listed here show their list as a Tree on the left and the existing edit modal inline on the right,
+  // so the form, tabs, ZIP lookup, logo, validation and the modal's hide/hidden handlers are reused unchanged.
+  const MASTER_DETAIL = {
+    merchant: {
+      title: 'Merchant',
+      header: 'Agency / Merchant',
+      levels: [{
+        key: (item) => `agency:${item.primary_agency_id ?? item.primary_agency_name ?? ''}`,
+        name: (item) => gridAgencies.get(String(item.primary_agency_id))?.name || item.primary_agency_name || 'No Agency',
+      }],
+      label: (item) => item.merchant_name,
+    },
+  }[activeModule] || null;
+  const masterDetailCollapsed = new Set();
+  const escapeMasterDetail = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  function showMasterDetailForm(visible) {
+    masterEditModalElement.hidden = !visible;
+    document.getElementById('masterDetailEmpty').classList.toggle('d-none', visible);
+    document.getElementById('masterDetailActions').classList.toggle('d-none', !visible);
+  }
+
+  // Same lifecycle as closing the modal: its hide guards (logo upload, contact editing) can stop it,
+  // and its hidden handlers reset the logo uploader and contact drafts.
+  function releaseMasterDetailForm() {
+    const hide = new Event('hide.bs.modal', { cancelable: true });
+    masterEditModalElement.dispatchEvent(hide);
+    if (hide.defaultPrevented) return false;
+    masterEditModalElement.dispatchEvent(new Event('hidden.bs.modal'));
+    return true;
+  }
+
+  // Stand-in for the Bootstrap modal instance: show() reveals the panel; hide() (after Save / Delete)
+  // keeps the saved record on screen, or the empty state when nothing is selected.
+  const inlineMasterEditor = MASTER_DETAIL ? {
+    show() { showMasterDetailForm(true); },
+    hide() {
+      if (!releaseMasterDetailForm()) return;
+      if (selectedMasterId.value && selectedOriginalRecord) {
+        refreshStoreLogoPreview(selectedOriginalRecord);
+        showMasterDetailForm(true);
+      } else {
+        showMasterDetailForm(false);
+      }
+    },
+  } : null;
+
+  function markMasterDetailRow(id) {
+    masterListBody.querySelectorAll('tr[data-row-select]').forEach(tr => {
+      tr.classList.toggle('selected', id != null && tr.dataset.rowSelect === String(id));
+    });
+  }
+
+  function openMasterDetailItem(item) {
+    if (!releaseMasterDetailForm()) return;
+    const row = masterListBody.querySelector(`tr[data-row-select="${CSS.escape(String(item.id))}"]`);
+    selectItem(item, row);
+    markMasterDetailRow(item.id);
+    openSelectedMasterEditFromList();
+  }
+
+  function renderMasterDetailHeader() {
+    const th = document.createElement('th');
+    th.className = 'sortable-col';
+    th.innerHTML = `${escapeMasterDetail(MASTER_DETAIL.header)}<span class="sort-indicator"></span>`;
+    th.tabIndex = 0;
+    th.setAttribute('role', 'button');
+    th.setAttribute('aria-label', `${MASTER_DETAIL.header} sort`);
+    // The tree keeps the existing first-column (Agency) sort; the header toggles its direction.
+    const sort = () => toggleMasterSort(0);
+    th.addEventListener('click', sort);
+    th.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      sort();
+    });
+    masterListHeader.appendChild(th);
+    updateMasterSortIndicators();
+  }
+
+  function renderMasterDetailList(items, highlightId) {
+    const selectedId = selectedMasterId.value;
+    if (masterSearch.value.trim()) AwsumMasterDetail.expandTree(masterDetailCollapsed, items, MASTER_DETAIL.levels);
+    const selectedItem = items.find(item => String(item.id) === String(highlightId || selectedId));
+    if (selectedItem) AwsumMasterDetail.expandTree(masterDetailCollapsed, [selectedItem], MASTER_DETAIL.levels);
+    masterListBody.innerHTML = AwsumMasterDetail.treeHtml({
+      items, levels: MASTER_DETAIL.levels, collapsed: masterDetailCollapsed, colspan: 1,
+      rowHtml: (item, depth) => `<tr class="mg-md-row${String(item.id) === String(selectedId) ? ' selected' : ''}" data-row-select="${escapeMasterDetail(item.id)}" tabindex="0" aria-label="Edit ${escapeMasterDetail(MASTER_DETAIL.label(item))}" style="--mg-depth:${depth}"><td>${escapeMasterDetail(MASTER_DETAIL.label(item))}</td></tr>`,
+    });
+    // A saved or deep-linked record is loaded into the panel; other reloads only keep the highlight,
+    // so unsaved edits are not overwritten by a filter or page change.
+    if (highlightId && selectedItem) {
+      selectItem(selectedItem, masterListBody.querySelector(`tr[data-row-select="${CSS.escape(String(selectedItem.id))}"]`));
+      markMasterDetailRow(selectedItem.id);
+      if (masterEditModalElement.hidden) openSelectedMasterEditFromList();
+    }
+  }
+
+  function mountMasterDetail() {
+    if (!MASTER_DETAIL) return;
+    const noun = MASTER_DETAIL.title;
+    const workspace = document.createElement('div');
+    workspace.className = 'col-12 mg-md-workspace';
+    workspace.innerHTML = `<div class="card-modern awsum-table-card mg-md-list-panel" id="masterDetailList"></div>
+      <div class="card-modern awsum-table-card mg-md-form-panel" id="masterDetailForm">
+        <div class="mg-md-form-header d-flex justify-content-between align-items-center">
+          <div class="mg-md-form-title">${escapeMasterDetail(noun.toUpperCase())} INFORMATION</div>
+          <div class="d-flex gap-1 flex-shrink-0 d-none" id="masterDetailActions"></div>
+        </div>
+        <p class="text-muted small mb-0" id="masterDetailEmpty">Select a ${escapeMasterDetail(noun)} from the list or add a new ${escapeMasterDetail(noun)}.</p>
+      </div>`;
+    document.getElementById('masterRoleView').prepend(workspace);
+    // Left: the existing filters, list and pager (Rows per page moves to the pager, as in MD Master).
+    const list = workspace.querySelector('#masterDetailList');
+    const tools = document.getElementById('storeToolsArea');
+    const filters = tools.querySelector('.awsum-filter-grid');
+    filters.classList.add('mg-md-filter');
+    list.appendChild(filters);
+    tools.classList.add('d-none');
+    const scroll = document.getElementById('masterListScroll');
+    scroll.removeAttribute('style');
+    scroll.classList.add('awsum-list-table-wrap');
+    list.appendChild(scroll);
+    const pager = document.getElementById('storeListPager');
+    pager.classList.add('mg-md-pager', 'awsum-list-footer');
+    const rows = filters.querySelector('.awsum-filter-rows');
+    const pageSize = document.getElementById('storePageSize');
+    pager.querySelector('.store-pager-controls').prepend(pageSize);
+    if (rows) rows.remove();
+    list.appendChild(pager);
+    masterListCol.classList.add('d-none');
+    // Right: the existing edit modal, inline; its Cancel / Delete / Save move into the panel header.
+    masterEditModalElement.classList.add('awsum-modal-inline');
+    masterEditModalElement.removeAttribute('aria-hidden');
+    masterEditModalElement.removeAttribute('tabindex');
+    workspace.querySelector('#masterDetailForm').appendChild(masterEditModalElement);
+    const actions = workspace.querySelector('#masterDetailActions');
+    masterEditModalElement.querySelectorAll('.awsum-modal-primary-actions > .btn').forEach(button => {
+      button.classList.add('btn-sm');
+      button.removeAttribute('data-bs-dismiss');
+      actions.appendChild(button);
+    });
+    showMasterDetailForm(false);
+    AwsumMasterDetail.fitWorkspace(workspace);
+
+    const onListEvent = (event) => {
+      if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
+      const group = event.target.closest('tr[data-tree-toggle]');
+      const row = event.target.closest('tr[data-row-select]');
+      const target = group || row;
+      if (!target || (event.type === 'keydown' && event.target !== target)) return;
+      if (event.type === 'keydown') event.preventDefault();
+      if (group) {
+        AwsumMasterDetail.toggleTree(masterDetailCollapsed, group.dataset.treeToggle);
+        renderMasterDetailList(currentItems, null);
+        [...masterListBody.querySelectorAll('tr[data-tree-toggle]')].find(tr => tr.dataset.treeToggle === group.dataset.treeToggle)?.focus();
+        return;
+      }
+      const item = currentItems.find(entry => String(entry.id) === row.dataset.rowSelect);
+      if (item) openMasterDetailItem(item);
+    };
+    masterListBody.addEventListener('click', onListEvent);
+    masterListBody.addEventListener('keydown', onListEvent);
+    // Add: release the current record first (capture runs before the existing Add handler).
+    btnListAdd?.addEventListener('click', (event) => {
+      if (!releaseMasterDetailForm()) { event.stopImmediatePropagation(); return; }
+      markMasterDetailRow(null);
+    }, true);
+    // Cancel: revert the selected record, or close a new (unsaved) record.
+    btnModalCancel?.addEventListener('click', () => {
+      if (!releaseMasterDetailForm()) return;
+      if (selectedMasterId.value && selectedOriginalRecord) {
+        cancelEdit();
+        refreshStoreLogoPreview(selectedOriginalRecord);
+      } else {
+        clearForm();
+        showMasterDetailForm(false);
+      }
+    });
+  }
+
   function getMasterEditModalInstance() {
+    if (inlineMasterEditor) return inlineMasterEditor;
     if (!masterEditModalElement || !window.bootstrap?.Modal) return null;
     return bootstrap.Modal.getOrCreateInstance(masterEditModalElement);
   }
@@ -4574,7 +4759,8 @@
         const right = gridAgencies.get(String(b.primary_agency_id));
         const compare = (x, y) => String(x ?? '').localeCompare(String(y ?? ''), undefined, { sensitivity: 'base' });
         return (compare(left?.name ?? a.primary_agency_name, right?.name ?? b.primary_agency_name)
-          || compare(left?.code, right?.code)) * directionMultiplier;
+          || compare(left?.code, right?.code)
+          || (MASTER_DETAIL ? compare(a.merchant_name, b.merchant_name) : 0)) * directionMultiplier;
       }
       if (columnIndex === 0 && isIdFirstColumn) {
         const leftId = Number(a?.device_category_id ?? a?.device_type_id ?? a?.id ?? a?.store_id ?? a?.i_store_id ?? 0);
@@ -4640,6 +4826,10 @@
 
   function renderListHeader() {
     masterListHeader.innerHTML = '';
+    if (MASTER_DETAIL) {
+      renderMasterDetailHeader();
+      return;
+    }
     const statusIdx = (typeof config.statusIndex === 'number') ? config.statusIndex : (config.headers.length - 1);
     if (activeModule === 'store') {
       config.headers.forEach((label, i) => {
@@ -4963,6 +5153,11 @@
       return;
     }
 
+    if (MASTER_DETAIL) {
+      // Items arrive already filtered, sorted and paged (loadList); the Tree only groups them.
+      renderMasterDetailList(currentItems, highlightId);
+      return;
+    }
     const targetHighlightId = highlightId || selectedMasterId.value || null;
     const sortedItems = getSortedMasterItems(items);
     const firstHeader = String((config.headers || [])[0] || '').trim().toLowerCase();
@@ -8579,6 +8774,7 @@
   applyListCentricLabels();
   setupStoreGridControls();
   configureCompactManagementFilters();
+  mountMasterDetail();
   renderListHeader();
   renderForm();
   attachFormChangeWatchers();

@@ -239,6 +239,14 @@ def md_update_with_image(
     return JSONResponse({"item": item, "message": "Saved."})
 
 
+@router.get("/platform/api/master-group/md/barcode-check")
+def md_barcode_check(request: Request, barcode: str = "", md_id: int | None = None, db: Session = Depends(get_db)):
+    """Read-only: is this barcode free for the MD's Default Detail? Saving still re-checks on the server."""
+    _admin(request, db)
+    _entity("md", request)
+    return _set_no_cache_headers(JSONResponse(svc.check_default_barcode(db, md_id, barcode)))
+
+
 @router.get("/platform/api/master-group/md/{item_id}/details")
 def md_detail_list(item_id: int, request: Request, db: Session = Depends(get_db)):
     _admin(request, db)

@@ -15,6 +15,7 @@ def source(relative):
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+
 @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
 class MoneyBrowserTests(unittest.TestCase):
     # Reuse the existing isolated Chromium runner; no second process/cleanup engine.

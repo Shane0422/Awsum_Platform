@@ -1,0 +1,68 @@
+/* Common Master-Detail layout: left list/Tree panel + right detail form panel.
+   Used by Master Group (Category I/II/III, MD Master) and Merchant management.
+   Markup: .mg-md-workspace > .mg-md-list-panel (.mg-md-filter, .awsum-list-table-wrap, .mg-md-pager)
+                            + .mg-md-form-panel (.mg-md-form-header > .mg-md-form-title + actions).
+   (The mg-md-* names come from MD Master, where this layout started.)
+   The list panel height uses --mg-md-offset (top of the workspace), set by the page script. */
+.mg-md-workspace { display: grid; grid-template-columns: minmax(240px, 26fr) minmax(0, 74fr); align-items: start; gap: .65rem; }
+.mg-md-filter { margin-bottom: .4rem; }
+.mg-md-filter .row { --bs-gutter-x: .5rem; --bs-gutter-y: 0; align-items: end; }
+.mg-md-filter .awsum-list-filter-label { margin-bottom: .15rem; font-size: 10px; }
+.mg-md-filter .form-control, .mg-md-filter .form-select { min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+.mg-md-pager { gap: .35rem !important; padding-top: .4rem; }
+.mg-md-pager .form-select { width: auto; min-height: 28px; height: 28px; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+.mg-md-list-panel, .mg-md-form-panel { min-width: 0; padding: .55rem !important; }
+.mg-md-row { cursor: pointer; }
+/* Tree (parent groups > items). Colors reuse the Common awsum-list tokens; cell
+   backgrounds go through Bootstrap's table variables so the common table-hover keeps working.
+   --mg-depth is set per row by AwsumMasterDetail (static/js/master-detail.js). */
+.mg-md-list-panel .table { --bs-table-border-color: #edf1f7; }
+.mg-md-list-panel .mg-tree-group { cursor: pointer; user-select: none; --bs-table-hover-bg: #eaf2fe; --bs-table-hover-color: var(--list-navy); }
+.mg-md-list-panel .mg-tree-group > td { padding-top: .3rem; padding-bottom: .3rem; padding-left: calc(.5rem + var(--mg-depth, 0) * 16px) !important; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mg-md-list-panel .mg-tree-l1 > td { --bs-table-bg: #f3f7fd; color: var(--list-navy); font-size: 12px; font-weight: 700; letter-spacing: .01em; border-top: 1px solid var(--list-border); }
+.mg-md-list-panel tbody > .mg-tree-l1:first-child > td { border-top: 0; }
+.mg-md-list-panel .mg-tree-l2 > td { --bs-table-bg: #f9fbfe; color: #243f70; font-size: 12px; font-weight: 600; }
+.mg-md-list-panel .mg-tree-l3 > td { --bs-table-bg: #ffffff; color: #3d5a85; font-size: 11.5px; font-weight: 600; }
+/* The +/- text stays in the DOM; the visible sign is drawn with two centered bars so it is pixel-crisp. */
+.mg-tree-sign { position: relative; display: inline-block; width: 15px; height: 15px; margin: -2px 7px 0 0; vertical-align: middle; border: 1px solid #cdd9ea; border-radius: 4px; background: #fff; color: var(--list-muted); font-size: 0; transition: background-color .12s, border-color .12s, color .12s; }
+.mg-tree-sign::before, .mg-tree-sign::after { content: ""; position: absolute; top: 50%; left: 50%; width: 7px; height: 1.5px; border-radius: 1px; background: currentColor; transform: translate(-50%, -50%); }
+.mg-tree-sign::after { width: 1.5px; height: 7px; }
+.mg-tree-group[aria-expanded="true"] .mg-tree-sign::after { display: none; }
+.mg-tree-group[aria-expanded="true"] .mg-tree-sign { border-color: #b7cff2; background: #e7f0fe; color: var(--list-blue); }
+.mg-tree-group:hover .mg-tree-sign { border-color: #93bfff; color: var(--list-blue); }
+.mg-tree-count { float: right; min-width: 20px; margin: 1px 0 0 8px; padding: 0 6px; border-radius: 999px; background: #edf2f9; color: var(--list-muted); font-size: 10px; font-weight: 600; line-height: 16px; letter-spacing: 0; text-align: center; }
+.mg-tree-l1 .mg-tree-count { background: #e3ebf7; color: #496486; }
+/* Item rows: lighter text, a small leading dot aligned under the parent's label, Common hover color. */
+.mg-md-list-panel .mg-md-row > td { padding-top: .3rem; padding-bottom: .3rem; color: #243f70; line-height: 18px; }
+.mg-md-list-panel .mg-md-row > td:first-child { position: relative; padding-left: calc(.5rem + var(--mg-depth, 0) * 16px + 22px) !important; }
+.mg-md-list-panel .mg-md-row > td:first-child::after { content: ""; position: absolute; top: 50%; left: calc(.5rem + var(--mg-depth, 0) * 16px + 6px); width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: #c3d1e6; }
+.mg-md-list-panel .mg-md-row:hover > td:first-child::after { background: #93bfff; }
+.mg-md-list-panel .mg-md-row.selected > td { --bs-table-bg: #e7f0fe; --bs-table-hover-bg: #e7f0fe; color: var(--list-navy); font-weight: 600; }
+.mg-md-list-panel .mg-md-row.selected > td:first-child::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--list-blue); }
+.mg-md-list-panel .mg-md-row.selected > td:first-child::after { background: var(--list-blue); }
+.mg-md-list-panel :is(.mg-md-row, .mg-tree-group):focus-visible { outline: 2px solid rgba(18, 99, 235, .45); outline-offset: -2px; }
+/* Compact sticky headers inside the workspace (Common th padding is sized for full-page lists). */
+.mg-md-workspace .table th { padding: .45rem .5rem !important; font-size: 11px !important; letter-spacing: .02em; }
+.mg-md-form-header { gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
+.mg-md-form-title { padding-left: .45rem; border-left: 3px solid var(--platform-blue, #1263eb); color: var(--list-navy); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; }
+.mg-md-list-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
+.mg-md-list-panel > .mg-md-filter, .mg-md-list-panel > .mg-md-pager { flex: 0 0 auto; }
+.mg-md-list-panel > .awsum-list-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.mg-md-list-panel thead th { position: sticky; top: 0; z-index: 1; }
+.mg-md-list-panel .table { font-size: 12px; }
+.mg-md-list-panel .table > :not(caption) > * > * { padding: .22rem .4rem; }
+@media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel { height: auto; max-height: 70vh; } }
+/* An existing edit modal shown inline as the right detail panel (no Bootstrap show/hide): the same form,
+   tabs and handlers, without the overlay. Its primary actions are moved into .mg-md-form-header. */
+.modal.awsum-modal-inline { position: static; display: block; z-index: auto; width: auto; height: auto; overflow: visible; opacity: 1; }
+.modal.awsum-modal-inline[hidden] { display: none; }
+.modal.awsum-modal-inline .modal-dialog { max-width: none; min-height: 0; height: auto; margin: 0; transform: none; pointer-events: auto; }
+.modal.awsum-modal-inline .modal-content { max-height: none; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.modal.awsum-modal-inline .modal-header, .modal.awsum-modal-inline .modal-footer { display: none; }
+.modal.awsum-modal-inline .modal-body { padding: 0; overflow: visible; }
+/* Filters in the narrow list panel: Search on its own row, other filters two per row. */
+.mg-md-list-panel > .mg-md-filter.awsum-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .5rem; align-items: end; }
+.mg-md-list-panel > .mg-md-filter.awsum-filter-grid > .awsum-filter-search { grid-column: 1 / -1; }
+.mg-md-list-panel > .mg-md-filter.awsum-filter-grid .form-control,
+.mg-md-list-panel > .mg-md-filter.awsum-filter-grid .form-select { width: 100%; min-width: 0; }
+.mg-md-pager .form-select { width: auto; }

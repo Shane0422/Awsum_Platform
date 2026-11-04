@@ -248,6 +248,241 @@ class MasterGroupTests(unittest.TestCase):
             self.assertEqual(conn.execute(text("SELECT * FROM tb_md_master")).one(), (42, "MD00042", None))
         self.assertIn("c_second_name", {col["name"] for col in inspect(engine).get_columns("tb_md_master")})
 
+    def test_inventory_type_common_behavior(self):
+        from backend.services import inventory as inv
+        table = {b.type_id: (b.code, b.name, b.tracks_onhand, b.deduct_on, b.cost_recognition, b.keep_required)
+                 for b in inv.inventory_types()}
+        self.assertEqual(table, {
+            1: ("NONE", "None", False, "none", "sale", False),
+            2: ("STOCK", "Stock", True, "sale", "sale", True),
+            3: ("RECIPE", "Recipe", False, "bom", "bom", False),
+            4: ("EXPENSE_ON_RECEIPT", "Consume on Receipt", False, "receipt", "receipt", False),
+            5: ("EXPENSE_ON_ISSUE", "Consume on Issue", True, "issue", "issue", False),
+        })
+        self.assertEqual([b.type_id for b in inv.inventory_types()], [1, 2, 3, 4, 5])
+        self.assertEqual((inv.NONE, inv.STOCK, inv.RECIPE, inv.EXPENSE_ON_RECEIPT, inv.EXPENSE_ON_ISSUE), (1, 2, 3, 4, 5))
+        for bad in (0, 6, None, "2", True):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                inv.inventory_behavior(bad)
+        self.assertEqual((inv.keep_name("COLD"), inv.keep_name(None)), ("Cold", ""))
+        # Effective values: MD override > Category III > system default (1 None / DRY); NULL means inherit.
+        self.assertEqual((inv.DEFAULT_INVENTORY_TYPE, inv.DEFAULT_KEEP), (1, "DRY"))
+        r = inv.resolve_inventory(None, None, None, None)
+        self.assertEqual((r.behavior.type_id, r.keep, r.type_source, r.keep_source), (1, "DRY", "default", "default"))
+        r = inv.resolve_inventory(2, None, None, None)
+        self.assertEqual((r.behavior.type_id, r.keep, r.keep_source), (2, "DRY", "default"))
+        r = inv.resolve_inventory(None, None, 2, "COLD")
+        self.assertEqual((r.behavior.type_id, r.keep, r.type_source, r.keep_source), (2, "COLD", "category", "category"))
+        r = inv.resolve_inventory(5, "FROZEN", 2, "COLD")
+        self.assertEqual((r.behavior.type_id, r.keep, r.type_source, r.keep_source), (5, "FROZEN", "item", "item"))
+
+    def _category3(self, **kw):
+        c1 = svc.create_item(self.db, "category1", {"name": f"Group {len(kw)}{kw.get('name', '')}"}, 1)
+        c2 = svc.create_item(self.db, "category2", {"name": "Sub", "category1_id": c1["id"]}, 1)
+        c3 = svc.create_item(self.db, "category3", {"name": "Leaf", "category1_id": c1["id"],
+                                                    "category2_id": c2["id"], **kw}, 1)
+        return c1, c2, c3
+
+    def test_md_inventory_overrides_inherit_from_category3(self):
+        c1, c2, c3 = self._category3(inventory_type=2, keep="COLD")
+        self.assertEqual((c3["inventory_type"], c3["keep"]), (2, "COLD"))
+        cats = dict(category1_id=c1["id"], category2_id=c2["id"], category3_id=c3["id"])
+        # New MD stores NULL (inherit) and resolves through Category III.
+        item = svc.create_item(self.db, "md", self.md_payload(**cats), 1)
+        self.assertEqual((item["inventory_type"], item["keep"]), (None, None))
+        self.assertEqual((item["effective_inventory_type"], item["effective_keep"], item["inventory_type_source"],
+                          item["keep_source"]), (2, "COLD", "category", "category"))
+        row = self.db.get(MdMaster, item["id"])
+        self.assertEqual((row.i_inventory_type, row.c_keep), (None, None))
+        # Override, keep saved values when keys are absent, then return to inherit with blanks.
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(**cats, inventory_type="5", keep=" frozen "), 1)
+        self.assertEqual((item["inventory_type"], item["keep"], item["effective_inventory_type"], item["keep_source"]),
+                         (5, "FROZEN", 5, "item"))
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(**cats, active=False), 1)
+        self.assertEqual((item["inventory_type"], item["keep"]), (5, "FROZEN"))
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(**cats, inventory_type="", keep=None), 1)
+        self.assertEqual((item["inventory_type"], item["keep"], item["effective_inventory_type"]), (None, None, 2))
+        # An item overriding Stock inherits Keep; clearing Category III falls back to the system default Dry.
+        leaf = {"name": "Leaf", "category1_id": c1["id"], "category2_id": c2["id"]}
+        stock = svc.create_item(self.db, "md", self.md_payload(**cats, name="Cola", inventory_type=2), 1)
+        self.assertEqual((stock["keep"], stock["effective_keep"]), (None, "COLD"))
+        cleared = svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": "", "keep": ""}, 1)
+        self.assertEqual((cleared["inventory_type"], cleared["keep"]), (None, None))
+        inherited = svc.serialize(self.db, "md", self.db.get(MdMaster, stock["id"]))
+        self.assertEqual((inherited["keep"], inherited["effective_keep"], inherited["keep_source"]), (None, "DRY", "default"))
+        svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 2, "keep": "COLD"}, 1)
+        # Export shows effective values and marks inherited ones.
+        headers, rows = svc.export_table(self.db, "md", sort="name")
+        exported = [dict(zip(headers, line)) for line in rows]
+        self.assertEqual([(e["Item Name"], e["Inventory Type"], e["Keep"]) for e in exported],
+                         [("Cola", "Stock", "Cold (Category III)"), ("POS Terminal", "Stock (Category III)", "Cold (Category III)")])
+        headers, rows = svc.export_table(self.db, "category3")
+        self.assertEqual((dict(zip(headers, rows[0]))["Inventory Type"], dict(zip(headers, rows[0]))["Keep"]), ("Stock", "Cold"))
+        self.assertEqual([(c["inventory_type"], c["keep"]) for c in svc.lookup_options(self.db)["category3"]], [(2, "COLD")])
+
+    def test_md_inventory_keep_required_uses_effective_type(self):
+        # Without Category III values the effective type is the default (1 None): Keep optional.
+        item = svc.create_item(self.db, "md", self.md_payload(), 1)
+        self.assertEqual((item["inventory_type"], item["effective_inventory_type"], item["inventory_type_source"]),
+                         (None, 1, "default"))
+        # Stock override without Keep anywhere resolves to the system default Dry (stored NULL).
+        bare = svc.create_item(self.db, "md", self.md_payload(name="Bare", inventory_type=2), 1)
+        self.assertEqual((bare["keep"], bare["effective_keep"], bare["keep_source"]), (None, "DRY", "default"))
+        self.assertIsNone(self.db.get(MdMaster, bare["id"]).c_keep)
+        c1, c2, c3 = self._category3(name="K", keep="DRY")
+        stock = svc.create_item(self.db, "md", self.md_payload(
+            category1_id=c1["id"], category2_id=c2["id"], category3_id=c3["id"], inventory_type=2), 1)
+        self.assertEqual((stock["keep"], stock["effective_keep"], stock["keep_source"]), (None, "DRY", "category"))
+        # Category III may leave Keep unset (system default Dry); both fields may stay unset.
+        _, _, s3 = self._category3(name="S", inventory_type=2)
+        self.assertEqual((s3["inventory_type"], s3["keep"]), (2, None))
+        self.assertEqual(svc.lookup_options(self.db)["default_keep"], "DRY")
+        _, _, plain = self._category3(name="P")
+        self.assertEqual((plain["inventory_type"], plain["keep"]), (None, None))
+        # Only Inventory Type numbers 1-5 and Keep codes are accepted, never display names.
+        for bad in ("0", "6", "Stock", "2.5", True):
+            with self.subTest(bad=bad):
+                self.assertIn("inventory_type", self.errors("md", self.md_payload(inventory_type=bad)))
+        self.assertIn("keep", self.errors("md", self.md_payload(keep="Chilled")))
+        options = svc.lookup_options(self.db)
+        self.assertEqual([(t["type_id"], t["name"], t["keep_required"], t["cost_recognition"]) for t in options["inventory_types"]], [
+            (1, "None", False, "sale"), (2, "Stock", True, "sale"), (3, "Recipe", False, "bom"),
+            (4, "Consume on Receipt", False, "receipt"), (5, "Consume on Issue", False, "issue")])
+        self.assertEqual([k["code"] for k in options["keep_types"]], ["DRY", "COLD", "FROZEN"])
+        self.assertEqual(options["default_inventory_type"], 1)
+
+    def test_md_inventory_migration_keeps_existing_rows_null_and_is_repeatable(self):
+        from sqlalchemy import create_engine, inspect, text
+        from backend.database.md_inventory_migration import migrate_md_inventory
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, c_item_code VARCHAR(20))"))
+            conn.execute(text("CREATE TABLE tb_category3 (i_category3_id INTEGER PRIMARY KEY, c_category_code VARCHAR(20))"))
+            conn.execute(text("INSERT INTO tb_md_master VALUES (42, 'MD00042')"))
+            conn.execute(text("INSERT INTO tb_category3 VALUES (7, 'CA300007')"))
+        migrate_md_inventory(engine)
+        migrate_md_inventory(engine)
+        with engine.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT * FROM tb_md_master")).one(), (42, "MD00042", None, None))
+            self.assertEqual(conn.execute(text("SELECT * FROM tb_category3")).one(), (7, "CA300007", None, None))
+        for table in ("tb_md_master", "tb_category3"):
+            columns = {col["name"]: col for col in inspect(engine).get_columns(table)}
+            self.assertTrue(columns["i_inventory_type"]["nullable"] and columns["c_keep"]["nullable"])
+            self.assertIsNone(columns["i_inventory_type"]["default"])
+            self.assertIsNone(columns["c_keep"]["default"])
+
+    def test_md_inventory_migration_maps_earlier_text_codes_once(self):
+        from sqlalchemy import create_engine, text
+        from backend.database.md_inventory_migration import migrate_md_inventory
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, "
+                              "c_inventory_option VARCHAR(20), c_keep VARCHAR(20))"))
+            conn.execute(text("INSERT INTO tb_md_master VALUES (1, 'NONE', 'NONE'), (2, 'STOCK', 'COLD'), "
+                              "(3, 'RECIPE', NULL), (4, 'RECEIVE_CONSUME', 'DRY'), (5, NULL, NULL)"))
+        migrate_md_inventory(engine)
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE tb_md_master SET i_inventory_type = 5 WHERE i_md_id = 5"))
+        migrate_md_inventory(engine)  # repeat run must not re-map over later edits
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT i_md_id, c_inventory_option, c_keep, i_inventory_type "
+                                     "FROM tb_md_master ORDER BY i_md_id")).all()
+        # The old 'NONE' default is not an explicit choice: it stays NULL (inherit).
+        self.assertEqual(rows, [(1, "NONE", None, None), (2, "STOCK", "COLD", 2), (3, "RECIPE", None, 3),
+                                (4, "RECEIVE_CONSUME", "DRY", 4), (5, None, None, 5)])
+
+    def _default_detail(self, md_id):
+        return next(d for d in svc.list_md_details(self.db, md_id) if d["is_default"])
+
+    def _detail_payload(self, **kw):
+        return {"unit": "EA", "price": "1.00", **kw}
+
+    def test_barcode_unique_across_all_items_and_details(self):
+        a = svc.create_item(self.db, "md", self.md_payload(name="A"), 1)
+        b = svc.create_item(self.db, "md", self.md_payload(name="B"), 1)
+        a_default = self._default_detail(a["id"])
+        saved = svc.update_md_detail(self.db, a["id"], a_default["id"], self._detail_payload(barcode="  880123  "), 1)
+        self.assertEqual(saved["barcode"], "880123")  # surrounding whitespace normalized
+        expected = f"Barcode 880123 is already used by {a['code']} (Detail 1)."
+        cases = (
+            ("same Item, new Detail", lambda: svc.create_md_detail(self.db, a["id"], self._detail_payload(barcode="880123"), 1)),
+            ("other Item, new Detail", lambda: svc.create_md_detail(self.db, b["id"], self._detail_payload(barcode=" 880123"), 1)),
+            ("other Item, Default Detail", lambda: svc.update_md_detail(
+                self.db, b["id"], self._default_detail(b["id"])["id"], self._detail_payload(barcode="880123 "), 1)),
+        )
+        for label, action in cases:
+            with self.subTest(label), self.assertRaises(svc.FieldErrors) as ctx:
+                action()
+            self.assertEqual((ctx.exception.errors, ctx.exception.message), ({"barcode": expected}, expected))
+            self.db.rollback()
+        self.assertEqual(self.db.query(MdDetail).filter(MdDetail.c_barcode == "880123").count(), 1)
+        # Updating the owner without changing its barcode is fine; blanks are never compared.
+        svc.update_md_detail(self.db, a["id"], a_default["id"], self._detail_payload(barcode="880123", size="L"), 1)
+        for md in (a, b):
+            svc.create_md_detail(self.db, md["id"], self._detail_payload(barcode="   "), 1)
+            svc.create_md_detail(self.db, md["id"], self._detail_payload(), 1)
+        self.assertEqual(self.db.query(MdDetail).filter(MdDetail.c_barcode.is_(None)).count(), 5)
+        # MD form pre-check (the MD's Barcode is its Default Detail's barcode).
+        self.assertEqual(svc.check_default_barcode(self.db, b["id"], " 880123 "),
+                         {"barcode": "880123", "available": False, "message": expected})
+        self.assertTrue(svc.check_default_barcode(self.db, a["id"], "880123")["available"])
+        self.assertTrue(svc.check_default_barcode(self.db, None, "NEW-1")["available"])
+        self.assertTrue(svc.check_default_barcode(self.db, b["id"], "")["available"])
+
+    def test_barcode_db_unique_index_blocks_concurrent_duplicates(self):
+        from sqlalchemy import text
+        from sqlalchemy.exc import IntegrityError
+
+        a = svc.create_item(self.db, "md", self.md_payload(name="A"), 1)
+        b = svc.create_item(self.db, "md", self.md_payload(name="B"), 1)
+        svc.create_md_detail(self.db, a["id"], self._detail_payload(barcode="RACE-1"), 1)
+        # A save that passed the pre-check before the other commit landed still cannot create a duplicate.
+        with patch.object(svc, "_ensure_barcode_free"), self.assertRaises(svc.FieldErrors) as ctx:
+            svc.create_md_detail(self.db, b["id"], self._detail_payload(barcode="RACE-1"), 1)
+        self.assertIn(a["code"], ctx.exception.errors["barcode"])
+        self.assertEqual(self.db.query(MdDetail).filter(MdDetail.c_barcode == "RACE-1").count(), 1)
+        # The index compares trimmed values and ignores blanks.
+        with self.engine.begin() as conn:
+            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_detail_no, b_is_default, c_barcode, c_unit, n_price) "
+                              "VALUES (:md, 90, 0, '', 'EA', 0), (:md, 91, 0, '', 'EA', 0)"), {"md": b["id"]})
+        with self.assertRaises(IntegrityError), self.engine.begin() as conn:
+            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_detail_no, b_is_default, c_barcode, c_unit, n_price) "
+                              "VALUES (:md, 92, 0, ' RACE-1 ', 'EA', 0)"), {"md": b["id"]})
+
+    def test_barcode_unique_migration_reports_duplicates_without_changing_data(self):
+        from sqlalchemy import create_engine, inspect, text
+        from backend.database.md_barcode_unique_migration import barcode_index_exists, migrate_md_barcode_unique
+        from backend.services.barcode import UNIQUE_INDEX
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, c_item_code VARCHAR(20))"))
+            conn.execute(text("CREATE TABLE tb_md_detail (i_md_detail_id INTEGER PRIMARY KEY, i_md_id INTEGER, "
+                              "i_detail_no INTEGER, c_barcode VARCHAR(100))"))
+            conn.execute(text("INSERT INTO tb_md_master VALUES (1, 'MD00001'), (2, 'MD00002')"))
+            conn.execute(text("INSERT INTO tb_md_detail VALUES (1, 1, 1, '8801116056934'), (2, 2, 1, '8801116056934 '), "
+                              "(3, 1, 2, NULL), (4, 2, 2, ''), (5, 2, 3, '')"))
+        snapshot = lambda: engine.connect().execute(text("SELECT * FROM tb_md_detail ORDER BY 1")).all()
+        before = snapshot()
+        index_exists = lambda: barcode_index_exists(engine.connect())
+        with self.assertLogs("backend.database.md_barcode_unique_migration", "WARNING") as logs:
+            duplicates = migrate_md_barcode_unique(engine)
+        self.assertEqual(duplicates, [("8801116056934", "MD00001#1, MD00002#1")])
+        self.assertIn("MD00001#1, MD00002#1", logs.output[0])
+        self.assertEqual(snapshot(), before)  # nothing deleted or changed
+        self.assertFalse(index_exists())
+        # After a manual fix the next startup creates the index; repeat runs are no-ops.
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE tb_md_detail SET c_barcode = '8801116056941' WHERE i_md_detail_id = 2"))
+        self.assertEqual(migrate_md_barcode_unique(engine), [])
+        self.assertEqual(migrate_md_barcode_unique(engine), [])
+        self.assertTrue(index_exists())
+
     def test_item_kind_seed_is_idempotent_and_keeps_display_names(self):
         from backend.database.item_kind_migration import SYSTEM_ITEM_KINDS
         item = self.db.query(ItemKind).filter(ItemKind.c_item_kind_code == "GIFT_CARD").one()

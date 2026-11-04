@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from backend.models_admin.invoice import InvoiceLine
 from backend.models_admin.master_group import Category1, Category2, Category3, ItemKind, MdDetail, MdMaster, Tax
 from backend.services import images
+from backend.services import inventory
+from backend.services import barcode as barcode_rules
 from backend.services.paths import AwsumPathResolver
 from backend.services.money import format_money
 from backend.services.image_service import commit_entity_image, master_image_lock
@@ -25,6 +27,7 @@ from backend.services.image_service import commit_entity_image, master_image_loc
 LICENSE_TYPES = ("POS", "KIOSK", "CUSTOMER_ORDERING")
 DEFAULT_ITEM_KIND = "ITEM"  # tb_item_kind System Code
 BILLING_CYCLES = ("ONE_TIME", "MONTHLY", "ANNUAL")
+# Inventory Type / Keep definitions and behavior live in the Common services.inventory module.
 
 MAX_PRICE = Decimal("9999999999.99")
 MAX_ORDER = 1_000_000
@@ -182,6 +185,34 @@ def _bool(payload: dict, key: str, default: bool) -> bool:
     return bool(raw)
 
 
+def _inventory_type(payload: dict, errors: dict, current) -> int | None:
+    """Key absent keeps the saved value (older clients); blank/null stores NULL (MD: inherit, Category III: not set)."""
+    if "inventory_type" not in payload:
+        return current.i_inventory_type if current is not None else None
+    raw = payload["inventory_type"]
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        type_id = int(str(raw).strip()) if not isinstance(raw, bool) else None
+    except ValueError:
+        type_id = None
+    if not inventory.is_inventory_type(type_id):
+        errors["inventory_type"] = "Select a valid Inventory Type."
+    return type_id
+
+
+def _keep(payload: dict, errors: dict, current) -> str | None:
+    """Keep code; key absent keeps the saved value, blank/null (or legacy NONE) stores NULL."""
+    if "keep" not in payload:
+        return current.c_keep if current is not None else None
+    code = "" if payload["keep"] is None else str(payload["keep"]).strip().upper()
+    if code in ("", "NONE"):
+        return None
+    if code not in inventory.KEEP_TYPES:
+        errors["keep"] = "Select Dry, Cold or Frozen."
+    return code
+
+
 def _id(payload: dict, key: str, errors: dict, *, required: bool, label: str) -> int | None:
     raw = payload.get(key)
     if raw is None or raw == "":
@@ -302,6 +333,9 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
             if tax_id in selected_taxes:
                 errors[key] = "Select each Tax only once."
             selected_taxes.add(tax_id)
+        # Inventory Type / Keep defaults inherited by MD items that leave them NULL.
+        values["i_inventory_type"] = _inventory_type(payload, errors, current)
+        values["c_keep"] = _keep(payload, errors, current)
         values.update(_validate_common(payload, errors, ordered=True))
 
     else:  # md
@@ -349,6 +383,10 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
     if cycle not in BILLING_CYCLES:
         errors["billing_cycle"] = "Select One-time, Monthly or Annual."
     values["c_billing_cycle"] = cycle
+
+    # Item overrides; NULL inherits the Category III default (checked against it after the category chain below).
+    values["i_inventory_type"] = _inventory_type(payload, errors, current)
+    values["c_keep"] = _keep(payload, errors, current)
 
     values["c_unit"] = _text(payload, "unit", 30, errors, required=True, label="Unit")
     values["n_default_unit_price"] = _decimal(
@@ -471,12 +509,47 @@ def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict) -
     return values
 
 
+def _ensure_barcode_free(db: Session, barcode: str | None, detail: MdDetail | None) -> None:
+    """System-wide uniqueness (Common services.barcode); the message names the Item that already has it."""
+    message = barcode_rules.barcode_conflict(
+        db, barcode, exclude_detail_id=detail.i_md_detail_id if detail is not None else None,
+        current_barcode=detail.c_barcode if detail is not None else None,
+    )
+    if message:
+        raise FieldErrors({"barcode": message}, message)
+
+
+def _commit_detail(db: Session, barcode: str | None) -> None:
+    """Commit; a concurrent save that took the same barcode first hits the DB UNIQUE index instead."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        message = barcode_rules.barcode_conflict(db, barcode)
+        if message:
+            raise FieldErrors({"barcode": message}, message) from None
+        raise
+
+
+def check_default_barcode(db: Session, md_id: int | None, barcode) -> dict:
+    """Pre-save check for the MD form's Barcode (the Default Detail's barcode); read-only."""
+    default = None
+    if md_id is not None:
+        default = db.query(MdDetail).filter(MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True)).first()
+    message = barcode_rules.barcode_conflict(
+        db, barcode, exclude_detail_id=default.i_md_detail_id if default is not None else None,
+        current_barcode=default.c_barcode if default is not None else None,
+    )
+    return {"barcode": barcode_rules.normalize_barcode(barcode), "available": message is None, "message": message}
+
+
 def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> dict:
     parent = _md_parent_for_detail(db, md_id, lock=True)
     current_default = db.query(MdDetail).filter(
         MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True),
     ).first()
     values = _validate_md_detail(payload, None, {})
+    _ensure_barcode_free(db, values["c_barcode"], None)
     if current_default is None:
         values["b_is_default"] = True
     next_no = (db.query(func.max(MdDetail.i_detail_no))
@@ -493,7 +566,7 @@ def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> di
         parent.n_default_unit_price = row.n_price
         parent.n_cost = row.n_cost
         _stamp(parent, user_id, created=False)
-    db.commit()
+    _commit_detail(db, values["c_barcode"])
     db.refresh(row)
     return _serialize_md_detail(row)
 
@@ -506,6 +579,7 @@ def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, use
     if row is None:
         raise NotFound("MD Detail not found.")
     values = _validate_md_detail(payload, row, {})
+    _ensure_barcode_free(db, values["c_barcode"], row)
     if row.b_is_default and not values["b_is_default"]:
         raise FieldErrors({"is_default": "An MD must have one Default Detail."})
     if values["b_is_default"] and not row.b_is_default:
@@ -524,7 +598,7 @@ def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, use
         parent.n_default_unit_price = row.n_price
         parent.n_cost = row.n_cost
         _stamp(parent, user_id, created=False)
-    db.commit()
+    _commit_detail(db, values["c_barcode"])
     db.refresh(row)
     return _serialize_md_detail(row)
 
@@ -591,6 +665,24 @@ def _iso(value) -> str | None:
     return value.isoformat() if value else None
 
 
+def _resolve_md_inventory(row: MdMaster, category3) -> inventory.ResolvedInventory:
+    return inventory.resolve_inventory(
+        row.i_inventory_type, row.c_keep,
+        category3.i_inventory_type if category3 is not None else None,
+        category3.c_keep if category3 is not None else None,
+    )
+
+
+def _effective_inventory(row: MdMaster, category3) -> dict:
+    resolved = _resolve_md_inventory(row, category3)
+    return {
+        "effective_inventory_type": resolved.behavior.type_id,
+        "inventory_type_source": resolved.type_source,
+        "effective_keep": resolved.keep,
+        "keep_source": resolved.keep_source,
+    }
+
+
 def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict:
     base = {
         "id": getattr(row, ENTITIES[entity]["pk"]),
@@ -617,6 +709,7 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
         base.update(category2_id=row.i_category2_id, category2_name=c2.c_category_name if c2 else None)
         for n in (1, 2, 3):
             base[f"tax{n}_id"] = getattr(row, f"i_tax{n}_id")
+        base.update(inventory_type=row.i_inventory_type, keep=row.c_keep)
     if entity == "md":
         c1 = db.get(Category1, row.i_category1_id)
         c2 = db.get(Category2, row.i_category2_id) if row.i_category2_id else None
@@ -643,6 +736,10 @@ def serialize(db: Session, entity: str, row, include_cost: bool = False) -> dict
             default_tax_name=tax.c_tax_name if tax else None,
             default_tax_rate=_dec(tax.n_tax_rate) if tax else None,
             billing_cycle=row.c_billing_cycle,
+            # inventory_type / keep are the MD overrides (None = inherit); effective_* are resolved via Category III.
+            inventory_type=row.i_inventory_type,
+            keep=row.c_keep,
+            **_effective_inventory(row, c3),
             license_required=bool(row.b_license_required),
             license_type=row.c_license_type,
             licenses_per_unit=row.i_licenses_per_unit,
@@ -824,6 +921,8 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
             headers += ["Category I Code", "Category I Name"]
         if entity == "category3":
             headers += ["Category II Code", "Category II Name"]
+        if entity == "category3":
+            headers += ["Inventory Type", "Keep"]
         headers += ["Display Order", "Status", "Notes"]
         data = []
         for r in rows:
@@ -834,6 +933,8 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
             if entity == "category3":
                 c2 = _scoped_parent(db, Category2, r.i_category2_id, r.i_merchant_id)
                 line += [c2.c_category_code if c2 else "", c2.c_category_name if c2 else ""]
+                line += [inventory.inventory_behavior(r.i_inventory_type).name if r.i_inventory_type else "",
+                         inventory.keep_name(r.c_keep)]
             line += [str(r.i_display_order), status(r), r.c_notes or ""]
             data.append(line)
         return headers, data
@@ -848,7 +949,8 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
         headers.append("Cost")
     for n in (1, 2, 3):
         headers += [f"P{n} Mode", f"P{n} Discount %", f"P{n} Price"]
-    headers += ["License Required", "License Type", "Licenses per Unit", "Serial Number Required", "Status", "Notes"]
+    headers += ["Inventory Type", "Keep",
+                "License Required", "License Type", "Licenses per Unit", "Serial Number Required", "Status", "Notes"]
 
     kind_names = {k.c_item_kind_code: k.c_item_kind_name for k in db.query(ItemKind)}
     data = []
@@ -874,7 +976,11 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
                 _pct(getattr(r, f"n_p{n}_discount_pct")) if mode == "DISCOUNT" else "",
                 _money(getattr(r, f"n_p{n}_price")),
             ]
+        resolved = _resolve_md_inventory(r, c3)  # effective values; inherited ones are marked
+        inherited = lambda source: " (Category III)" if source == inventory.SOURCE_CATEGORY else ""
         line += [
+            resolved.behavior.name + inherited(resolved.type_source),
+            inventory.keep_name(resolved.keep) + inherited(resolved.keep_source),
             _yn(r.b_license_required), (r.c_license_type or "") if r.b_license_required else "",
             str(r.i_licenses_per_unit) if r.b_license_required and r.i_licenses_per_unit else "",
             _yn(r.b_serial_required), status(r), r.c_notes or "",
@@ -961,7 +1067,8 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         "category3": [
             {"id": r.i_category3_id, "category1_id": r.i_category1_id, "category2_id": r.i_category2_id,
              "code": r.c_category_code, "name": r.c_category_name, "active": bool(r.b_active),
-             **{f"tax{n}_id": getattr(r, f"i_tax{n}_id") for n in (1, 2, 3)}}
+             **{f"tax{n}_id": getattr(r, f"i_tax{n}_id") for n in (1, 2, 3)},
+             "inventory_type": r.i_inventory_type, "keep": r.c_keep}
             for r in _scoped_query(db, Category3, merchant_id).order_by(Category3.i_display_order, Category3.i_category3_id)
         ],
         "taxes": [
@@ -977,5 +1084,10 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         ],
         "default_item_kind": DEFAULT_ITEM_KIND,
         "billing_cycles": list(BILLING_CYCLES),
+        # Behavior flags come from the Common definition so the UI never re-derives them from numbers.
+        "inventory_types": [b.as_dict() for b in inventory.inventory_types()],
+        "default_inventory_type": inventory.DEFAULT_INVENTORY_TYPE,
+        "default_keep": inventory.DEFAULT_KEEP,
+        "keep_types": [{"code": code, "name": name} for code, name in inventory.KEEP_TYPES.items()],
         "license_types": list(LICENSE_TYPES),
     }

@@ -4,7 +4,7 @@ MD Master stores per-item management rules only. Individual serial numbers and
 real license keys never live here: serials belong to delivered/installed units
 (see tb_device.c_serial_no) and keys to tb_license.
 """
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
@@ -69,6 +69,9 @@ class Category3(PlatformBase, AuditMixin):
     i_tax1_id = Column(Integer, ForeignKey("tb_tax.i_tax_id"), nullable=True, index=True)
     i_tax2_id = Column(Integer, ForeignKey("tb_tax.i_tax_id"), nullable=True, index=True)
     i_tax3_id = Column(Integer, ForeignKey("tb_tax.i_tax_id"), nullable=True, index=True)
+    # Inventory defaults for MD items in this Category III (services.inventory). NULL = not set.
+    i_inventory_type = Column(Integer, nullable=True)
+    c_keep = Column(String(20), nullable=True)
     c_category_code = Column(String(20), nullable=False, unique=True, index=True)
     c_category_name = Column(String(100), nullable=False)
     i_display_order = Column(Integer, nullable=False, default=100)
@@ -105,6 +108,11 @@ class MdMaster(PlatformBase, AuditMixin):
     n_p3_price = Column(Numeric(12, 2), nullable=True)
     i_default_tax_id = Column(Integer, ForeignKey("tb_tax.i_tax_id"), nullable=True, index=True)
     c_billing_cycle = Column(String(20), nullable=False, default="ONE_TIME")  # ONE_TIME / MONTHLY / ANNUAL
+    # Item override of the Category III inventory defaults; NULL = inherit from Category III.
+    # Inventory Type number: 1 None / 2 Stock / 3 Recipe / 4 Consume on Receipt / 5 Consume on Issue.
+    # Logic must read services.inventory.resolve_inventory() / inventory_behavior(), never the raw number.
+    i_inventory_type = Column(Integer, nullable=True)
+    c_keep = Column(String(20), nullable=True)  # DRY / COLD / FROZEN
     b_license_required = Column(Boolean, nullable=False, default=False)
     c_license_type = Column(String(30), nullable=True)  # reuses tb_license.c_license_type values
     i_licenses_per_unit = Column(Integer, nullable=True)
@@ -137,3 +145,14 @@ class MdDetail(PlatformBase, AuditMixin):
     n_cost = Column(Numeric(12, 2), nullable=True)
     n_price = Column(Numeric(12, 2), nullable=False, default=0)
     c_modifier = Column(Text, nullable=True)
+
+
+# System-wide barcode uniqueness (services.barcode): non-empty trimmed barcodes are unique across all MD Details.
+# Existing databases get it from database/md_barcode_unique_migration once their data has no duplicates.
+Index(
+    "uq_tb_md_detail_barcode",
+    func.trim(MdDetail.c_barcode),
+    unique=True,
+    postgresql_where=text("c_barcode IS NOT NULL AND trim(c_barcode) <> ''"),
+    sqlite_where=text("c_barcode IS NOT NULL AND trim(c_barcode) <> ''"),
+)

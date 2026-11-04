@@ -649,6 +649,8 @@ def init_platform_db() -> None:
     migrate_md_images(platform_engine)
     from backend.database.md_second_name_migration import migrate_md_second_name
     migrate_md_second_name(platform_engine)
+    from backend.database.md_inventory_migration import migrate_md_inventory
+    migrate_md_inventory(platform_engine)
     from backend.database.user_image_migration import migrate_user_images
     migrate_user_images(platform_engine)
     from backend.database.business_contact_migration import migrate_business_contacts
@@ -664,6 +666,8 @@ def init_platform_db() -> None:
     safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
     from backend.database.md_detail_migration import migrate_md_details
     migrate_md_details(platform_engine)
+    from backend.database.md_barcode_unique_migration import migrate_md_barcode_unique
+    migrate_md_barcode_unique(platform_engine)
     from backend.database.item_kind_migration import migrate_item_kinds
     migrate_item_kinds(platform_engine)
     from backend.services.storage_layout import final_layout_enabled, validate_runtime_references

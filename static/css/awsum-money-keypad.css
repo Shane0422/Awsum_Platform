@@ -1,0 +1,66 @@
+/* Common Money Keypad (static/js/money-keypad.js). The "$" prefix keeps its input-group look and becomes clickable. */
+.input-group-text[data-money-keypad] {
+  cursor: pointer;
+  transition: background-color .12s, color .12s;
+}
+.input-group-text[data-money-keypad]:hover,
+.input-group-text[data-money-keypad][aria-expanded="true"] {
+  background: #e7f0fe;
+  color: var(--platform-blue, #1263eb);
+}
+.input-group-text[data-money-keypad]:focus-visible { outline: 2px solid #93bfff; outline-offset: -2px; z-index: 5; }
+
+.awsum-money-keypad {
+  position: fixed;
+  z-index: 1090; /* above Bootstrap modals */
+  width: 232px;
+  padding: 8px;
+  border: 1px solid #d5e2f4;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(16, 46, 104, .18);
+  outline: none;
+}
+.awsum-money-keypad[hidden] { display: none; }
+.awsum-money-keypad-display {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #f5f9ff;
+  color: var(--platform-navy, #102e68);
+}
+.awsum-money-keypad-currency { color: #647895; font-size: 13px; font-weight: 600; }
+.awsum-money-keypad-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.awsum-money-keypad-value.is-blank { color: #9aabc3; }
+.awsum-money-keypad-error { display: none; margin: -2px 0 6px; color: #dc2626; font-size: 11px; line-height: 1.3; }
+.awsum-money-keypad.has-error .awsum-money-keypad-error { display: block; }
+.awsum-money-keypad-keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 40px;
+  gap: 5px;
+}
+.awsum-money-key {
+  border: 1px solid #d5e2f4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--platform-navy, #102e68);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.awsum-money-key:hover { border-color: #93bfff; background: #f5f9ff; }
+.awsum-money-key:active { background: #e7f0fe; }
+.awsum-money-key-back, .awsum-money-key-clear { background: #f3f6fb; color: #496486; }
+.awsum-money-key-ok {
+  grid-row: span 2;
+  border-color: var(--platform-blue, #1263eb);
+  background: var(--platform-blue, #1263eb);
+  color: #ffffff;
+}
+.awsum-money-key-ok:hover { border-color: #0f56cc; background: #0f56cc; }
+.awsum-money-key-0 { grid-column: span 2; }
