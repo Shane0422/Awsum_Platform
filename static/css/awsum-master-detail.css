@@ -43,7 +43,8 @@
 .mg-md-list-panel :is(.mg-md-row, .mg-tree-group):focus-visible { outline: 2px solid rgba(18, 99, 235, .45); outline-offset: -2px; }
 /* Compact sticky headers inside the workspace (Common th padding is sized for full-page lists). */
 .mg-md-workspace .table th { padding: .45rem .5rem !important; font-size: 11px !important; letter-spacing: .02em; }
-.mg-md-form-header { gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
+.mg-md-form-header { flex-wrap: wrap; gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
+.mg-md-form-header > :last-child { flex-wrap: wrap; justify-content: flex-end; }
 .mg-md-form-title { padding-left: .45rem; border-left: 3px solid var(--platform-blue, #1263eb); color: var(--list-navy); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; }
 .mg-md-list-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
 .mg-md-list-panel > .mg-md-filter, .mg-md-list-panel > .mg-md-pager { flex: 0 0 auto; }
@@ -51,13 +52,20 @@
 .mg-md-list-panel thead th { position: sticky; top: 0; z-index: 1; }
 .mg-md-list-panel .table { font-size: 12px; }
 .mg-md-list-panel .table > :not(caption) > * > * { padding: .22rem .4rem; }
-@media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel { height: auto; max-height: 70vh; } }
+/* .mg-md-fit (opt-in): the detail panel has the list panel's height; its header stays on top and only
+   .mg-md-form-body scrolls, so the list and the form scroll independently inside the viewport. */
+.mg-md-fit > .mg-md-form-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
+.mg-md-fit > .mg-md-form-panel > .mg-md-form-header { flex: 0 0 auto; }
+.mg-md-fit > .mg-md-form-panel > .mg-md-form-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+@media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel, .mg-md-fit > .mg-md-form-panel { height: auto; max-height: 70vh; } }
 /* An existing edit modal shown inline as the right detail panel (no Bootstrap show/hide): the same form,
    tabs and handlers, without the overlay. Its primary actions are moved into .mg-md-form-header. */
 .modal.awsum-modal-inline { position: static; display: block; z-index: auto; width: auto; height: auto; overflow: visible; opacity: 1; }
 .modal.awsum-modal-inline[hidden] { display: none; }
-.modal.awsum-modal-inline .modal-dialog { max-width: none; min-height: 0; height: auto; margin: 0; transform: none; pointer-events: auto; }
-.modal.awsum-modal-inline .modal-content { max-height: none; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+/* The dialog's modal sizing (.pm-modal max-height: 90dvh, Bootstrap centered/scrollable flex) must not apply:
+   a taller form would be centered inside the capped box and spill above the panel. Content flows normally. */
+.modal.awsum-modal-inline .modal-dialog { display: block; max-width: none; max-height: none; min-height: 0; height: auto; margin: 0; transform: none; pointer-events: auto; }
+.modal.awsum-modal-inline .modal-content { height: auto; max-height: none; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
 .modal.awsum-modal-inline .modal-header, .modal.awsum-modal-inline .modal-footer { display: none; }
 .modal.awsum-modal-inline .modal-body { padding: 0; overflow: visible; }
 /* Filters in the narrow list panel: Search on its own row, other filters two per row. */

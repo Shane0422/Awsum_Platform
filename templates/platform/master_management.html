@@ -6,7 +6,7 @@
 
 {% block content %}
 {# Common Master-Detail layout (left Tree + right form); keep in sync with MASTER_DETAIL in the script below. #}
-{% if active_module == 'merchant' %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=1">{% endif %}
+{% if active_module in ['agency', 'merchant'] %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=2">{% endif %}
 <style>
   body.page-master {
     font-size: 13px;
@@ -2468,6 +2468,12 @@
     min-width: 96px;
   }
 
+  /* Inside the narrow Master-Detail list panel (awsum-master-detail.css) the full-width filter / pager
+     minimum widths would overflow: filters share the panel grid, pager controls wrap. */
+  body.page-master #masterRoleView .mg-md-filter .master-list-filter { min-width: 0; }
+  body.page-master #masterRoleView .mg-md-pager .store-pager-controls { flex-wrap: wrap; }
+  body.page-master #masterRoleView .mg-md-pager .store-pager-page { white-space: nowrap; }
+
   body.page-master #masterRoleView .master-form-section-title {
     margin-top: 0.2rem;
     padding-top: 0.55rem;
@@ -2507,7 +2513,9 @@
     }
   }
 
-  /* Module-specific fields and tabs; shared modal shell is in platform-modal.css. */
+  /* Module-specific fields and tabs; shared modal shell is in platform-modal.css.
+     Pop-up sizes (dialog width / content height) use :not(.awsum-modal-inline): the same form shown inline in a
+     Master-Detail panel (awsum-master-detail.css) takes the panel's size instead. */
   #masterEditModal .agency-hdr-icon, #masterEditModal .agency-hdr-sub, #masterEditModal .agency-info-box { display: none; }
   #masterEditModal.agency-modal .agency-hdr-icon { display: inline-flex; }
   #masterEditModal.agency-modal .agency-hdr-sub { display: block; }
@@ -2532,8 +2540,8 @@
   #masterEditModal.agency-modal.business-type-modal #btnModalDelete { display: none !important; }
   #masterEditModal.agency-modal.store-modal #btnModalDelete,
   #masterEditModal.agency-modal.store-modal #agencyInfoBox { display: none !important; }
-  #masterEditModal.agency-modal.store-modal .modal-dialog { max-width: min(760px, calc(100vw - 40px)); }
-  #masterEditModal.agency-modal.store-modal .modal-content { height: min(780px, calc(100vh - 2rem)); }
+  #masterEditModal.agency-modal.store-modal:not(.awsum-modal-inline) .modal-dialog { max-width: min(760px, calc(100vw - 40px)); }
+  #masterEditModal.agency-modal.store-modal:not(.awsum-modal-inline) .modal-content { height: min(780px, calc(100vh - 2rem)); }
   #masterEditModal.agency-modal.store-modal .merchant-detail-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; padding: 0; margin: 0 0 1rem; border-bottom: 1px solid #e3e9f2; }
   #masterEditModal.agency-modal.store-modal .merchant-tab-btn { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 .25rem; margin-bottom: -1px; font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: #718096; border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; text-decoration: none; background: transparent; white-space: nowrap; }
   #masterEditModal.agency-modal.store-modal .merchant-tab-btn:hover { color: #173451; background: #f4f7fb; text-decoration: none; }
@@ -2550,8 +2558,8 @@
   #masterEditModal.agency-modal.store-modal .brand-file-picker { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
   #masterEditModal.agency-modal.store-modal .brand-logo-upload-card .btn { height: 36px; border-radius: 9px; font-size: .82rem; font-weight: 600; padding: 0 .9rem; background: #fff; border: 1px solid #d3dcea; color: #3b4a5e; }
   #masterEditModal.agency-modal.store-modal .brand-logo-upload-card .btn-outline-danger { color: #dc2626; border-color: #f3c6c6; }
-  #masterEditModal.agency-modal.merchant-modal .modal-dialog { max-width: min(720px, calc(100vw - 40px)); }
-  #masterEditModal.agency-modal.merchant-modal .modal-content { height: min(700px, calc(100vh - 2rem)); }
+  #masterEditModal.agency-modal.merchant-modal:not(.awsum-modal-inline) .modal-dialog { max-width: min(720px, calc(100vw - 40px)); }
+  #masterEditModal.agency-modal.merchant-modal:not(.awsum-modal-inline) .modal-content { height: min(700px, calc(100vh - 2rem)); }
   #masterEditModal.agency-modal.merchant-modal .merchant-detail-tabs { grid-template-columns: repeat(4, 1fr); }
   #masterEditModal.agency-modal.merchant-modal .merchant-tab-panel { min-height: 390px; }
 </style>
@@ -3693,7 +3701,18 @@
   // ---- Common Master-Detail layout (left Tree + right detail form), static/js/master-detail.js + awsum-master-detail.css ----
   // Modules listed here show their list as a Tree on the left and the existing edit modal inline on the right,
   // so the form, tabs, ZIP lookup, logo, validation and the modal's hide/hidden handlers are reused unchanged.
+  // title: panel / empty-state noun; header: list column; levels: Tree parents (none = single list);
+  // label: row text; sortColumn: config.headers index the list sorts by (header click toggles direction);
+  // statusToggle: Deactivate / Activate in the panel header (flips the Status field, then the existing Save).
   const MASTER_DETAIL = {
+    agency: {
+      title: 'Agency',
+      header: 'Agency',
+      levels: [],
+      label: (item) => item.company_name || item.agency_code,
+      sortColumn: 2,
+      statusToggle: true,
+    },
     merchant: {
       title: 'Merchant',
       header: 'Agency / Merchant',
@@ -3702,6 +3721,7 @@
         name: (item) => gridAgencies.get(String(item.primary_agency_id))?.name || item.primary_agency_name || 'No Agency',
       }],
       label: (item) => item.merchant_name,
+      sortColumn: 0,
     },
   }[activeModule] || null;
   const masterDetailCollapsed = new Set();
@@ -3711,6 +3731,37 @@
     masterEditModalElement.hidden = !visible;
     document.getElementById('masterDetailEmpty').classList.toggle('d-none', visible);
     document.getElementById('masterDetailActions').classList.toggle('d-none', !visible);
+    syncMasterDetailStatusToggle();
+  }
+
+  function syncMasterDetailStatusToggle() {
+    const button = document.getElementById('masterDetailStatusToggle');
+    if (!button) return;
+    const status = document.getElementById('field_status');
+    button.classList.toggle('d-none', !selectedMasterId.value || !status);
+    button.textContent = status?.value === 'active' ? 'Deactivate' : 'Activate';
+  }
+
+  // Deactivate / Activate = the existing Status field + the existing Save (validation, contacts, permissions).
+  // Other unsaved edits must be saved or cancelled first, so the button changes only the Status.
+  async function toggleMasterDetailStatus() {
+    const status = document.getElementById('field_status');
+    if (!status || !selectedMasterId.value) return;
+    if (isFormDirty()) {
+      showMasterModalError('Save or cancel your changes before changing the status.');
+      return;
+    }
+    const previous = status.value;
+    status.value = previous === 'active' ? 'inactive' : 'active';
+    status.dispatchEvent(new Event('change', { bubbles: true }));
+    const ok = await saveItem();
+    if (ok) {
+      closeMasterEditModal();
+    } else if (selectedMasterId.value) {
+      status.value = previous;
+      status.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    syncMasterDetailStatusToggle();
   }
 
   // Same lifecycle as closing the modal: its hide guards (logo upload, contact editing) can stop it,
@@ -3793,14 +3844,14 @@
     if (!MASTER_DETAIL) return;
     const noun = MASTER_DETAIL.title;
     const workspace = document.createElement('div');
-    workspace.className = 'col-12 mg-md-workspace';
+    workspace.className = 'col-12 mg-md-workspace mg-md-fit';
     workspace.innerHTML = `<div class="card-modern awsum-table-card mg-md-list-panel" id="masterDetailList"></div>
       <div class="card-modern awsum-table-card mg-md-form-panel" id="masterDetailForm">
         <div class="mg-md-form-header d-flex justify-content-between align-items-center">
           <div class="mg-md-form-title">${escapeMasterDetail(noun.toUpperCase())} INFORMATION</div>
           <div class="d-flex gap-1 flex-shrink-0 d-none" id="masterDetailActions"></div>
         </div>
-        <p class="text-muted small mb-0" id="masterDetailEmpty">Select a ${escapeMasterDetail(noun)} from the list or add a new ${escapeMasterDetail(noun)}.</p>
+        <p class="text-muted small mb-0" id="masterDetailEmpty">Select ${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${escapeMasterDetail(noun)} from the list or add a new ${escapeMasterDetail(noun)}.</p>
       </div>`;
     document.getElementById('masterRoleView').prepend(workspace);
     // Left: the existing filters, list and pager (Rows per page moves to the pager, as in MD Master).
@@ -3823,15 +3874,28 @@
     list.appendChild(pager);
     masterListCol.classList.add('d-none');
     // Right: the existing edit modal, inline; its Cancel / Delete / Save move into the panel header.
-    masterEditModalElement.classList.add('awsum-modal-inline');
+    masterEditModalElement.classList.add('awsum-modal-inline', 'mg-md-form-body');
     masterEditModalElement.removeAttribute('aria-hidden');
     masterEditModalElement.removeAttribute('tabindex');
     workspace.querySelector('#masterDetailForm').appendChild(masterEditModalElement);
     const actions = workspace.querySelector('#masterDetailActions');
+    // Footer actions move into the panel header: module-specific ones (e.g. Registration Email) first.
+    masterEditModalElement.querySelectorAll('.awsum-modal-left-actions > .awsum-modal-action').forEach(action => {
+      action.querySelectorAll('.btn').forEach(button => button.classList.add('btn-sm'));
+      actions.appendChild(action);
+    });
+    if (MASTER_DETAIL.statusToggle) {
+      actions.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn d-none" id="masterDetailStatusToggle">Deactivate</button>');
+      document.getElementById('masterDetailStatusToggle').addEventListener('click', toggleMasterDetailStatus);
+    }
     masterEditModalElement.querySelectorAll('.awsum-modal-primary-actions > .btn').forEach(button => {
       button.classList.add('btn-sm');
       button.removeAttribute('data-bs-dismiss');
       actions.appendChild(button);
+    });
+    masterSortState.columnIndex = MASTER_DETAIL.sortColumn;
+    masterEditModalElement.addEventListener('change', (event) => {
+      if (event.target.id === 'field_status') syncMasterDetailStatusToggle();
     });
     showMasterDetailForm(false);
     AwsumMasterDetail.fitWorkspace(workspace);
@@ -3865,6 +3929,7 @@
       if (selectedMasterId.value && selectedOriginalRecord) {
         cancelEdit();
         refreshStoreLogoPreview(selectedOriginalRecord);
+        syncMasterDetailStatusToggle();
       } else {
         clearForm();
         showMasterDetailForm(false);
@@ -4809,7 +4874,7 @@
     }
     updateMasterSortIndicators();
     announceMasterSortChange();
-    if (activeModule === 'merchant') {
+    if (activeModule === 'merchant' || MASTER_DETAIL) {
       reloadStoreFromFirstPage();
       return;
     }
@@ -4959,9 +5024,9 @@
         storeGrid.totalPages = payload.total_pages;
         updateStorePager();
       }
-      if (activeModule === 'merchant') {
-        // The existing Merchant API returns an array; keep filtering/paging in the common UI.
-        items = items.filter(item => !storeGrid.agencyId || String(item[organizationGrid.agencyKey]) === storeGrid.agencyId);
+      if (activeModule === 'merchant' || MASTER_DETAIL) {
+        // The existing Merchant / Agency APIs return an array; keep filtering/paging in the common UI.
+        items = items.filter(item => !storeGrid.agencyId || !organizationGrid || String(item[organizationGrid.agencyKey]) === storeGrid.agencyId);
         items = getSortedMasterItems(items);
         storeGrid.total = items.length;
         storeGrid.totalPages = Math.max(1, Math.ceil(items.length / storeGrid.pageSize));
@@ -4986,7 +5051,7 @@
     const prev = document.getElementById('storePagerPrev');
     const next = document.getElementById('storePagerNext');
     if (!info || !pageLabel || !prev || !next) return;
-    info.textContent = `${storeGrid.total} ${activeModule}${storeGrid.total === 1 ? '' : 's'}`;
+    info.textContent = `${storeGrid.total} ${(storeGrid.total === 1 ? activeLabel.singular : activeLabel.list).toLowerCase()}`;
     pageLabel.textContent = `Page ${storeGrid.page} / ${storeGrid.totalPages}`;
     prev.disabled = storeGrid.page <= 1;
     next.disabled = storeGrid.page >= storeGrid.totalPages;
@@ -4998,7 +5063,7 @@
   }
 
   function setupStoreGridControls() {
-    if (!organizationGrid) return;
+    if (!organizationGrid && !MASTER_DETAIL) return;
     document.getElementById('storeListPager')?.classList.remove('d-none');
     if (activeModule === 'store') {
       document.getElementById('storeFilterBar')?.classList.remove('d-none');
@@ -5030,6 +5095,7 @@
       loadList();
     });
 
+    if (!organizationGrid) return; // Agency / Merchant / Store filters below
     const filterOptions = (options) => options.map(option => ({
       ...option, label: [option.name, option.code].filter(Boolean).join(' - '),
     }));
@@ -8751,12 +8817,12 @@
   });
   masterSearch.addEventListener('keyup', (e) => {
     if (e.key !== 'Enter') return;
-    if (organizationGrid) reloadStoreFromFirstPage();
+    if (organizationGrid || MASTER_DETAIL) reloadStoreFromFirstPage();
     else loadList();
   });
   if (masterStatusFilter) {
     masterStatusFilter.addEventListener('change', () => {
-      if (organizationGrid) reloadStoreFromFirstPage();
+      if (organizationGrid || MASTER_DETAIL) reloadStoreFromFirstPage();
       else loadList();
     });
   }

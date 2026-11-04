@@ -35,7 +35,7 @@ class MasterGroupListTemplateTests(unittest.TestCase):
                     self.assertIn('class="mg-md-form"', html)
                     self.assertNotIn('id="mgModal"', html)
                     self.assertNotIn("awsum-filter-card", html)
-                    self.assertEqual(html.count('href="/static/css/awsum-master-detail.css?v=1"'), 1)
+                    self.assertEqual(html.count('href="/static/css/awsum-master-detail.css?v=2"'), 1)
                 else:
                     self.assertIn('id="mgModal"', html)
                 for control in ("mgSearch", "mgActiveFilter", "mgPageSize", "mgExportBtn",

@@ -7,7 +7,7 @@
 {# Master-Detail entities (left Tree + right form) share the MD Master layout; keep in sync with TREE_LEVELS in master_group.js. #}
 {% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind'] %}
 <link rel="stylesheet" href="/static/css/awsum-list.css?v=5">
-{% if mg_split %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=1">{% endif %}
+{% if mg_split %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=2">{% endif %}
 <style>
   {% if mg_split %}
   /* Tab panes share one grid cell, so the PageFrame keeps the tallest tab's height. */
