@@ -1,5 +1,8 @@
-{% macro page_header(title, subtitle='', title_id='', header_id='') -%}
-<header class="awsum-list-header awsum-page-header"{% if header_id %} id="{{ header_id }}"{% endif %}>
+{# sticky: keep the header (and its actions) visible under the top navigation while scrolling.
+   actions_id: id of the action area, managed by static/js/page-actions.js (AwsumPageActions). Both are optional;
+   screens that do not pass them render exactly as before. #}
+{% macro page_header(title, subtitle='', title_id='', header_id='', sticky=false, actions_id='') -%}
+<header class="awsum-list-header awsum-page-header{% if sticky %} awsum-page-header-sticky{% endif %}"{% if header_id %} id="{{ header_id }}"{% endif %}>
   <div class="awsum-list-heading">
     <span class="awsum-list-icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
@@ -9,7 +12,7 @@
       {% if subtitle %}<div class="awsum-list-subtitle">{{ subtitle }}</div>{% endif %}
     </div>
   </div>
-  <div class="awsum-list-actions">{{ caller() }}</div>
+  <div class="awsum-list-actions"{% if actions_id %} id="{{ actions_id }}" data-page-actions{% endif %}>{{ caller() }}</div>
 </header>
 {%- endmacro %}
 

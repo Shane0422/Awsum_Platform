@@ -482,7 +482,6 @@
     <button id="addPlatformUserButton" type="button" class="btn btn-primary btn-sm{% if agency_users and not permissions.capabilities('users').create %} d-none{% endif %}" data-bs-toggle="modal" data-bs-target="#platformUserModal"{% if agency_users and not permissions.capabilities('users').create %} hidden{% endif %}>+ Add User</button>
   {% endcall %}
 
-  <div id="platformUsersAlert" class="alert d-none mb-0" role="alert"></div>
   {% if agency_users and permissions.capabilities('users').read_only %}<p class="text-muted">Read Only.</p>{% endif %}
 
   {% call surface('filter') %}
@@ -683,7 +682,6 @@
   const usersBody = document.getElementById('platformUsersTableBody');
   const searchInput = document.getElementById('platformUsersSearch');
   const statusFilter = document.getElementById('platformUsersStatus');
-  const pageAlert = document.getElementById('platformUsersAlert');
   const userModalElement = document.getElementById('platformUserModal');
   const userModal = bootstrap.Modal.getOrCreateInstance(userModalElement);
   const resetModalElement = document.getElementById('platformUserResetModal');
@@ -699,6 +697,9 @@
   let savingUser = false;
   let allowUserClose = false;
   let debounceTimer = null;
+
+  // Page-level results use the Common Toast; form errors stay inline in the dialogs.
+  function pageNotice(message, kind = 'danger') { if (message) AwsumToast.show(message, { kind }); }
 
   function setAlert(element, message, kind = 'danger') {
     element.textContent = message || '';
@@ -833,10 +834,9 @@
         users = await apiRequest(`${config.listUrl}${query ? `?${query}` : ''}`);
       }
       renderUsers(users);
-      setAlert(pageAlert, '');
     } catch (error) {
       renderUsers([]);
-      setAlert(pageAlert, error.message);
+      pageNotice(error.message);
     }
   }
 
@@ -928,7 +928,7 @@
       userModal.hide();
       if (config.images) AwsumImages.updateCurrentAvatar(result.id, result.image_url);
       await loadUsers();
-      setAlert(pageAlert, result.image_warning || (userId ? 'User updated.' : 'User created.'), result.image_warning ? 'danger' : 'success');
+      pageNotice(result.image_warning || AwsumToast.message(userId ? 'updated' : 'created', 'User'), result.image_warning ? 'warning' : 'success');
     } catch (error) {
       setAlert(document.getElementById('platformUserFormError'), error.message);
     } finally {
@@ -955,7 +955,7 @@
       });
       resetModal.hide();
       await loadUsers();
-      setAlert(pageAlert, 'Password reset. The user must change it at next login.', 'success');
+      pageNotice('Password reset. The user must change it at next login.', 'success');
     } catch (error) {
       setAlert(document.getElementById('platformUserResetError'), error.message);
     }
@@ -970,9 +970,9 @@
         body: JSON.stringify(agencyScope ? {first_name: user.first_name, last_name: user.last_name, email: user.email, phone: user.phone || '', status} : { status }),
       });
       await loadUsers();
-      setAlert(pageAlert, `User ${status === 'active' ? 'activated' : 'deactivated'}.`, 'success');
+      pageNotice(AwsumToast.message(status === 'active' ? 'activated' : 'deactivated', 'User'), 'success');
     } catch (error) {
-      setAlert(pageAlert, error.message);
+      pageNotice(error.message);
     }
   }
 
@@ -981,9 +981,9 @@
     try {
       await apiRequest(`${config.itemUrl}${user.id}`, {method: 'DELETE'});
       await loadUsers();
-      setAlert(pageAlert, 'User deactivated. User history is preserved.', 'success');
+      pageNotice('User deactivated. User history is preserved.', 'success');
     } catch (error) {
-      setAlert(pageAlert, error.message);
+      pageNotice(error.message);
     }
   }
 
@@ -994,7 +994,7 @@
   });
   statusFilter.addEventListener('change', loadUsers);
 
-  loadRoles().then(loadUsers).catch(error => setAlert(pageAlert, error.message));
+  loadRoles().then(loadUsers).catch(error => pageNotice(error.message));
 })();
 </script>
 <script>

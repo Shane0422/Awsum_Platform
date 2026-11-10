@@ -31,10 +31,7 @@
     compactClient(r), r.client_public_ip || 'Not Available', location(r),
     when(r.login_at), when(r.last_active_at), r.status,
   ];
-  function message(text, kind = 'danger') {
-    $('sessionMessage').className = 'alert alert-' + kind;
-    $('sessionMessage').textContent = text;
-  }
+  function message(text, kind = 'danger') { AwsumToast.show(text, { kind }); } // Common Toast
   async function load() {
     if (loading) return;
     loading = true;

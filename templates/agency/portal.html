@@ -24,7 +24,7 @@
   {% endcall %}
 {% elif section == 'settings' %}
   {% call surface('table') %}
-    <form data-awsum-form action="/agency/settings" data-method="PUT">
+    <form data-awsum-form action="/agency/settings" data-method="PUT" data-success-message="Agency settings updated.">
       <div class="alert alert-danger d-none" data-form-error role="alert"></div>
       {{ form_fields(fields, profile, 'settings', readonly_email=true) }}
       <div class="d-flex gap-2 mt-3"><button class="btn btn-primary" type="submit">Save</button><a class="btn btn-outline-secondary" href="/auth/change-password">Change Password</a></div>
@@ -61,6 +61,6 @@
     </div>
   {% endcall %}
 {% endif %}
-<script src="/static/js/management-form.js?v=1" defer></script>
+<script src="/static/js/management-form.js?v=2" defer></script>
 {% endif %}
 {% endblock %}

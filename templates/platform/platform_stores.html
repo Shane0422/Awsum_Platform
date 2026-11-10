@@ -391,7 +391,7 @@
   async function saveStore() {
     const payload = collectFormData();
     if (!payload.store_name) {
-      alert('Store name is required.');
+      AwsumToast.warning('Store name is required.');
       return;
     }
 
@@ -406,11 +406,12 @@
 
     if (!res.ok) {
       const text = await res.text();
-      alert('Save failed: ' + text);
+      AwsumToast.error('Save failed: ' + text);
       return;
     }
 
     const json = await res.json().catch(() => ({}));
+    const storeAction = selectedStoreId ? 'updated' : 'created';
     if (!selectedStoreId && json.store_id) {
       selectedStoreId = json.store_id;
     }
@@ -419,12 +420,12 @@
     if (selectedStoreId) {
       await loadStoreDetail(selectedStoreId);
     }
-    alert('Saved successfully');
+    AwsumToast.done(storeAction, 'Store');
   }
 
   async function deleteStore() {
     if (!selectedStoreId) {
-      alert('Select a store first');
+      AwsumToast.warning('Select a store first.');
       return;
     }
 
@@ -433,12 +434,13 @@
     const res = await fetch(`${apiBase}/store/${selectedStoreId}`, { method: 'DELETE' });
     if (!res.ok) {
       const text = await res.text();
-      alert('Delete failed: ' + text);
+      AwsumToast.error('Delete failed: ' + text);
       return;
     }
 
     clearForm();
     await loadStores();
+    AwsumToast.done('deleted', 'Store');
   }
 
   async function exportStores() {

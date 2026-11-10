@@ -22,6 +22,12 @@
             : result.detail;
           throw new Error(detail || 'Unable to save changes.');
         }
+        // The page reloads to show the saved data; the Common Toast shows the result after the reload.
+        const method = (form.dataset.method || 'POST').toUpperCase();
+        if (window.AwsumToast) {
+          AwsumToast.flash(form.dataset.successMessage || (method === 'DELETE' ? AwsumToast.message('deleted', 'Record')
+            : method === 'POST' ? AwsumToast.message('created', 'Record') : AwsumToast.message('saved', 'Changes')));
+        }
         window.location.reload();
       } catch (error) {
         errorBox.textContent = error.message || 'Unable to save changes.';

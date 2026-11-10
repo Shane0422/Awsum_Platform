@@ -41,7 +41,11 @@
 <header class="platform-header" style="--platform-brand-scale: 1.5">
   <div class="platform-topbar">
     <a href="{{ dashboard_url }}" class="brand-mark" aria-label="{{ APP_NAME }}">
-      {% if company_logo_path %}<img src="{{ company_logo_path }}" alt="{{ company_name }}" class="company-logo">{% else %}<span class="brand-text">{{ company_name }}</span>{% endif %}
+      {% if company_logo_path %}<img src="{{ nav_logo_url(company_logo_path) }}" alt="{{ company_name }}" class="company-logo">{% endif %}
+      <span class="platform-brand-copy">
+        <span class="brand-text brand-text-light platform-brand-name">{{ company_name }}</span>
+        <span class="platform-brand-subtitle">Platform Management</span>
+      </span>
     </a>
     <div class="topbar-meta">
       <span id="platformDateTime"></span>

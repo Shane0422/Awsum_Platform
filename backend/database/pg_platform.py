@@ -47,35 +47,50 @@ def mask_db_url(url: str) -> str:
         return "<invalid-db-url>"
 
 
-def ensure_platform_database_exists() -> None:
-    """Ensure the awsum_platform database exists before app startup."""
-    db_url = get_platform_db_url()
-    parsed = make_url(db_url)
-
+def _platform_admin_engine():
+    """(engine on the admin database, Platform database name); the name is validated."""
+    parsed = make_url(get_platform_db_url())
     db_name = parsed.database
     if not db_name:
         raise RuntimeError("Platform database name is missing in DATABASE_URL")
-
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db_name):
+        raise RuntimeError(f"Unsafe database name: {db_name}")
     admin_db_name = os.getenv("PLATFORM_PG_ADMIN_DB", "postgres")
-    admin_url = parsed.set(database=admin_db_name)
     admin_engine = create_engine(
-        admin_url.render_as_string(hide_password=False),
+        parsed.set(database=admin_db_name).render_as_string(hide_password=False),
         isolation_level="AUTOCOMMIT",
         future=True,
     )
+    return admin_engine, db_name
 
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db_name):
-        raise RuntimeError(f"Unsafe database name: {db_name}")
 
-    with admin_engine.connect() as conn:
-        exists = conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
-            {"db_name": db_name},
-        ).scalar()
-        if not exists:
-            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+def platform_database_exists() -> bool:
+    """Read-only: whether the Platform database exists on its server."""
+    admin_engine, db_name = _platform_admin_engine()
+    try:
+        with admin_engine.connect() as conn:
+            return bool(conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+                                     {"db_name": db_name}).scalar())
+    finally:
+        admin_engine.dispose()
 
-    admin_engine.dispose()
+
+def ensure_platform_database_exists() -> None:
+    """Create the Platform database when missing (startup with AWSUM_AUTO_MIGRATE=ON / migrate_platform --init)."""
+    from backend.database.migration_policy import assert_schema_change_allowed
+
+    assert_schema_change_allowed(get_platform_db_url())
+    admin_engine, db_name = _platform_admin_engine()
+    try:
+        with admin_engine.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+                {"db_name": db_name},
+            ).scalar()
+            if not exists:
+                conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    finally:
+        admin_engine.dispose()
 
 
 platform_engine = create_engine(get_platform_db_url(), pool_pre_ping=True, future=True)

@@ -82,10 +82,10 @@
     if (result) result.textContent = isDirty(section) ? 'Unsaved changes' : 'Saved.';
   }
 
+  // Page-level results use the Common Toast (success/info close after 1 s; warning/danger stay until closed).
   function setMessage(message, kind) {
-    const el = $('settingsGlobalMessage');
-    el.textContent = message;
-    el.className = 'alert alert-' + (kind || 'info') + (message ? '' : ' d-none');
+    if (message) AwsumToast.show(message, { kind: kind || 'info' });
+    else AwsumToast.clear();
   }
 
   function markSaved(section, resultText) {

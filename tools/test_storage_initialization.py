@@ -322,7 +322,7 @@ class StorageInitializationTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
         start = source.index("  function notifyStorageWarning(")
         function = source[start:source.index("  async function saveItem(", start)]
-        script = "const assert=require('node:assert/strict');let messages=[];const alert=v=>messages.push(v);\n" + function + """
+        script = "const assert=require('node:assert/strict');let messages=[];const AwsumToast={warning:v=>messages.push(v)};\n" + function + """
 notifyStorageWarning({storage_initialized:true});
 assert.equal(messages.length,0);
 notifyStorageWarning({storage_initialized:false,storage_warning:'Registration saved; storage pending.'});

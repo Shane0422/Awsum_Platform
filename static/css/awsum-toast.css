@@ -1,0 +1,89 @@
+/* AWSUM Common Toast Notification (static/js/awsum-toast.js).
+   Fixed overlay at the top right: never changes layout, scroll or focus. */
+:root {
+  --awsum-toast-bg: #ffffff;
+  --awsum-toast-text: #1f2937;
+  --awsum-toast-border: #e5e7eb;
+  --awsum-toast-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  --awsum-toast-success: #15803d;
+  --awsum-toast-info: #2563eb;
+  --awsum-toast-warning: #b45309;
+  --awsum-toast-danger: #dc2626;
+}
+
+.awsum-toast-region {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1090; /* above Bootstrap modals (1055) and the confirm modal */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none; /* the empty area never blocks clicks underneath */
+  box-sizing: border-box;
+}
+.awsum-toast-region *, .awsum-toast-region *::before, .awsum-toast-region *::after { box-sizing: border-box; } /* same size without Bootstrap (POS / KIOSK) */
+
+.awsum-toast {
+  --awsum-toast-accent: var(--awsum-toast-success);
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px 10px 12px;
+  background: var(--awsum-toast-bg);
+  color: var(--awsum-toast-text);
+  border: 1px solid var(--awsum-toast-border);
+  border-left: 4px solid var(--awsum-toast-accent);
+  border-radius: 10px;
+  box-shadow: var(--awsum-toast-shadow);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  animation: awsum-toast-in 0.16s ease-out;
+}
+.awsum-toast-info { --awsum-toast-accent: var(--awsum-toast-info); }
+.awsum-toast-warning { --awsum-toast-accent: var(--awsum-toast-warning); }
+.awsum-toast-danger { --awsum-toast-accent: var(--awsum-toast-danger); }
+
+.awsum-toast-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--awsum-toast-accent);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.awsum-toast-body { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.awsum-toast-title { display: block; font-weight: 600; }
+.awsum-toast-close {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.awsum-toast-close:hover { background: #f3f4f6; color: #111827; }
+.awsum-toast-close:focus-visible { outline: 2px solid var(--awsum-toast-accent); outline-offset: 1px; }
+
+@keyframes awsum-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .awsum-toast { animation: none; }
+}

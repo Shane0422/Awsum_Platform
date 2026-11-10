@@ -11,12 +11,15 @@
 <head>
   <meta charset="UTF-8">
   <script src="/static/js/web-session.js?v=1"></script>
+  <script src="/static/js/awsum-toast.js?v=1"></script>
+  <link rel="stylesheet" href="/static/css/awsum-toast.css?v=1">
   <script src="/static/js/money.js?v=2"></script>
   <script src="/static/js/money-keypad.js?v=1"></script>
   <script src="/static/js/master-detail.js?v=1"></script>
   <script src="/static/js/barcode-input.js?v=1"></script>
-  <script src="/static/js/option-group.js?v=3"></script>
-  <link rel="stylesheet" href="/static/css/awsum-option-group.css?v=2">
+  <script src="/static/js/code-input.js?v=2"></script>
+  <script src="/static/js/option-group.js?v=5"></script>
+  <link rel="stylesheet" href="/static/css/awsum-option-group.css?v=4">
   <title>{{ APP_NAME }} - {% block page_title %}Platform{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
@@ -65,10 +68,13 @@
       gap: 0.8rem;
       backdrop-filter: blur(8px);
     }
-    .platform-topbar .brand-mark { display: flex; align-items: center; gap: 0.5rem; height: 26px; text-decoration: none; }
-    .platform-topbar .company-logo { height: calc(26px * var(--platform-brand-scale, 1)); max-width: min(calc(160px * var(--platform-brand-scale, 1)), calc(100vw - 150px)); }
+    .platform-topbar .brand-mark { display: flex; align-items: center; gap: 10px; min-height: 34px; min-width: 0; text-decoration: none; background: transparent; }
+    .platform-topbar .company-logo { flex-shrink: 0; height: calc(22px * var(--platform-brand-scale, 1)); max-width: min(calc(120px * var(--platform-brand-scale, 1)), calc(100vw - 150px)); background: transparent; filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.42)); }
     .platform-topbar .brand-icon { height: 22px; width: auto; max-width: 140px; }
     .platform-topbar .brand-text { --aw-brand-text-size: calc(0.94rem * var(--platform-brand-scale, 1)); color: #ffffff; font-weight: 700; }
+    .platform-topbar .platform-brand-copy { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; }
+    .platform-topbar .brand-text.platform-brand-name { --aw-brand-text-size: calc(10px * var(--platform-brand-scale, 1)); font-weight: 600; letter-spacing: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .platform-topbar .platform-brand-subtitle { font-size: 9px; font-weight: 600; line-height: 1; letter-spacing: 0.12em; text-transform: uppercase; color: #8fb8f5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .platform-topbar .topbar-meta { display: flex; align-items: center; gap: 0.7rem; }
     #userDropdown { font-size: 0.8rem; padding: 0.3rem 0.6rem; border-color: transparent; border-radius: 8px; color: var(--platform-nav-text); font-weight: 600; }
     #userDropdown:hover, #userDropdown.show { background: var(--platform-navy-active); border-color: transparent; color: #ffffff; }
@@ -227,7 +233,8 @@
               <h2>{{ nav_icon('master-group') }}Master Group</h2>
               <ul class="platform-menu-list">
                 {{ nav_link('Tax', '/platform/master-group/tax', active_page == 'master-group' and active_module == 'tax') }}
-                {{ nav_link('Item Kind', '/platform/master-group/item-kind', active_page == 'master-group' and active_module == 'item-kind') }}
+                {{ nav_link('Common Maintenance', '/platform/master-group/common-maintenance', active_page == 'master-group' and active_module == 'common-maintenance') }}
+                {{ nav_link('Location Master', '/platform/master-group/location-master', active_page == 'master-group' and active_module == 'location-master') }}
                 {{ nav_link('Category I', '/platform/master-group/category-1', active_page == 'master-group' and active_module == 'category-1') }}
                 {{ nav_link('Category II', '/platform/master-group/category-2', active_page == 'master-group' and active_module == 'category-2') }}
                 {{ nav_link('Category III', '/platform/master-group/category-3', active_page == 'master-group' and active_module == 'category-3') }}
@@ -259,6 +266,8 @@
               <h2>{{ nav_icon('system') }}System</h2>
               <ul class="platform-menu-list">
                 {{ nav_link('System Settings', '/platform/system-settings', active_page == 'system-settings') }}
+                {# Item Kind: Super Admin System Master (program logic keys) #}
+                {{ nav_link('Item Kind', '/platform/master-group/item-kind', active_page == 'master-group' and active_module == 'item-kind') }}
               </ul>
             </section>
             {% endif %}

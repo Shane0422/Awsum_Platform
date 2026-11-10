@@ -56,13 +56,14 @@ const checkLayout=async(frame,doc,win,label)=>{
 """
 # Page scripts injected inline (web-session.js only pings the live session and is left out).
 SCRIPTS = (
-    "static/js/money.js", "static/js/money-keypad.js", "static/js/master-detail.js", "static/js/barcode-input.js",
+    "static/js/awsum-toast.js", "static/js/money.js", "static/js/money-keypad.js", "static/js/master-detail.js", "static/js/barcode-input.js",
     "static/js/option-group.js", "static/bootstrap/js/bootstrap.bundle.min.js",
     "static/components/image-uploader/image-uploader.js", "static/js/store_devices_panel.js",
 )
 STYLES = (
     "static/bootstrap/css/bootstrap.min.css", "static/css/brand.css", "static/css/platform-modal.css",
     "static/css/awsum-list.css", "static/css/awsum-master-detail.css",
+    "static/css/awsum-toast.css",
     "static/components/image-uploader/image-uploader.css",
 )
 

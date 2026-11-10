@@ -3093,7 +3093,7 @@
   }
 </script>
 
-<script src="/static/js/store_devices_panel.js?v=5"></script>
+<script src="/static/js/store_devices_panel.js?v=6"></script>
 <script>
   const activeModuleRaw =  "{{ active_module }}";
   const activeModule = activeModuleRaw;
@@ -3454,7 +3454,14 @@
         { name: 'loyalty_scope', label: 'Loyalty Scope', type: 'select', options: [{ value: '', label: '-' }, { value: 'STORE', label: 'Store' }, { value: 'MERCHANT', label: 'Merchant' }], colClass: 'col-12 col-md-6' },
         { name: 'opt_time_attendance', label: 'Time & Attendance', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
         { name: 'opt_inventory', label: 'Inventory Management', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_location_management', label: 'Use Location Management', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
         { name: 'opt_accounting', label: 'Accounting', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        // Store Options > Item Features (services.store_item_features): OFF only hides MD fields for this Store.
+        { name: 'opt_use_color', label: 'Use Color', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_use_modifier', label: 'Use Modifier', type: 'select', default: 'on', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_use_bottle_deposit', label: 'Use Bottle Deposit', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_use_sugar_tax', label: 'Use Sugar Tax', type: 'select', default: 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
+        { name: 'opt_use_output_device', label: 'Use Output Device', type: 'select', default: 'on', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], colClass: 'col-12 col-md-6' },
       ],
       tabs: [
         { id: 'basic', label: 'Overview', title: 'Store Information', summary: 'Core store identity and operating profile.', fields: ['id', 'store_code', 'installed_by_agency_id', 'merchant_id', 'store_name', 'business_type', 'operation_type', 'status'] },
@@ -3462,7 +3469,8 @@
         { id: 'address', label: 'Address', title: 'Store Address', summary: 'Store location details. Enter a US ZIP Code to fill City and State. You can adjust if needed.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone', 'default_tax_rate'] },
         { id: 'receipt', label: 'Receipt Info', title: 'Receipt Information', summary: 'Receipt header and footer information for printed output.', fields: ['receipt_store_name', 'receipt_phone', 'receipt_email', 'receipt_website_url', 'receipt_message'] },
         { id: 'license', label: 'License', title: 'Store License', summary: 'Store License and generic Device License Quantity (managed by Central).', fields: ['store_license_key', 'store_license_status', 'store_license_start_date', 'license_expire_date', 'license_count'] },
-        { id: 'options', label: 'Options', title: 'Store Options', summary: 'Optional store features. Scope applies only while the option is On.', fields: ['opt_customer', 'customer_scope', 'opt_loyalty', 'loyalty_scope', 'opt_time_attendance', 'opt_inventory', 'opt_accounting'] },
+        { id: 'options', label: 'Business Options', title: 'Business Options', summary: 'Optional store features. Scope applies only while the option is On.', fields: ['opt_customer', 'customer_scope', 'opt_loyalty', 'loyalty_scope', 'opt_time_attendance', 'opt_inventory', 'opt_location_management', 'opt_accounting'] },
+        { id: 'item_features', label: 'Item Features', title: 'Item Features', summary: 'Item fields this Store uses. Off only hides the field for this Store; saved item data is kept.', fields: ['opt_use_color', 'opt_use_modifier', 'opt_use_bottle_deposit', 'opt_use_sugar_tax', 'opt_use_output_device'] },
                 { id: 'notes', label: 'Notes', title: 'Store Notes', summary: 'Internal notes and additional information for this store.', fields: ['notes'] },
               ],
     },
@@ -3579,6 +3587,9 @@
     'device-type': { list: 'Device Types', singular: 'Device Type' },
   };
   const activeLabel = moduleLabels[activeModule] || { list: 'Records', singular: 'Record' };
+  // Record name used in the Common Toast result messages ("Agency created.", "Store deleted.").
+  const toastLabel = moduleLabels[activeModule]?.singular
+    || String(activeModule || 'record').split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 
   let currentItems = [];
   let formBaselineSnapshot = null;
@@ -3949,7 +3960,7 @@
 
   function showMasterModalError(message) {
     const box = document.getElementById('masterModalError');
-    if (!box) { alert(message); return; }
+    if (!box) { if (message) AwsumToast.error(message); return; }
     box.textContent = message || '';
     box.classList.toggle('d-none', !message);
     if (message) box.scrollIntoView({ block: 'nearest' });
@@ -4035,7 +4046,7 @@
   function openSelectedMasterEditFromList() {
     if (!isListCentricModule) return;
     if (!String(selectedMasterId.value || '').trim()) {
-      alert('Please select an item first.');
+      AwsumToast.warning('Please select an item first.');
       return;
     }
     refreshStoreLogoPreview(selectedOriginalRecord);
@@ -6616,7 +6627,7 @@
       await refreshContactManager();
       return true;
     } catch (error) {
-      alert(error.message);
+      AwsumToast.error(error.message);
       return false;
     }
   }
@@ -6628,11 +6639,11 @@
     const payload = { contact_role: document.getElementById('bc_contact_role').value, is_primary: document.getElementById('bc_is_primary').checked };
     CONTACT_EDITOR_FIELDS.forEach((name) => { payload[name] = document.getElementById(`bc_${name}`).value.trim(); });
     if (!payload.first_name && !payload.last_name) {
-      alert('First Name or Last Name is required.');
+      AwsumToast.warning('First Name or Last Name is required.');
       return;
     }
     if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(payload.email)) {
-      alert('Please enter a valid contact email address.');
+      AwsumToast.warning('Please enter a valid contact email address.');
       return;
     }
     const contactId = document.getElementById('bc_contact_id').value;
@@ -6645,10 +6656,11 @@
       renderBusinessContacts();
       return;
     }
-    await runContactAction(() => contactId
+    const saved = await runContactAction(() => contactId
       ? contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
       : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload),
       payload.is_primary || businessContacts.some(contact => String(contact.contact_id) === contactId && contact.is_primary));
+    if (saved) AwsumToast.done(contactId ? 'updated' : 'created', 'Contact');
   }
 
   function setPrimaryBusinessContact(contactId) {
@@ -6670,7 +6682,9 @@
       renderBusinessContacts();
       return;
     }
-    await runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'));
+    if (await runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'))) {
+      AwsumToast.done('deleted', 'Contact');
+    }
   }
 
   function moveBusinessContact(index, offset) {
@@ -7370,13 +7384,13 @@
   async function saveMerchantStoreDevice() {
     const { merchantId } = getSelectedMerchantContext();
     if (!merchantId || !selectedMerchantStoreId) {
-      alert('Please save and select a Store first.');
+      AwsumToast.warning('Please save and select a Store first.');
       return;
     }
 
     const payload = collectMerchantStoreDevicePayload();
     if (!String(payload.device_name || '').trim()) {
-      alert('Device name is required.');
+      AwsumToast.warning('Device name is required.');
       return;
     }
 
@@ -7395,7 +7409,7 @@
 
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to save device: ' + text);
+      AwsumToast.error('Unable to save device: ' + text);
       return;
     }
 
@@ -7404,12 +7418,13 @@
     await loadMerchantStoreDevices();
     const modal = getMerchantStoreDeviceModalInstance();
     if (modal) modal.hide();
+    AwsumToast.done(isEditing ? 'updated' : 'created', 'Device');
   }
 
   async function deleteMerchantStoreDevice() {
     const { merchantId } = getSelectedMerchantContext();
     if (!merchantId || !selectedMerchantStoreId || !selectedMerchantStoreDeviceId) {
-      alert('Please select a device first.');
+      AwsumToast.warning('Please select a device first.');
       return;
     }
 
@@ -7424,12 +7439,13 @@
 
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to delete device: ' + text);
+      AwsumToast.error('Unable to delete device: ' + text);
       return;
     }
 
     selectedMerchantStoreDeviceId = null;
     await loadMerchantStoreDevices();
+    AwsumToast.done('deleted', 'Device');
     const modal = getMerchantStoreDeviceModalInstance();
     if (modal) modal.hide();
   }
@@ -7677,13 +7693,13 @@
     const { isReadyForStoreRegistration } = getSelectedMerchantContext();
     const isEditingStore = Boolean(selectedMerchantStoreId);
     if (!isReadyForStoreRegistration && !isEditingStore) {
-      alert('Please save the Merchant first to manage stores.');
+      AwsumToast.warning('Please save the Merchant first to manage stores.');
       return;
     }
 
     const payload = collectMerchantStorePayload();
     if (!payload.store_name.trim()) {
-      alert('Store name is required.');
+      AwsumToast.warning('Store name is required.');
       return;
     }
 
@@ -7694,7 +7710,7 @@
     const storeId = selectedMerchantStoreId;
     const { merchantId } = getSelectedMerchantContext();
     if (!merchantId) {
-      alert('Please save the Merchant first to manage stores.');
+      AwsumToast.warning('Please save the Merchant first to manage stores.');
       return;
     }
     const method = storeId ? 'PUT' : 'POST';
@@ -7712,7 +7728,7 @@
         body,
       });
     } catch (error) {
-      alert(error.message || 'Unable to save the store right now. Please refresh and try again.');
+      AwsumToast.error(error.message || 'Unable to save the store right now. Please refresh and try again.');
       return;
     } finally {
       savingStoreImage = false;
@@ -7721,11 +7737,11 @@
 
     if (!res.ok) {
       if (res.status === 401) {
-        alert('Session expired. Please refresh the page and login again.');
+        AwsumToast.error('Session expired. Please refresh the page and login again.');
         return;
       }
       const text = await res.text();
-      alert('Unable to save the store: ' + text);
+      AwsumToast.error('Unable to save the store: ' + text);
       return;
     }
 
@@ -7735,21 +7751,22 @@
     resetMerchantStoreEditor();
     setMerchantStoreFormVisible(false);
     await loadMerchantStoresForSelectedMerchant();
+    AwsumToast.done(isEditingStore ? 'updated' : 'created', 'Store');
     notifyStorageWarning(savedStore);
-    if (savedStore.image_warning) alert(savedStore.image_warning);
+    if (savedStore.image_warning) AwsumToast.warning(savedStore.image_warning);
 
   }
 
   async function deleteMerchantLinkedStore() {
     if (!selectedMerchantStoreId) {
-      alert('Please select a store first.');
+      AwsumToast.warning('Please select a store first.');
       return;
     }
     if (!(await showCenteredConfirm('Remove this store from the merchant view?', 'Delete Store', { variant: 'danger', okText: 'Delete', cancelText: 'No' }))) return;
 
     const { merchantId } = getSelectedMerchantContext();
     if (!merchantId) {
-      alert('Please save the Merchant first to manage stores.');
+      AwsumToast.warning('Please save the Merchant first to manage stores.');
       return;
     }
 
@@ -7762,13 +7779,14 @@
     }
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to delete the store: ' + text);
+      AwsumToast.error('Unable to delete the store: ' + text);
       return;
     }
 
     resetMerchantStoreEditor();
     setMerchantStoreFormVisible(false);
     await loadMerchantStoresForSelectedMerchant();
+    AwsumToast.done('deleted', 'Store');
   }
 
   function initMerchantStorePanelHandlers() {
@@ -7791,7 +7809,7 @@
       addBtn.addEventListener('click', () => {
         const { isReadyForStoreRegistration } = getSelectedMerchantContext();
         if (!isReadyForStoreRegistration) {
-          alert('Please save the Merchant first to manage stores.');
+          AwsumToast.warning('Please save the Merchant first to manage stores.');
           return;
         }
         resetMerchantStoreEditor();
@@ -7825,7 +7843,7 @@
     if (deviceAddBtn) {
       deviceAddBtn.addEventListener('click', () => {
         if (!selectedMerchantStoreId) {
-          alert('Please save and select a Store first.');
+          AwsumToast.warning('Please save and select a Store first.');
           return;
         }
         selectedMerchantStoreDeviceId = null;
@@ -8354,7 +8372,7 @@
         }
       } catch (error) {
         console.error('Failed to export store list:', error);
-        alert('Unable to export. Refresh or sign in again.');
+        AwsumToast.error('Unable to export. Refresh or sign in again.');
       }
       return;
     }
@@ -8363,7 +8381,7 @@
 
   function runExport(format) {
     if (!currentItems.length) {
-      alert('No data to export.');
+      AwsumToast.warning('No data to export.');
       return;
     }
     if (format === 'csv') {
@@ -8383,7 +8401,7 @@
     if (activeModule !== 'invoice' && activeModule !== 'contract') return;
     const id = String(selectedMasterId.value || '').trim();
     if (!id) {
-      alert(activeModule === 'contract' ? 'Please select a contract first.' : 'Please select an invoice first.');
+      AwsumToast.warning(activeModule === 'contract' ? 'Please select a contract first.' : 'Please select an invoice first.');
       return;
     }
 
@@ -8394,7 +8412,7 @@
       });
       if (!res.ok) {
         const text = await res.text();
-        alert('Unable to generate contract PDF: ' + text);
+        AwsumToast.error('Unable to generate contract PDF: ' + text);
         return;
       }
       const blob = await res.blob();
@@ -8408,7 +8426,7 @@
     });
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to download invoice: ' + text);
+      AwsumToast.error('Unable to download invoice: ' + text);
       return;
     }
 
@@ -8507,7 +8525,7 @@
   }
 
   function notifyStorageWarning(result) {
-    if (result.storage_warning) alert(result.storage_warning);
+    if (result.storage_warning) AwsumToast.warning(result.storage_warning);
   }
 
   const registrationPasswords = new Map();
@@ -8536,7 +8554,7 @@
       try {
         await openRegistrationEmail(CONTACT_OWNER_TYPES[activeModule], selectedMasterId.value);
       } catch (error) {
-        alert('Unable to open Registration Email: ' + error.message);
+        AwsumToast.error('Unable to open Registration Email: ' + error.message);
       } finally {
         syncRegistrationEmailButtons();
       }
@@ -8672,7 +8690,7 @@
       if (zipValue) {
         const usZipRegex = /^\d{5}(-\d{4})?$/;
         if (!usZipRegex.test(zipValue)) {
-          alert('ZIP code must use US format: 12345 or 12345-6789.');
+          AwsumToast.warning('ZIP code must use US format: 12345 or 12345-6789.');
           return false;
         }
       }
@@ -8713,7 +8731,7 @@
           ? 'Unable to save. The Business Type Code or Name may already exist.'
           : parseApiError(text));
       } else {
-        alert('Unable to save: ' + text);
+        AwsumToast.error('Unable to save: ' + text);
       }
       return false;
     }
@@ -8742,18 +8760,18 @@
     await loadList(lastSavedId);
     setBaselineSnapshot();
     updateListCentricActionButtons();
+    const adminCreated = CONTACT_OWNER_TYPES[activeModule] && json[`${activeModule}_user_created`]
+      ? ` ${({agency: 'Agency', merchant: 'Merchant', store: 'Store'})[activeModule]} Admin User created.` : '';
+    AwsumToast.success(AwsumToast.message(id ? 'updated' : 'created', toastLabel) + adminCreated);
     notifyStorageWarning(json);
-    if (json.image_warning) alert(json.image_warning);
-    if (CONTACT_OWNER_TYPES[activeModule] && json[`${activeModule}_user_created`]) {
-      alert(`${({agency: 'Agency', merchant: 'Merchant', store: 'Store'})[activeModule]} Admin User created.`);
-    }
+    if (json.image_warning) AwsumToast.warning(json.image_warning);
     return true;
   }
 
   async function deleteItem() {
     const id = selectedMasterId.value;
     if (!id) {
-      alert('Please select an item first.');
+      AwsumToast.warning('Please select an item first.');
       return false;
     }
     const deleteLabel = config.deleteLabel || 'Delete';
@@ -8762,7 +8780,7 @@
     const res = await fetch(getItemUrl(id), { method: 'DELETE' });
     if (!res.ok) {
       const text = await res.text();
-      alert('Unable to delete: ' + text);
+      AwsumToast.error('Unable to delete: ' + text);
       return false;
     }
 
@@ -8770,6 +8788,7 @@
     lastSavedId = null;
     await loadList();
     updateListCentricActionButtons();
+    AwsumToast.done('deleted', toastLabel);
     return true;
   }
 

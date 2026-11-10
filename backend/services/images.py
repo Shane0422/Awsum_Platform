@@ -1,6 +1,7 @@
 """Context-first logical image paths, independent of physical storage and presentation."""
 from dataclasses import dataclass
 from email.message import Message
+from functools import lru_cache
 import json
 from hashlib import sha256
 from io import BytesIO
@@ -210,6 +211,29 @@ def platform_logo_url(configured_reference: str | None = None) -> str | None:
     if configured_reference and (configured := logo_url(configured_reference)):
         return configured
     return builtin_asset_url("logo", "logo_full.png")
+
+
+@lru_cache(maxsize=32)
+def _has_transparency(reference: str) -> bool:
+    file = resolve_image_file(reference)
+    if file is None:
+        return False
+    try:
+        with Image.open(file) as image:
+            alpha = image.convert("RGBA").getchannel("A")
+            return alpha.getextrema()[0] < 255
+    except (OSError, UnidentifiedImageError):
+        return False
+
+
+def nav_logo_url(reference: str | None) -> str:
+    """Logo for dark navigation bars: a transparent logo as-is, else the built-in transparent mark.
+
+    The cache key includes the ?v= mtime token, so a replaced logo is re-checked.
+    """
+    if reference and _has_transparency(reference):
+        return reference
+    return builtin_asset_url("logo", "logo_nav.png")
 
 
 def read_image_upload(upload: UploadFile) -> bytes:

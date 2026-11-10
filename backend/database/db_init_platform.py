@@ -11,6 +11,7 @@ from backend.database.pg_platform import (
 )
 from backend.utils.safe_schema_migrate import safe_schema_migrate
 from backend.services.business_code import generate_business_code
+from backend.services.store_item_features import ITEM_FEATURES
 
 
 MERCHANT_CODE_PREFIX = "CLT"
@@ -275,6 +276,9 @@ def _ensure_store_license_options_schema(db: Session) -> None:
         "b_opt_accounting BOOLEAN",
         "c_customer_scope VARCHAR(20)",
         "c_loyalty_scope VARCHAR(20)",
+        # Item Features: existing stores stay NULL and read as the default in services.store_item_features
+        # (Modifier / Output Device ON, others OFF), so no existing row is rewritten.
+        *(f"{column} BOOLEAN" for _key, column, _default in ITEM_FEATURES.values()),
     ):
         db.execute(text(f"ALTER TABLE tb_store ADD COLUMN IF NOT EXISTS {ddl}"))
     db.execute(text(
@@ -599,38 +603,90 @@ def _seed_device_categories_and_types(db: Session) -> None:
     print("[SEED] Device categories and device types seeded")
 
 
-def init_platform_db() -> None:
-    """Create platform tables in PostgreSQL and seed baseline data."""
-    from backend.models_admin import (
-        merchant,
-        business_type,
-        store,
-        platform_user,
-        session,
-        role,
-        license,
-        device_category,
-        device_type,
-        device,
-        device_log,
-        agency,
-        agency_type,
-        billing,
-        payment_method,
-        subscription,
-        pricing_plan,
-        invoice,
-        contract,
-        provision_log,
-        store_sync_status,
-        store_entitlement,
-        license_device_link,
-        license_email_log,
-        system_settings,
-        system_settings_audit,
-        master_group,
-        business_contact,
+PLATFORM_MODEL_MODULES = (
+    "merchant", "business_type", "store", "platform_user", "session", "role", "license", "device_category",
+    "device_type", "device", "device_log", "agency", "agency_type", "billing", "payment_method", "subscription",
+    "pricing_plan", "invoice", "contract", "provision_log", "store_sync_status", "store_entitlement",
+    "license_device_link", "license_email_log", "system_settings", "system_settings_audit", "master_group",
+    "store_location", "business_contact", "common_code",
+)
+
+
+def load_platform_models() -> None:
+    """Register every Platform model on PlatformBase (shared by init_platform_db and the schema check)."""
+    import importlib
+
+    for name in PLATFORM_MODEL_MODULES:
+        importlib.import_module(f"backend.models_admin.{name}")
+
+
+def legacy_destructive_targets(conn) -> list[str]:
+    """Read-only: legacy objects the startup cleanup would DROP (data loss). Empty = nothing destructive pending."""
+    if conn.dialect.name != "postgresql":
+        return []
+    checks = (
+        ("table tb_user", "SELECT to_regclass('public.tb_user')"),
+        ("column tb_session.i_user_id", "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+                                        "AND table_name='tb_session' AND column_name='i_user_id'"),
+        ("column tb_store.i_store_type_id", "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+                                            "AND table_name='tb_store' AND column_name='i_store_type_id'"),
+        ("table tb_store_type", "SELECT to_regclass('public.tb_store_type')"),
     )
+    from backend.database.color_migration import legacy_color_targets
+    from backend.database.store_location_migration import legacy_location_targets
+    targets = [label for label, sql in checks if conn.execute(text(sql)).scalar() is not None]
+    # COLOR step 6: earlier tb_color / i_color_id / i_legacy_id; Location Master: earlier Location Type / parent tree.
+    return targets + legacy_color_targets(conn) + legacy_location_targets(conn)
+
+
+def check_platform_schema(engine) -> dict:
+    """Read-only Platform schema check (startup with AWSUM_AUTO_MIGRATE=OFF and migrate_platform --check).
+
+    Inspection / SELECT queries only, inside a READ ONLY transaction that is rolled back: it never changes the DB.
+    Detects missing tables / columns and pending destructive legacy cleanups; index or data changes made
+    inside individual migrate_* steps are not detectable here.
+    """
+    from backend.utils.safe_schema_migrate import plan_schema_changes
+
+    load_platform_models()
+    with engine.connect() as conn:
+        if conn.dialect.name == "postgresql":
+            conn.execute(text("SET TRANSACTION READ ONLY"))
+        plan = plan_schema_changes(PlatformBase, conn)
+        plan["destructive"] = legacy_destructive_targets(conn)
+        conn.rollback()
+    plan["pending"] = bool(plan["missing_tables"] or plan["missing_columns"] or plan["destructive"])
+    return plan
+
+
+def describe_schema_check(plan: dict) -> list[str]:
+    lines = []
+    if plan["missing_tables"]:
+        lines.append(f"missing tables: {', '.join(plan['missing_tables'])}")
+    for table, columns in plan["missing_columns"].items():
+        lines.append(f"missing columns: {table}.{', '.join(columns)}")
+    if plan["destructive"]:
+        lines.append(f"destructive legacy cleanup pending (needs approval): {', '.join(plan['destructive'])}")
+    return lines
+
+
+def init_platform_db(*, allow_destructive: bool = False) -> None:
+    """Create platform tables in PostgreSQL and seed baseline data (the one Platform migration path).
+
+    Runs from startup with AWSUM_AUTO_MIGRATE=ON (Development) or from tools.migrate_platform (--init / --apply).
+    Only non-destructive changes run automatically (new tables, new columns, missing master rows). Destructive
+    legacy cleanups (DROP TABLE / DROP COLUMN) are skipped with a warning unless allow_destructive is given by a
+    separately approved migration.
+    """
+    from backend.database.migration_policy import assert_schema_change_allowed
+
+    assert_schema_change_allowed(platform_engine)
+    with platform_engine.connect() as conn:
+        destructive = legacy_destructive_targets(conn)
+    if destructive and not allow_destructive:
+        print(f"[MIGRATION][WARN] Destructive legacy cleanup skipped ({', '.join(destructive)}); "
+              "it needs a separately approved migration (tools.migrate_platform --apply --allow-destructive).")
+    load_platform_models()
     from backend.models_admin.merchant import Merchant
     from backend.models_admin.business_type import BusinessType
     from backend.models_admin.role import Role
@@ -649,8 +705,16 @@ def init_platform_db() -> None:
     migrate_md_images(platform_engine)
     from backend.database.md_second_name_migration import migrate_md_second_name
     migrate_md_second_name(platform_engine)
+    from backend.database.md_output_device_migration import migrate_md_output_devices
+    migrate_md_output_devices(platform_engine)
     from backend.database.md_inventory_migration import migrate_md_inventory
     migrate_md_inventory(platform_engine)
+    from backend.database.color_migration import (backfill_md_detail_color_codes, drop_legacy_color,
+                                                  migrate_md_detail_color_code)
+    migrate_md_detail_color_code(platform_engine)  # MD Detail Color column with its FK (before safe_schema_migrate)
+    from backend.database.store_location_migration import migrate_recommended_locations, migrate_store_locations
+    migrate_store_locations(platform_engine)
+    migrate_recommended_locations(platform_engine)
     from backend.database.user_image_migration import migrate_user_images
     migrate_user_images(platform_engine)
     from backend.database.business_contact_migration import migrate_business_contacts
@@ -670,6 +734,14 @@ def init_platform_db() -> None:
     migrate_md_barcode_unique(platform_engine)
     from backend.database.item_kind_migration import migrate_item_kinds
     migrate_item_kinds(platform_engine)
+    from backend.database.common_code_migration import migrate_common_codes
+    migrate_common_codes(platform_engine)  # additive COLOR / UNIT seed (an earlier tb_color is copied, not seeded)
+    backfill_md_detail_color_codes(platform_engine)  # earlier i_color_id only: fill i_color_code_id via i_legacy_id
+    if allow_destructive:  # COLOR step 6: drop tb_color / i_color_id / i_legacy_id after checking + archiving
+        from backend.database import platform_backup
+        drop_legacy_color(platform_engine, platform_backup.backup_directory())
+        from backend.database.store_location_migration import drop_location_hierarchy
+        drop_location_hierarchy(platform_engine, platform_backup.backup_directory())  # Location Type / parent tree
     from backend.services.storage_layout import final_layout_enabled, validate_runtime_references
     if final_layout_enabled():
         validate_runtime_references(platform_engine)
@@ -684,10 +756,12 @@ def init_platform_db() -> None:
         _ensure_platform_user_last_login_schema(db)
 
         # Enforce platform-user-only auth policy by removing legacy tb_user dependencies.
-        _drop_legacy_tb_user_dependencies(db)
-        _drop_legacy_tb_user_table(db)
-        _drop_legacy_session_user_column(db)
-        _drop_legacy_store_type_dependencies(db)
+        # Destructive (DROP): only inside a separately approved migration.
+        if allow_destructive:
+            _drop_legacy_tb_user_dependencies(db)
+            _drop_legacy_tb_user_table(db)
+            _drop_legacy_session_user_column(db)
+            _drop_legacy_store_type_dependencies(db)
         _ensure_merchant_code_schema_and_backfill(db)
         _ensure_merchant_primary_agency_schema(db)
         _ensure_merchant_website_column(db)

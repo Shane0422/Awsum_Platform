@@ -7,7 +7,8 @@
   function printHtml(html) {
     const popup = window.open('', '_blank', 'width=1100,height=780');
     if (!popup) {
-      alert('Please allow pop-ups to print this report.');
+      const blocked = 'Please allow pop-ups to print this report.';
+      if (window.AwsumToast) AwsumToast.warning(blocked); else alert(blocked);
       return;
     }
     if (!html.includes('id="awsum-report-context"')) {

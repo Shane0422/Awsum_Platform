@@ -1,4 +1,6 @@
+import io
 import json
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,8 +15,13 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_admin.invoice import InvoiceLine
+from backend.models_admin.store_location import StoreLocation, StoreMdLocation
+from backend.models_admin.store import Store
+from backend.models_admin.merchant import Merchant
 from backend.models_admin.master_group import Category1, Category2, Category3, ItemKind, MdDetail, MdMaster, Tax
+from backend.models_admin.common_code import CommonCode, CommonGroup
 from backend.database.item_kind_migration import migrate_item_kinds
+from backend.database.common_code_migration import DEFAULT_COLORS, migrate_common_codes
 from backend.routers import master_group as router_module
 from backend.services import master_group as svc
 
@@ -28,7 +35,8 @@ class MasterGroupTests(unittest.TestCase):
         self.addCleanup(storage.stop)
         engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
         self.addCleanup(engine.dispose)
-        tables = [m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine)]
+        tables = [m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine,
+                                         StoreLocation, StoreMdLocation)]
         PlatformBase.metadata.create_all(engine, tables=tables)
         migrate_item_kinds(engine)
         self.Session = sessionmaker(bind=engine)
@@ -248,6 +256,47 @@ class MasterGroupTests(unittest.TestCase):
             self.assertEqual(conn.execute(text("SELECT * FROM tb_md_master")).one(), (42, "MD00042", None))
         self.assertIn("c_second_name", {col["name"] for col in inspect(engine).get_columns("tb_md_master")})
 
+    def test_md_output_devices_save_reload_update_and_export(self):
+        # Default: nothing selected = 0 (not output).
+        item = svc.create_item(self.db, "md", self.md_payload(), 1)
+        self.assertEqual(item["output_devices"], [])
+        self.assertEqual(self.db.get(MdMaster, item["id"]).i_output_devices, 0)
+        # Multiple selection (strings from the form, duplicates/unordered) -> sorted list, bitmask in the DB.
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(output_devices=["8", "1", "3", "3"]), 1)
+        self.assertEqual(item["output_devices"], [1, 3, 8])
+        self.db.expire_all()
+        self.assertEqual(self.db.get(MdMaster, item["id"]).i_output_devices, 0b10000101)
+        self.assertEqual(svc.list_items(self.db, "md")["items"][0]["output_devices"], [1, 3, 8])
+        # Key absent (older client) keeps the saved value; all eight is 255; empty clears to 0.
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(), 1)
+        self.assertEqual(item["output_devices"], [1, 3, 8])
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(output_devices=list(range(1, 9))), 1)
+        self.assertEqual(self.db.get(MdMaster, item["id"]).i_output_devices, 255)
+        headers, rows = svc.export_table(self.db, "md")
+        self.assertEqual(dict(zip(headers, rows[0]))["Output Device"], "#1, #2, #3, #4, #5, #6, #7, #8")
+        item = svc.update_item(self.db, "md", item["id"], self.md_payload(output_devices=[]), 1)
+        self.assertEqual((item["output_devices"], self.db.get(MdMaster, item["id"]).i_output_devices), ([], 0))
+        headers, rows = svc.export_table(self.db, "md")
+        self.assertEqual(dict(zip(headers, rows[0]))["Output Device"], "")
+        for bad in (["0"], ["9"], ["x"], [True]):
+            with self.subTest(bad=bad):
+                self.assertIn("output_devices", self.errors("md", self.md_payload(output_devices=bad)))
+
+    def test_md_output_device_migration_defaults_existing_rows_to_zero_and_is_repeatable(self):
+        from backend.database.md_output_device_migration import migrate_md_output_devices
+
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, c_item_code VARCHAR(20))"))
+            conn.execute(text("INSERT INTO tb_md_master VALUES (42, 'MD00042')"))
+        migrate_md_output_devices(engine)
+        migrate_md_output_devices(engine)
+        with engine.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT * FROM tb_md_master")).one(), (42, "MD00042", 0))
+        column = next(c for c in inspect(engine).get_columns("tb_md_master") if c["name"] == "i_output_devices")
+        self.assertFalse(column["nullable"])
+
     def test_inventory_type_common_behavior(self):
         from backend.services import inventory as inv
         table = {b.type_id: (b.code, b.name, b.tracks_onhand, b.deduct_on, b.cost_recognition, b.keep_required)
@@ -319,6 +368,138 @@ class MasterGroupTests(unittest.TestCase):
         headers, rows = svc.export_table(self.db, "category3")
         self.assertEqual((dict(zip(headers, rows[0]))["Inventory Type"], dict(zip(headers, rows[0]))["Keep"]), ("Stock", "Cold"))
         self.assertEqual([(c["inventory_type"], c["keep"]) for c in svc.lookup_options(self.db)["category3"]], [(2, "COLD")])
+
+    # --- Category III Inventory Type -> MD Master scope ---
+    def _category3_with_items(self):
+        tax = svc.create_item(self.db, "tax", {"name": "State", "rate": "7"}, 1)
+        c1, c2, c3 = self._category3(inventory_type=2, keep="COLD", tax1_id=tax["id"])
+        cats = dict(category1_id=c1["id"], category2_id=c2["id"], category3_id=c3["id"])
+        inherit = svc.create_item(self.db, "md", self.md_payload(**cats, name="Inherit"), 1)
+        recipe = svc.create_item(self.db, "md", self.md_payload(**cats, name="Recipe", inventory_type=3, keep="FROZEN"), 1)
+        issue = svc.create_item(self.db, "md", self.md_payload(**cats, name="Issue", inventory_type=5), 1)
+        # Another Category III with its own override must never change.
+        o1, o2, o3 = self._category3(name="Other", inventory_type=2)
+        other = svc.create_item(self.db, "md", self.md_payload(
+            category1_id=o1["id"], category2_id=o2["id"], category3_id=o3["id"], name="Other", inventory_type=4), 1)
+        leaf = {"name": "Leaf", "category1_id": c1["id"], "category2_id": c2["id"], "tax1_id": tax["id"], "keep": "COLD"}
+        return c3, leaf, {"inherit": inherit["id"], "recipe": recipe["id"], "issue": issue["id"], "other": other["id"]}
+
+    def _md_state(self, ids):
+        self.db.expire_all()
+        out = {}
+        for key, md_id in ids.items():
+            row = self.db.get(MdMaster, md_id)
+            item = svc.serialize(self.db, "md", row)
+            out[key] = (row.i_inventory_type, row.c_keep, item["effective_inventory_type"], item["inventory_type_source"])
+        return out
+
+    def test_category3_inventory_impact_counts_md_and_overrides(self):
+        c3, _leaf, _ids = self._category3_with_items()
+        self.assertEqual(svc.category3_inventory_impact(self.db, c3["id"]), {
+            "id": c3["id"], "name": "Leaf", "inventory_type": 2, "md_total": 3, "override_total": 2, "can_apply_to_md": True,
+        })
+        empty = self._category3(name="Empty")[2]
+        self.assertEqual(svc.category3_inventory_impact(self.db, empty["id"])["md_total"], 0)
+        with self.assertRaises(svc.NotFound):  # Merchant scope only sees its own Category III
+            svc.category3_inventory_impact(self.db, c3["id"], merchant_id=7)
+
+    def test_category3_only_keeps_overrides_and_inherited_items_follow(self):
+        c3, leaf, ids = self._category3_with_items()
+        before = self._md_state(ids)
+        saved = svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 1}, 1)
+        self.assertNotIn("md_inventory_reset", saved)
+        after = self._md_state(ids)
+        self.assertEqual(after["inherit"], (None, None, 1, "category"))  # inherited item follows Category III
+        self.assertEqual({k: after[k] for k in ("recipe", "issue", "other")}, {k: before[k] for k in ("recipe", "issue", "other")})
+
+    def test_category3_apply_all_clears_overrides_to_inherit_only_in_that_category(self):
+        c3, leaf, ids = self._category3_with_items()
+        stamps = {k: self.db.get(MdMaster, v).dt_updated for k, v in ids.items()}
+        other_before = self._md_state(ids)["other"]
+        saved = svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 3, "apply_inventory_to_md": True}, 9)
+        self.assertEqual((saved["inventory_type"], saved["md_inventory_reset"]), (3, 2))
+        after = self._md_state(ids)
+        # Overrides become NULL (inherit Category III); Keep stays exactly as saved.
+        self.assertEqual(after["inherit"], (None, None, 3, "category"))
+        self.assertEqual(after["recipe"], (None, "FROZEN", 3, "category"))
+        self.assertEqual(after["issue"], (None, None, 3, "category"))
+        self.assertEqual(after["other"], other_before)  # other Category III untouched
+        rows = {k: self.db.get(MdMaster, v) for k, v in ids.items()}
+        self.assertEqual((rows["recipe"].i_updated_by, rows["issue"].i_updated_by), (9, 9))
+        self.assertEqual((rows["inherit"].dt_updated, rows["other"].dt_updated), (stamps["inherit"], stamps["other"]))
+        category = self.db.get(Category3, c3["id"])
+        self.assertEqual((category.c_keep, category.i_tax1_id), ("COLD", leaf["tax1_id"]))  # Keep / Tax unchanged
+        # Later Category III changes now reach every item through inheritance.
+        svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 5}, 1)
+        self.assertEqual({k: v[2] for k, v in self._md_state(ids).items()}, {"inherit": 5, "recipe": 5, "issue": 5, "other": 4})
+
+    def test_category3_not_set_apply_all_inherits_system_default(self):
+        c3, leaf, ids = self._category3_with_items()
+        saved = svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": "", "apply_inventory_to_md": "true"}, 1)
+        self.assertEqual((saved["inventory_type"], saved["md_inventory_reset"]), (None, 2))
+        after = self._md_state(ids)
+        self.assertEqual({k: after[k][2:] for k in ("inherit", "recipe", "issue")},
+                         {k: (1, "default") for k in ("inherit", "recipe", "issue")})  # system default None
+        self.assertEqual(after["other"][0], 4)
+
+    def test_category3_apply_all_rolls_back_with_the_category_save(self):
+        c3, leaf, ids = self._category3_with_items()
+        before = self._md_state(ids)
+        with patch.object(self.db, "commit", side_effect=RuntimeError("disk full")):
+            with self.assertRaises(RuntimeError):
+                svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 3, "apply_inventory_to_md": True}, 1)
+        self.db.rollback()
+        self.assertEqual(self._md_state(ids), before)
+        self.assertEqual(self.db.get(Category3, c3["id"]).i_inventory_type, 2)
+        # A validation error saves nothing either.
+        with self.assertRaises(svc.FieldErrors):
+            svc.update_item(self.db, "category3", c3["id"], {**leaf, "name": "", "inventory_type": 3, "apply_inventory_to_md": True}, 1)
+        self.db.rollback()
+        self.assertEqual(self._md_state(ids), before)
+
+    def test_category3_apply_all_is_platform_only(self):
+        c3, leaf, ids = self._category3_with_items()
+        before = self._md_state(ids)
+        with self.assertRaises(svc.Conflict):
+            svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 3, "apply_inventory_to_md": True}, 1,
+                            merchant_id=7)
+        self.db.rollback()
+        self.assertEqual(self._md_state(ids), before)
+        # The flag is ignored for every other entity.
+        tax = svc.create_item(self.db, "tax", {"name": "City", "rate": "1"}, 1)
+        self.assertNotIn("md_inventory_reset", svc.update_item(
+            self.db, "tax", tax["id"], {"name": "City", "rate": "2", "apply_inventory_to_md": True}, 1))
+        self.assertEqual(self._md_state(ids), before)
+
+    def test_md_keep_and_inventory_type_inherit_together_and_null_is_never_made_explicit(self):
+        c3, leaf, ids = self._category3_with_items()  # Category III: Stock / Cold
+        state = lambda key: (lambda r, i: (r.i_inventory_type, r.c_keep, i["effective_inventory_type"], i["inventory_type_source"],
+                                           i["effective_keep"], i["keep_source"]))(
+            self.db.get(MdMaster, ids[key]), svc.serialize(self.db, "md", self.db.get(MdMaster, ids[key])))
+        self.db.expire_all()
+        self.assertEqual(state("inherit"), (None, None, 2, "category", "COLD", "category"))
+        self.assertEqual(state("recipe"), (3, "FROZEN", 3, "item", "FROZEN", "item"))
+        # The MD form sends blanks for inherited values when another field is saved: NULL stays NULL.
+        row = self.db.get(MdMaster, ids["inherit"])
+        cats = dict(category1_id=row.i_category1_id, category2_id=row.i_category2_id, category3_id=row.i_category3_id)
+        svc.update_item(self.db, "md", ids["inherit"], self.md_payload(**cats, name="Renamed", inventory_type="", keep=""), 1)
+        self.db.expire_all()
+        self.assertEqual(state("inherit")[:2], (None, None))
+        # Category III Keep change: inheriting items follow, Keep overrides stay.
+        svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 2, "keep": "FROZEN"}, 1)
+        self.db.expire_all()
+        self.assertEqual(state("inherit"), (None, None, 2, "category", "FROZEN", "category"))
+        self.assertEqual(state("recipe")[1], "FROZEN")
+        svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 2, "keep": ""}, 1)
+        self.db.expire_all()
+        self.assertEqual(state("inherit")[4:], ("DRY", "default"))  # neither set: system default Dry
+        self.assertEqual(state("recipe")[4:], ("FROZEN", "item"))
+        # Apply to all MD: only Inventory Type overrides are cleared; Keep (override or NULL) is untouched.
+        svc.update_item(self.db, "category3", c3["id"], {**leaf, "inventory_type": 5, "keep": "COLD", "apply_inventory_to_md": True}, 1)
+        self.db.expire_all()
+        self.assertEqual(state("recipe"), (None, "FROZEN", 5, "category", "FROZEN", "item"))
+        self.assertEqual(state("inherit"), (None, None, 5, "category", "COLD", "category"))
+        self.assertEqual(state("other")[:2], (4, None))
 
     def test_md_inventory_keep_required_uses_effective_type(self):
         # Without Category III values the effective type is the default (1 None): Keep optional.
@@ -400,6 +581,47 @@ class MasterGroupTests(unittest.TestCase):
 
     def _detail_payload(self, **kw):
         return {"unit": "EA", "price": "1.00", **kw}
+
+    def test_md_detail_modifier_absent_keeps_saved_value_and_empty_still_clears(self):
+        # Store Options > Use Modifier OFF leaves "modifier" out of the payload; the saved value must survive.
+        item = svc.create_item(self.db, "md", self.md_payload(), 1)
+        detail = svc.create_md_detail(self.db, item["id"], self._detail_payload(modifier="No Ice"), 1)
+        self.assertEqual(detail["modifier"], "No Ice")
+        kept = svc.update_md_detail(self.db, item["id"], detail["id"], self._detail_payload(size="L"), 1)
+        self.assertEqual((kept["modifier"], kept["size"]), ("No Ice", "L"))
+        cleared = svc.update_md_detail(self.db, item["id"], detail["id"], self._detail_payload(modifier=""), 1)
+        self.assertIsNone(cleared["modifier"])
+        self.assertIsNone(svc.create_md_detail(self.db, item["id"], self._detail_payload(), 1)["modifier"])
+
+    # --- MD Detail Color (a COLOR common code; tb_color was removed in COLOR step 6) ---
+    def test_md_detail_color_code_save_reload_and_md_save_keeps_it(self):
+        PlatformBase.metadata.create_all(self.engine, tables=[Merchant.__table__, CommonGroup.__table__, CommonCode.__table__])
+        with redirect_stdout(io.StringIO()):
+            migrate_common_codes(self.engine)  # new database: default colors directly as COLOR codes
+        colors = {c["name"]: c["id"] for c in svc.lookup_options(self.db)["color_codes"]}
+        self.assertEqual(list(colors)[:3], [name for name, _hex in DEFAULT_COLORS][:3])
+        item = svc.create_item(self.db, "md", self.md_payload(), 1)
+        default = self._default_detail(item["id"])
+        self.assertIsNone(default["color_code_id"])  # new MD: Default Detail has no Color
+        svc.update_md_detail(self.db, item["id"], default["id"],
+                             self._detail_payload(color_code_id=colors["Black"], size="M", is_default=True), 1)
+        navy_m = svc.create_md_detail(self.db, item["id"], self._detail_payload(color_code_id=str(colors["Navy"]), size="M"), 1)
+        reloaded = {d["id"]: d["color_code_id"] for d in svc.list_md_details(self.db, item["id"])}
+        self.assertEqual((reloaded[default["id"]], reloaded[navy_m["id"]]), (colors["Black"], colors["Navy"]))
+        self.assertNotIn("color_id", navy_m)  # the removed tb_color id is never returned
+        kept = svc.update_md_detail(self.db, item["id"], navy_m["id"], self._detail_payload(size="S"), 1)  # Use Color OFF
+        self.assertEqual((kept["color_code_id"], kept["size"]), (colors["Navy"], "S"))
+        for bad, errors in ((99999, {"color_code_id": "Color does not exist."}), ("x", {"color_code_id": "Color is invalid."})):
+            with self.subTest(bad), self.assertRaises(svc.FieldErrors) as ctx:
+                svc.create_md_detail(self.db, item["id"], self._detail_payload(color_code_id=bad), 1)
+            self.assertEqual(ctx.exception.errors, errors)
+            self.db.rollback()
+        # MD save (Unit / Price sync to the Default Detail) leaves the Default Detail Color alone.
+        svc.update_item(self.db, "md", item["id"], self.md_payload(unit="BOX", retail_price="9.99"), 1)
+        default = self._default_detail(item["id"])
+        self.assertEqual((default["unit"], default["price"], default["color_code_id"]), ("BOX", "9.99", colors["Black"]))
+        self.assertNotIn("i_color_id", MdDetail.__table__.columns)  # COLOR step 6: the tb_color column is gone
+        self.assertNotIn("i_color_code_id", MdMaster.__table__.columns)  # Color is never stored on the MD Master
 
     def test_barcode_unique_across_all_items_and_details(self):
         a = svc.create_item(self.db, "md", self.md_payload(name="A"), 1)
@@ -498,14 +720,15 @@ class MasterGroupTests(unittest.TestCase):
         listed = svc.list_items(self.db, "item_kind", size=100)
         self.assertEqual(listed["total"], 9)
         headers, data = svc.export_table(self.db, "item_kind")
-        self.assertEqual(headers[:2], ["System Code", "Display Name"])
+        self.assertEqual(headers[:3], ["Code", "System Code", "Display Name"])
+        self.assertEqual(data[0][:2], ["IKC00001", "ITEM"])
         with self.assertRaises(svc.FieldErrors):
             svc.update_item(self.db, "item_kind", rows[0].i_item_kind_id, {"name": " "}, 1)
         # MD Master Item Kind uses active System Master rows, default ITEM; legacy values are linked.
         options = svc.lookup_options(self.db)
         self.assertEqual(options["default_item_kind"], "ITEM")
         self.assertEqual([k["code"] for k in options["item_kinds"]][:2], ["ITEM", "SERVICE"])
-        self.assertIn({"code": "GIFT_CARD", "name": "E-Gift Card"}, options["item_kinds"])
+        self.assertIn({"code": "GIFT_CARD", "name": "E-Gift Card", "kind_no": "IKC00004"}, options["item_kinds"])
         gift = self.db.query(ItemKind).filter(ItemKind.c_item_kind_code == "GIFT_CARD").one()
         svc.update_item(self.db, "item_kind", gift.i_item_kind_id, {"name": gift.c_item_kind_name, "active": False}, 1)
         self.assertNotIn("GIFT_CARD", [k["code"] for k in svc.lookup_options(self.db)["item_kinds"]])
@@ -671,7 +894,8 @@ class MasterGroupApiTests(unittest.TestCase):
         engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
         self.addCleanup(engine.dispose)
         PlatformBase.metadata.create_all(
-            engine, tables=[m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine)]
+            engine, tables=[m.__table__ for m in (Tax, ItemKind, Category1, Category2, Category3, MdMaster, MdDetail, InvoiceLine,
+                                         StoreLocation, StoreMdLocation, Store, Merchant)]
         )
         migrate_item_kinds(engine)
         self.db = sessionmaker(bind=engine)()
@@ -795,17 +1019,47 @@ class MasterGroupApiTests(unittest.TestCase):
         self.assertEqual(code, 200)
 
     def test_item_kind_system_master_api(self):
-        code, body = self.status(router_module.master_group_list, "item_kind", self.req(), db=self.db)
-        self.assertEqual(code, 200)
-        self.assertEqual(body["items"][0]["code"], "ITEM")
-        self.assertTrue(body["items"][0]["system"])
-        item_id = body["items"][0]["id"]
-        self.assertEqual(self.status(router_module.master_group_create, "item_kind",
-                                     {"name": "New"}, self.req(), self.db)[0], 409)
-        self.assertEqual(self.status(router_module.master_group_delete, "item_kind", item_id, self.req(), self.db)[0], 409)
-        code, body = self.status(router_module.master_group_update, "item_kind", item_id,
-                                 {"name": "Merchandise", "code": "HACK", "display_order": 5}, self.req(), self.db)
-        self.assertEqual((code, body["item"]["code"], body["item"]["name"]), (200, "ITEM", "Merchandise"))
+        # Super Admin manages Item Kind: list / create / update / delete / export.
+        with patch.object(router_module, "_is_super_admin", lambda db, user: True):
+            code, body = self.status(router_module.master_group_list, "item_kind", self.req(), db=self.db)
+            self.assertEqual(code, 200)
+            first = body["items"][0]
+            self.assertEqual((first["code"], first["system_code"], first["system"], first["active_locked"]),
+                             ("IKC00001", "ITEM", True, True))
+            item_id = first["id"]
+            self.assertEqual(self.status(router_module.master_group_delete, "item_kind", item_id, self.req(), self.db)[0], 409)
+            code, body = self.status(router_module.master_group_update, "item_kind", item_id,
+                                     {"name": "Merchandise", "code": "HACK", "system_code": "HACK", "display_order": 5},
+                                     self.req(), self.db)
+            self.assertEqual((code, body["item"]["code"], body["item"]["system_code"], body["item"]["name"]),
+                             (200, "IKC00001", "ITEM", "Merchandise"))
+            code, body = self.status(router_module.master_group_update, "item_kind", item_id,
+                                     {"name": "Merchandise", "active": False}, self.req(), self.db)
+            self.assertEqual((code, list(body["errors"])), (422, ["active"]))
+            code, body = self.status(router_module.master_group_create, "item_kind",
+                                     {"name": "Rental"}, self.req(), self.db)
+            self.assertEqual((code, list(body["errors"])), (422, ["system_code"]))
+            code, body = self.status(router_module.master_group_create, "item_kind",
+                                     {"name": "Rental", "system_code": "rental", "code": "X"}, self.req(), self.db)
+            self.assertEqual((code, body["item"]["code"], body["item"]["system_code"], body["item"]["system"],
+                              body["item"]["logic_defined"]), (201, "IKC00010", "RENTAL", False, False))
+            self.assertEqual(self.status(router_module.master_group_delete, "item_kind", body["item"]["id"],
+                                         self.req(), self.db)[0], 200)
+            exported = router_module.master_group_export("item_kind", self.req(), db=self.db)
+            self.assertEqual(exported.status_code, 200)
+            self.assertTrue(exported.body.decode("utf-8-sig").startswith("Code,System Code,Display Name"))
+        # Other Platform Admins: no Item Kind management, but MD still reads the active Item Kinds.
+        for call in ((router_module.master_group_list, "item_kind", self.req()),
+                     (router_module.master_group_export, "item_kind", self.req()),
+                     (router_module.master_group_create, "item_kind", {"name": "X"}, self.req()),
+                     (router_module.master_group_update, "item_kind", item_id, {"name": "X"}, self.req()),
+                     (router_module.master_group_delete, "item_kind", item_id, self.req())):
+            fn, *args = call
+            self.assertEqual(self.status(fn, *args, db=self.db)[0], 403, fn.__name__)
+        code, body = self.status(router_module.master_group_options, self.req(), self.db)
+        self.assertEqual((code, body["item_kinds"][0]["code"], body["item_kinds"][0]["kind_no"]), (200, "ITEM", "IKC00001"))
+        self.assertEqual(self.db.query(ItemKind).filter(ItemKind.c_item_kind_name == "X").count(), 0)
+        # Merchant / Store scopes stay blocked (Platform-only), Super Admin or not.
         merchant_req = self.req()
         merchant_req.state.master_merchant_id = 9
         with self.assertRaises(HTTPException) as ctx:

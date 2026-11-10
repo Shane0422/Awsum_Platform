@@ -59,11 +59,23 @@
   margin-bottom: 1rem;
 }
 .mg-page > .awsum-page-header,
+.awsum-page-header.awsum-page-header-sticky,
 body.page-master:is(.module-agency, .module-merchant, .module-store, .module-agency-type, .module-business-type) .platform-view > .awsum-page-header {
   position: sticky;
   top: var(--platform-header-height, 0px);
   z-index: 990;
   background: var(--platform-bg);
+}
+/* Common Page Actions (static/js/page-actions.js): buttons switch by mode; small screens use More. */
+.awsum-page-actions { justify-content: flex-end; }
+.awsum-page-actions .awsum-page-action-off,
+.awsum-page-actions .awsum-page-action-moved { display: none !important; }
+.awsum-page-actions > .btn,
+.awsum-page-actions > .btn-group > .btn { white-space: nowrap; }
+.awsum-page-actions .awsum-page-more .dropdown-item.text-danger:active { color: #ffffff !important; }
+@media (max-width: 575.98px) {
+  .awsum-list .awsum-page-header:has(.awsum-page-actions) { gap: 0.6rem; }
+  .awsum-list .awsum-page-actions { flex: 1 1 100%; flex-wrap: nowrap; min-width: 0; }
 }
 .awsum-list :is(.awsum-filter-card, .awsum-table-card, .awsum-settings-card) {
   min-width: 0;

@@ -214,8 +214,49 @@ Verify schemas, tables, row counts, important owner/Merchant IDs, foreign keys,
 sequences, extensions, privileges and required credentials. Verify the
 application role can connect/read/write in an isolated test transaction or
 fixture, and that role provisioning privileges meet actual deployment needs.
-The startup path can initialize/migrate data: point it only at the intended
-restored database, not an unrelated server.
+Point every migration command only at the intended restored database, not an
+unrelated server.
+
+### Platform schema migrations (`AWSUM_AUTO_MIGRATE`)
+
+`AWSUM_AUTO_MIGRATE` is **OFF by default** (code default; Production keeps it
+unset/OFF). With it OFF, startup never changes the database schema or data: it
+only logs pending changes such as `[MIGRATION][WARN] missing columns: ...` and
+starts.
+
+**Development** sets `AWSUM_AUTO_MIGRATE=on` in its local `.env`. Startup and
+every `uvicorn --reload` restart then run the **non-destructive** Platform
+migration only: new tables, new columns and missing master rows. Deleting data,
+dropping/recreating tables and dropping columns never run automatically: legacy
+DROP cleanups are skipped with `[MIGRATION][WARN]`, and a schema mismatch that
+only a destructive change could fix is logged as `[MIGRATION][ERROR]`; the
+server still starts and the existing data is kept.
+
+Manual migrations (Production, and every destructive change) run through the
+migration command, from the program root, with the application stopped:
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.migrate_platform --check
+.\.venv\Scripts\python.exe -m tools.migrate_platform --init  --confirm-db awsum_platform
+.\.venv\Scripts\python.exe -m tools.migrate_platform --apply --confirm-db awsum_platform --backup auto
+```
+
+* `--check` is read-only (default): target database and pending changes.
+* `--init` is only for a **new** installation (missing or empty database).
+* `--apply` is only for an **existing** database. `--backup auto` takes a
+  `pg_dump` with a manifest in private `platform-admin/data/audit/migration-backups`;
+  `--backup <file.dump>` uses an existing one. Either way the file, manifest
+  (size, SHA-256), target host/port/database, age (at most 24 hours) and
+  `pg_restore --list` are verified before anything changes. A PostgreSQL
+  advisory lock prevents concurrent runs, and each run writes a JSON record
+  next to the backups.
+* `--confirm-db` must equal the target database name.
+* Missing tables/columns are added; tables are **never dropped or recreated
+  automatically**. A remaining mismatch stops with an error. Destructive legacy
+  cleanup (DROP TABLE/COLUMN) additionally needs `--allow-destructive` as part of
+  a separately approved migration.
+* Test runs (unittest/pytest) cannot change a PostgreSQL database unless its
+  name ends in `_test`.
 
 ## 7. Environment and secrets
 
@@ -233,6 +274,11 @@ Required/relevant configuration:
   fallback; prefer one authoritative value. Supply the real URL securely and
   URL-encode special credential characters. Do not rely on development defaults.
 * `PLATFORM_PG_ADMIN_DB`: administrative database used where provisioning needs it.
+* `AWSUM_AUTO_MIGRATE`: Production leaves it unset/OFF and migrates through
+  `tools.migrate_platform`; a Development `.env` may set `on` for
+  non-destructive startup migrations (section 6).
+* `AWSUM_PG_BIN`: optional PostgreSQL `bin` folder for `pg_dump`/`pg_restore`
+  when they are not on `PATH`.
 * `AWSUM_SYSTEM_SETTINGS_ENCRYPTION_KEY`: preserve the existing valid encryption
   key when restoring encrypted System Settings such as SMTP credentials.
   Generating a different key does not decrypt old values.

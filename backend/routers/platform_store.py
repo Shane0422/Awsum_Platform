@@ -43,6 +43,7 @@ from reportlab.lib.pagesizes import letter
 from backend.services.report_pdf import GlobalReportCanvas
 from backend.services.reporting import ReportPrintContext, report_context
 from backend.services.resource_storage import AwsumStorageService
+from backend.services.store_item_features import ITEM_FEATURES, store_option_default, store_option_enabled
 from backend.services.images import image_url, image_mutation_form
 from backend.services.image_service import commit_entity_image, image_operation_lock
 from backend.services.paths import AwsumPathResolver
@@ -114,8 +115,12 @@ STORE_OPTION_FIELDS = {
     "opt_customer": ("b_opt_customer", "customer_scope", "c_customer_scope"),
     "opt_time_attendance": ("b_opt_time_attendance", None, None),
     "opt_inventory": ("b_opt_inventory", None, None),
+    # Use Location Management (shown under Inventory Management, independent of it).
+    "opt_location_management": ("b_opt_use_shelf_location", None, None),
     "opt_loyalty": ("b_opt_loyalty", "loyalty_scope", "c_loyalty_scope"),
     "opt_accounting": ("b_opt_accounting", None, None),
+    # Store Options > Item Features (no scope).
+    **{option_key: (column, None, None) for option_key, column, _default in ITEM_FEATURES.values()},
 }
 _LICENSE_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -159,8 +164,10 @@ def _apply_store_license_and_options(db: Session, store: Store, payload: dict, c
         store.c_store_license_key = generate_store_license_key(db)
 
     for option_key, (option_col, scope_key, scope_col) in STORE_OPTION_FIELDS.items():
-        if option_key in payload or creating:
+        if option_key in payload:
             setattr(store, option_col, _parse_option_flag(payload.get(option_key)))
+        elif creating:
+            setattr(store, option_col, store_option_default(option_key))
         if not scope_col:
             continue
         if not getattr(store, option_col):
@@ -182,7 +189,7 @@ def _store_license_and_options(store: Store) -> dict:
         "loyalty_scope": store.c_loyalty_scope or "",
     }
     for option_key, (option_col, _, _) in STORE_OPTION_FIELDS.items():
-        data[option_key] = "on" if getattr(store, option_col) else "off"
+        data[option_key] = "on" if store_option_enabled(store, option_key, option_col) else "off"
     return data
 
 

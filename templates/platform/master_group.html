@@ -5,8 +5,10 @@
 
 {% block content %}
 {# Master-Detail entities (left Tree + right form) share the MD Master layout; keep in sync with TREE_LEVELS in master_group.js. #}
-{% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind'] %}
-<link rel="stylesheet" href="/static/css/awsum-list.css?v=5">
+{% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind', 'location', 'common_code'] %}
+<link rel="stylesheet" href="/static/css/awsum-list.css?v=8">
+<link rel="stylesheet" href="/static/css/awsum-confirm-modal.css?v=1">
+{% if mg_entity in ('category3', 'md') %}<link rel="stylesheet" href="/static/css/awsum-lookup.css?v=2">{% endif %}
 {% if mg_split %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=2">{% endif %}
 <style>
   {% if mg_split %}
@@ -36,6 +38,57 @@
   .mg-md-form .form-label { color: #496486; font-weight: 600; }
   /* Common required marker (.pm-req; its color is scoped to .pm-modal, which this inline form is not in). */
   .mg-md-form .pm-req { color: #DC2626; }
+  .mg-md-form .mg-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+  .mg-md-form .mg-example-link { font-size: 12px; font-weight: 600; text-decoration: none; }
+  /* Location Master list: Sales Floor | Warehouse code columns (independent lists; codes wrap, never cut). */
+  .mg-loc-table { table-layout: fixed; }
+  .mg-loc-table th, .mg-loc-table td { width: 50%; }
+  .mg-loc-table .mg-loc-row > td { padding: .3rem .5rem; vertical-align: top; line-height: 18px; white-space: normal; overflow-wrap: anywhere; }
+  .mg-loc-table .mg-loc-row > td + td { border-left: 1px solid var(--list-border); }
+  .mg-loc-cell { position: relative; cursor: pointer; color: #243f70; }
+  .mg-loc-cell .mg-code { font-weight: 600; }
+  .mg-loc-cell .mg-loc-name { display: block; color: var(--list-muted); font-size: 11px; line-height: 15px; }
+  .mg-loc-cell .mg-loc-inactive { color: #b45309; font-size: 10px; font-weight: 600; }
+  .mg-loc-cell.inactive .mg-code { color: #7b8aa3; }
+  .mg-loc-table.table-hover > tbody > tr:hover > .mg-loc-empty { --bs-table-bg-state: transparent; }
+  .mg-loc-cell.selected { --bs-table-bg: #e7f0fe; --bs-table-bg-state: #e7f0fe; color: var(--list-navy); box-shadow: inset 3px 0 0 var(--list-blue); }
+  .mg-loc-cell.selected .mg-code { font-weight: 700; }
+  .mg-loc-cell:focus-visible { outline: 2px solid rgba(18, 99, 235, .45); outline-offset: -2px; }
+  /* Location Master range form: preview of the codes (existing ones are skipped). */
+  .mg-range-preview { border: 1px solid var(--list-border); border-radius: 6px; background: #f8fafd; padding: .5rem .65rem; }
+  .mg-range-summary { display: flex; flex-wrap: wrap; gap: .35rem 1rem; font-size: 12px; color: var(--list-navy); }
+  .mg-range-summary .mg-range-new b { color: #146c43; }
+  .mg-range-codes { display: flex; flex-wrap: wrap; gap: 4px; max-height: 132px; overflow-y: auto; margin-top: .4rem; }
+  .mg-range-codes:empty { display: none; }
+  .mg-range-code { font: 600 11px/18px ui-monospace, SFMono-Regular, Consolas, monospace; padding: 0 6px; border-radius: 4px; background: #e7f0fe; color: #243f70; overflow-wrap: anywhere; }
+  .mg-range-code.exists { background: #eef0f3; color: #8a94a6; text-decoration: line-through; }
+  /* Common Location Selector (Category III / MD Master): read-only code + Search / Clear. */
+  .mg-loc-picker .form-control[readonly] { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; }
+  .mg-loc-picker + .invalid-feedback:not(:empty) { display: block; }
+  .mg-loc-picker .form-control[readonly]::placeholder { font-family: inherit; font-weight: 400; }  /* hints (Not set / Category III) are not codes */
+  /* Common Location picker (locationInput): 6px gap between the field and its buttons, each part keeps its own corners;
+     the magnifier is a square as tall as the field (Category III / MD, Sales Floor / Warehouse). */
+  .mg-loc-picker { --mg-loc-size: 28px; flex-wrap: nowrap; align-items: center; gap: 6px; }  /* = .mg-md-form control height */
+  .mg-loc-picker > .form-control, .mg-loc-picker > .btn { margin-left: 0 !important; border-radius: 4px !important; }
+  .mg-loc-picker > .btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: var(--mg-loc-size); padding-top: 0; padding-bottom: 0; }
+  .mg-loc-picker .mg-loc-search { width: var(--mg-loc-size); min-width: 0; padding: 0; }
+  .mg-location-guide { display: flex; flex-direction: column; align-items: center; gap: .6rem; padding: 8px 4px 4px; text-align: center; }
+  .mg-location-guide img { width: 100%; max-width: 900px; height: auto; border: 1px solid var(--list-border); border-radius: 10px; }
+  .mg-location-guide-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: #496486; }
+  .mg-location-guide-text strong { color: var(--list-navy); }
+  /* Enlarged guide: wider than the common pm-modal dialog (same pattern as #mgModal below). */
+  #mgExampleModal .modal-dialog { max-width: min(1240px, calc(100vw - 1rem)); }
+  /* Fit (default): the whole guide is visible without scrolling. Zoom In: full size, scrolls both ways inside the
+     modal (nothing is cut; the page itself never scrolls). */
+  #mgExampleModal .mg-example-scroll { overflow: auto; -webkit-overflow-scrolling: touch; max-height: calc(100dvh - 286px); }
+  #mgExampleModal .mg-example-scroll img { width: auto; max-width: 100%; height: auto; max-height: calc(100dvh - 290px); }  /* modal margins + header + footer + body padding */
+  #mgExampleModal .mg-example-scroll.zoomed { max-height: calc(100dvh - 316px); }  /* the zoom hint line sits above it */
+  #mgExampleModal .mg-example-scroll.zoomed img { width: 1600px; max-width: none; max-height: none; }
+  .mg-guide-icon { margin: -2px 6px 0 0; vertical-align: middle; }
+  @media (max-width: 575.98px) {  /* phones: icon only (title / aria-label keep the name) */
+    #mgGuideBtn .mg-guide-text { display: none; }
+    #mgGuideBtn .mg-guide-icon { margin-right: 0; }
+  }
   .mg-md-form #mgDetailSection .table-responsive { border: 1px solid var(--list-border); border-radius: 6px; }
   .mg-md-form #mgDetailSection .table { margin-bottom: 0 !important; }
   .mg-md-form #mgDetailEditor { border-color: var(--list-border) !important; background: #f8fbff; }
@@ -76,10 +129,11 @@
     .mg-md-form .mg-price-row > div[data-label]:not(.mg-level)::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 600; color: #6b7f99; margin-bottom: .2rem; }
   }
   @media (max-width: 479.98px) { .mg-md-form .mg-price-row { grid-template-columns: 1fr; } }
+  .mg-color-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(0, 0, 0, .25); border-radius: 2px; }
 </style>
-<div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_title }}" data-api-base="{{ mg_api_base | default('/platform/api/master-group', true) }}">
+<div class="container-fluid px-0 mg-page awsum-list" id="mgPage" data-entity="{{ mg_entity }}" data-title="{{ mg_record_title | default(mg_title, true) }}" data-api-base="{{ mg_api_base | default('/platform/api/master-group', true) }}">
   {% set subtitle %}<p class="mb-0" id="mgSubtitle"></p>{% endset %}
-  {% call page_header(mg_title, subtitle) %}
+  {% call page_header(mg_title, subtitle, sticky=true, actions_id='mgPageActions') %}
       <div class="btn-group">
         <button id="mgExportBtn" type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
         <ul class="dropdown-menu dropdown-menu-end">
@@ -88,10 +142,17 @@
           <li><button type="button" class="dropdown-item" data-export-format="pdf">Export PDF</button></li>
         </ul>
       </div>
-      <button type="button" class="btn btn-primary" id="mgAddBtn">Add {{ mg_title }}</button>
+      {% if mg_entity == 'location' %}<button type="button" class="btn btn-outline-secondary" id="mgGuideBtn" title="Location Guide" aria-label="Location Guide"><svg class="mg-guide-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6.5a2.5 2.5 0 0 0 0 5H20"/><path d="M8 7h8"/><path d="M8 11h6"/></svg><span class="mg-guide-text">Location Guide</span></button>{% endif %}
+      <button type="button" class="btn btn-primary" id="mgAddBtn">Add {{ mg_record_title | default(mg_title, true) }}</button>
+      {% if mg_split %}
+      {# Record actions live in the sticky Page Header (AwsumPageActions switches them by none / create / edit).
+         Save submits #mgForm through the form attribute, so the form's validation and save run unchanged. #}
+      <button type="button" class="btn btn-outline-secondary d-none" id="mgMdToggle" data-md-act="toggle">Deactivate</button>
+      <button type="button" class="btn btn-outline-danger d-none" id="mgMdDelete" data-md-act="delete">Delete</button>
+      {% if mg_entity == 'location' %}<button type="button" class="btn btn-outline-secondary" id="mgCancelBtn">Cancel</button>{% endif %}
+      <button type="submit" class="btn btn-primary" id="mgSave" form="mgForm" disabled>{{ 'Save' if mg_entity == 'location' else 'Create' }}</button>
+      {% endif %}
   {% endcall %}
-
-  <div id="mgMessage" class="alert d-none" role="status" aria-live="polite"></div>
 
   {% if not mg_split %}
   {% call surface('filter') %}
@@ -122,6 +183,21 @@
   {% if mg_split %}
   <div class="mg-md-workspace">
     {% call surface('table', '', 'mg-md-list-panel') %}
+      {% if mg_entity == 'location' %}
+      {# Store-scoped master: Store selector (hidden for a Store login, which is fixed to its own Store). #}
+      <div class="mg-md-filter mg-store-filter" id="mgStoreWrap">
+        <label for="mgStore" class="awsum-list-filter-label">Store</label>
+        <select id="mgStore" class="form-select" aria-label="Store"></select>
+      </div>
+      {% endif %}
+      {% if mg_entity == 'common_code' %}
+      {# Common Maintenance: Group selector (same pattern as the Store selector); every request names the group. #}
+      <div class="mg-md-filter mg-store-filter" id="mgGroupWrap">
+        <label for="mgGroup" class="awsum-list-filter-label">Group</label>
+        <select id="mgGroup" class="form-select" aria-label="Common Group"></select>
+        <div class="form-text d-none" id="mgGroupNote"></div>
+      </div>
+      {% endif %}
       <div class="row g-2 flex-nowrap mg-md-filter">
         <div class="col-7">
           <label for="mgSearch" class="awsum-list-filter-label">Search</label>
@@ -137,7 +213,7 @@
         </div>
       </div>
       <div class="table-responsive awsum-list-table-wrap">
-        <table class="table table-hover mg-table mb-0">
+        <table class="table table-hover mg-table mb-0{% if mg_entity == 'location' %} mg-loc-table{% endif %}">
           <thead id="mgHead"></thead>
           <tbody id="mgBody"></tbody>
         </table>
@@ -162,17 +238,23 @@
         <div class="mg-md-form-header d-flex justify-content-between align-items-center">
           <div class="mg-md-form-title">{{ 'MD' if mg_entity == 'md' else mg_title | upper }} INFORMATION</div>
           <div class="visually-hidden">
-            <h2 class="h5 mb-1" id="mgModalTitle">Select {{ 'an' if mg_entity == 'md' else 'a' }} {{ mg_title }}</h2>
-            <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new {{ mg_title }}.</div>
-          </div>
-          <div class="d-flex gap-1 flex-shrink-0">
-            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="mgMdToggle" data-md-act="toggle">Deactivate</button>
-            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="mgMdDelete" data-md-act="delete">Delete</button>
-            <button type="submit" class="btn btn-sm btn-primary" id="mgSave" disabled>Create</button>
+            <h2 class="h5 mb-1" id="mgModalTitle">Select {{ 'an' if mg_entity == 'md' else 'a' }} {{ mg_record_title | default(mg_title, true) }}</h2>
+            <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new {{ mg_record_title | default(mg_title, true) }}.</div>
           </div>
         </div>
         <div id="mgFormError" class="alert alert-danger d-none" role="alert"></div>
         <div class="row g-3" id="mgFields"></div>
+        {% if mg_entity == 'location' %}
+        <div id="mgLocationGuide" class="mg-location-guide d-none">
+          <img src="{{ builtin_asset_url('ui', 'location-master-guide.svg') }}" class="img-fluid" width="1600" height="1084"
+               alt="Location guide. Sales Floor: Zone S01, Bay B01 and Shelf C01 make the code S01-B01-C01. Warehouse: Zone W01, Rack R02 and Level C01 make W01-R02-C01. Each product has one Sales Location and one Warehouse Location per Store; moving it to another shelf or cooler keeps them; Warehouse to Sales Floor moves are Stock Transfers.">
+          <div class="mg-location-guide-text">
+            <strong>No locations in this Store yet.</strong>
+            <span>Add Sales Floor and Warehouse Location Codes with Add Location.</span>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="mgGuideAdd">Add Location</button>
+        </div>
+        {% endif %}
       </form>
     {% endcall %}
   </div>
@@ -196,6 +278,32 @@
   {% endif %}
 </div>
 
+{% if mg_entity == 'location' %}
+<div class="modal fade pm-modal" id="mgExampleModal" tabindex="-1" aria-labelledby="mgExampleTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="pm-head-text">
+          <h2 class="modal-title" id="mgExampleTitle">Location Guide</h2>
+          <span class="pm-head-sub">Sales Floor S01-B01-C01 (Zone-Bay-Shelf) &middot; Warehouse W01-R02-C01 (Zone-Rack-Level)</span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2 d-none" id="mgExampleScrollHint">Zoomed in: scroll to see the whole guide.</div>
+        <div class="mg-example-scroll">
+        <img src="{{ builtin_asset_url('ui', 'location-master-guide.svg') }}" class="img-fluid d-block mx-auto" width="1600" height="1084"
+             alt="Location guide. Sales Floor: Zone S01, Bay B01 and Shelf C01 make the code S01-B01-C01. Warehouse: Zone W01, Rack R02 and Level C01 make W01-R02-C01. Each product has one Sales Location and one Warehouse Location per Store; moving it to another shelf or cooler keeps them; Warehouse to Sales Floor moves are Stock Transfers.">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary me-auto" id="mgExampleZoom" aria-pressed="false">Zoom In</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% if not mg_split %}
 <div class="modal fade pm-modal" id="mgModal" tabindex="-1" aria-labelledby="mgModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -222,5 +330,8 @@
   </div>
 </div>
 {% endif %}
-<script src="/static/js/master_group.js?v=45"></script>
+<script src="/static/js/confirm-modal.js?v=1"></script>
+{% if mg_entity in ('category3', 'md') %}<script src="/static/js/lookup-modal.js?v=1"></script>{% endif %}
+<script src="/static/js/page-actions.js?v=1"></script>
+<script src="/static/js/master_group.js?v=79"></script>
 {% endblock %}

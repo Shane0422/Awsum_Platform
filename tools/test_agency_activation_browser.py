@@ -160,7 +160,7 @@ window.fetch=async(path,options)=>{
         template = (browser.ROOT / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
         function = re.search(r"  async function saveItem\(.*?\n  }\n", template, re.DOTALL).group()
         script = (
-            "const activeModule='agency',isListCentricModule=true,agencyModalMode='edit';\n"
+            "const activeModule='agency',isListCentricModule=true,agencyModalMode='edit',toastLabel='Agency';\n"
             "const selectedMasterId={value:'1'},agencyRegistrationPasswords=new Map();let lastSavedId=null;\n"
             "let savingStoreImage=false;const getStoreLogoUploader=()=>null,getOrganizationLogoUploader=()=>null;\n"
             "const noop=()=>{},isFormDirty=()=>true,usesPremiumModal=()=>true,getFormData=()=>({status:'active'}),\n"
@@ -172,7 +172,7 @@ window.fetch=async(path,options)=>{
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 let requests=[],alerts=[],previewOpens=0;
 const openAgencyRegistrationEmail=async()=>{previewOpens++;};
-window.alert=message=>alerts.push(message);
+window.AwsumToast={success:m=>alerts.push(m),warning:m=>alerts.push(m),error:m=>alerts.push(m),message:(action,label)=>label+' '+action+'.'};
 window.fetch=async(path,options)=>{
   requests.push({path,options});
   return new Response(JSON.stringify({id:1,agency_user_created:true,temporary_password:'RandomTest!LongPassword'}));
@@ -181,7 +181,7 @@ window.fetch=async(path,options)=>{
   assert(await saveItem(),'Save succeeds');
   assert(requests.length===1&&requests[0].path==='/platform/agency/1','Save only writes Agency');
   assert(previewOpens===0,'Save never opens Email Preview');
-  assert(alerts.join('')==='Agency Admin User created.','Save alert contains no password');
+  assert(alerts.join('')==='Agency updated. Agency Admin User created.','Save result (Common Toast) contains no password');
   assert(agencyRegistrationPasswords.get('1')==='RandomTest!LongPassword','random fallback kept only in page memory for later Preview');
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});

@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.config.settings import APP_NAME
 from backend.database.pg_platform import PlatformSessionLocal
 from backend.services.branding import BrandingContext, resolve_branding, resolve_access_code
-from backend.services.images import image_url, platform_logo_url
+from backend.services.images import image_url, nav_logo_url, platform_logo_url
 from backend.services.builtin_assets import builtin_asset_url, favicon_url
 
 
@@ -79,4 +79,5 @@ def _default_brand_context(request: Request):
 templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[_default_brand_context])
 templates.env.globals["APP_NAME"] = APP_NAME
 templates.env.globals["image_url"] = image_url
+templates.env.globals["nav_logo_url"] = nav_logo_url
 templates.env.globals["builtin_asset_url"] = builtin_asset_url

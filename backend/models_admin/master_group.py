@@ -8,6 +8,7 @@ from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, Numeric, Str
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
+from backend.models_admin import common_code  # noqa: F401  (registers tb_common_code for MdDetail.i_color_code_id)
 
 
 class Tax(PlatformBase, AuditMixin):
@@ -23,10 +24,17 @@ class Tax(PlatformBase, AuditMixin):
 
 
 class ItemKind(PlatformBase, AuditMixin):
-    """Platform-only System Master. c_item_kind_code is a program logic key and never changes."""
+    """Platform-only System Master (Super Admin manages it).
+
+    c_item_kind_code is the System Code: a program logic key that never changes (MD stores it).
+    c_item_kind_no is the auto-issued management number (IKC00001), separate from the System Code.
+    Required System Codes (program logic defined): database.item_kind_migration.SYSTEM_ITEM_KIND_CODES.
+    A System Code added by Super Admin has no logic yet, so MD Master cannot use it (services.master_group).
+    """
     __tablename__ = "tb_item_kind"
 
     i_item_kind_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    c_item_kind_no = Column(String(20), nullable=True, unique=True, index=True)  # IKC00001 (auto)
     c_item_kind_code = Column(String(30), nullable=False, unique=True, index=True)
     c_item_kind_name = Column(String(100), nullable=False)
     i_display_order = Column(Integer, nullable=False, default=100)
@@ -72,6 +80,10 @@ class Category3(PlatformBase, AuditMixin):
     # Inventory defaults for MD items in this Category III (services.inventory). NULL = not set.
     i_inventory_type = Column(Integer, nullable=True)
     c_keep = Column(String(20), nullable=True)
+    # Common recommended positions (all Stores using this Category III); MD Masters inherit them when theirs are NULL.
+    # Free format (A03, A03-B02-S04), upper-cased. Guidance only: never stock quantities or Store locations.
+    c_sales_location = Column(String(50), nullable=True)
+    c_warehouse_location = Column(String(50), nullable=True)
     c_category_code = Column(String(20), nullable=False, unique=True, index=True)
     c_category_name = Column(String(100), nullable=False)
     i_display_order = Column(Integer, nullable=False, default=100)
@@ -113,6 +125,12 @@ class MdMaster(PlatformBase, AuditMixin):
     # Logic must read services.inventory.resolve_inventory() / inventory_behavior(), never the raw number.
     i_inventory_type = Column(Integer, nullable=True)
     c_keep = Column(String(20), nullable=True)  # DRY / COLD / FROZEN
+    # Output Device #1-#8 as a bitmask (bit 0 = #1 ... bit 7 = #8); 0 = not output.
+    # Read/write only through services.master_group output_devices helpers (API exposes a list).
+    i_output_devices = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Common recommended positions; NULL = inherit the Category III value (resolve_md_location). Guidance only.
+    c_sales_location = Column(String(50), nullable=True)
+    c_warehouse_location = Column(String(50), nullable=True)
     b_license_required = Column(Boolean, nullable=False, default=False)
     c_license_type = Column(String(30), nullable=True)  # reuses tb_license.c_license_type values
     i_licenses_per_unit = Column(Integer, nullable=True)
@@ -145,6 +163,9 @@ class MdDetail(PlatformBase, AuditMixin):
     n_cost = Column(Numeric(12, 2), nullable=True)
     n_price = Column(Numeric(12, 2), nullable=False, default=0)
     c_modifier = Column(Text, nullable=True)
+    # Product Color of this detail (e.g. Black / M): a COLOR common code (API color_code_id); NULL = not set.
+    # The MD form's Color shows the Default Detail's.
+    i_color_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id"), nullable=True, index=True)
 
 
 # System-wide barcode uniqueness (services.barcode): non-empty trimmed barcodes are unique across all MD Details.

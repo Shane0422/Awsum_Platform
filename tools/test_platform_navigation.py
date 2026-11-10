@@ -13,7 +13,8 @@ from tools import test_image_components as browser
 MENU_LINKS = [
     ("Dashboard", "/platform/dashboard"),
     ("Tax", "/platform/master-group/tax"),
-    ("Item Kind", "/platform/master-group/item-kind"),
+    ("Common Maintenance", "/platform/master-group/common-maintenance"),
+    ("Location Master", "/platform/master-group/location-master"),
     ("Category I", "/platform/master-group/category-1"),
     ("Category II", "/platform/master-group/category-2"),
     ("Category III", "/platform/master-group/category-3"),
@@ -35,6 +36,7 @@ MENU_LINKS = [
     ("Users", "/platform/master/user"),
     ("Sessions", "/platform/master/session"),
     ("System Settings", "/platform/system-settings"),
+    ("Item Kind", "/platform/master-group/item-kind"),  # Super Admin System section
     ("Logout", "/auth/logout"),
 ]
 
@@ -44,11 +46,13 @@ def render_navigation(**overrides):
         loader=FileSystemLoader(browser.ROOT / "templates"), undefined=StrictUndefined,
         autoescape=True,
     )
+    from backend.services.builtin_assets import builtin_asset_url
+    environment.globals["builtin_asset_url"] = builtin_asset_url  # same global as backend.config.templates
     context = {
         "APP_NAME": "AWSUM Platform", "company_name": "AWSUM Platform",
         "company_logo_path": "", "brand_icon_path": "", "role": "Platform Admin",
         "user": {"i_platform_user_id": 1, "c_first_name": "Test", "c_last_name": "Admin", "c_image_path": ""},
-        "image_url": lambda path: path, "active_page": "dashboard", "active_module": "",
+        "image_url": lambda path: path, "nav_logo_url": lambda path: path, "active_page": "dashboard", "active_module": "",
         "is_super_admin": True, "total_companies": 0, "active_stores": 0,
         "inactive_stores": 0, "total_users": 0, "recent_companies": [],
     }
@@ -99,6 +103,14 @@ class PlatformNavigationTemplateTests(unittest.TestCase):
         _, _, html = render_navigation(is_super_admin=False)
         self.assertNotIn('href="/platform/system-settings"', html)
         self.assertIn('href="/platform/master/session"', html)
+        # Item Kind is a Super Admin System Master: shown only in the Super Admin System section.
+        self.assertNotIn('href="/platform/master-group/item-kind"', html)
+        # COLOR step 5-2: no separate Color menu; colors are a group of Common Maintenance.
+        self.assertNotIn('href="/platform/master-group/color"', html)
+        self.assertIn('href="/platform/master-group/common-maintenance"', html)
+        _, _, super_html = render_navigation()
+        system = super_html[super_html.index("System</h2>"):]
+        self.assertLess(system.index('href="/platform/system-settings"'), system.index('href="/platform/master-group/item-kind"'))
 
     def test_active_page_for_each_existing_route(self):
         for label, route in MENU_LINKS:

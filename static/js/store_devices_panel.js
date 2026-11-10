@@ -425,6 +425,7 @@
             });
             applyWorkspace(ws);
             closeModal();
+            AwsumToast.done('updated', 'Device quantity');
           } catch (err) {
             showError(err.message);
             btn.disabled = false;
@@ -480,6 +481,7 @@
             });
             applyWorkspace(res.workspace);
             closeModal();
+            AwsumToast.success('License issued.');
           } catch (err) {
             showError(err.message);
             submitting = false; // allow retry; the same request_id keeps a retry idempotent
@@ -539,6 +541,7 @@
         });
         applyWorkspace(res.workspace);
         closeModal();
+        AwsumToast.success('Device unlinked.');
       } catch (err) {
         showError(err.message);
         btn.disabled = false;

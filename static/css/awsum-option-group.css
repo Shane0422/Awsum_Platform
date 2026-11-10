@@ -73,3 +73,18 @@
   background: #f5f9ff;
   color: var(--platform-navy, #102e68);
 }
+/* Inherit mode (data-option-inherits): the inherited value is checked but drawn dashed, so it reads as "in effect,
+   not chosen here"; a user pick (Override) gets the normal solid selection. The caption names the source. */
+.awsum-option-group.is-inheriting .awsum-option-input:checked + .awsum-option-body {
+  border-style: dashed;
+  background: #f5f9ff;
+  box-shadow: none;
+}
+.awsum-option-source { margin-left: 4px; color: #647895; font-size: 11px; font-style: italic; white-space: nowrap; }
+.awsum-option-group.has-value .awsum-option-source { color: var(--platform-navy, #102e68); font-style: normal; font-weight: 600; }
+/* multiple mode (checkboxes): square indicator with a check mark. */
+.awsum-option-group.is-multiple .awsum-option-dot { border-radius: 3px; }
+.awsum-option-group.is-multiple .awsum-option-input:checked + .awsum-option-body .awsum-option-dot {
+  border: 0;
+  background: var(--platform-blue, #1263eb) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat;
+}

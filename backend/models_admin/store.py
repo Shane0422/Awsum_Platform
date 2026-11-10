@@ -85,6 +85,15 @@ class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     b_opt_inventory = Column(Boolean, nullable=True, default=False)
     b_opt_loyalty = Column(Boolean, nullable=True, default=False)
     b_opt_accounting = Column(Boolean, nullable=True, default=False)
+    # Store Options > Item Features (services.store_item_features). OFF only hides MD fields for this Store.
+    b_opt_use_color = Column(Boolean, nullable=True, default=False)
+    b_opt_use_modifier = Column(Boolean, nullable=True, default=True)
+    b_opt_use_bottle_deposit = Column(Boolean, nullable=True, default=False)
+    b_opt_use_sugar_tax = Column(Boolean, nullable=True, default=False)
+    b_opt_use_output_device = Column(Boolean, nullable=True, default=True)
+    # Business Options > Use Location Management (Location Master). Column name kept from the earlier
+    # Shelf Location option so saved Store settings stay; NULL = default OFF. Independent of b_opt_inventory.
+    b_opt_use_shelf_location = Column(Boolean, nullable=True, default=False)
     c_customer_scope = Column(String(20), nullable=True)
     c_loyalty_scope = Column(String(20), nullable=True)
     c_dashboard_type = Column(String, nullable=True)

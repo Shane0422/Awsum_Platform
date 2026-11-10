@@ -15,11 +15,14 @@ from sqlalchemy.orm import Session
 from backend.database.pg_platform import (
     ensure_platform_database_exists,
     PlatformSessionLocal,
+    platform_engine,
     get_platform_db_url,
     get_platform_db_url_source,
     mask_db_url,
 )
-from backend.database.db_init_platform import init_platform_db
+from backend.database.db_init_platform import check_platform_schema, describe_schema_check, init_platform_db
+from backend.database.migration_policy import MigrationBlocked, auto_migrate_enabled
+from backend.utils.safe_schema_migrate import SchemaMismatchError
 from backend.config.messages import popup_multi_choice
 from backend.config.settings import APP_NAME
 from backend.config.templates import templates, get_brand_context
@@ -138,6 +141,24 @@ def favicon():
     return FileResponse(builtin_asset_file(FAVICON_ICO), media_type="image/x-icon")
 
 
+def report_startup_schema(engine) -> None:
+    """AWSUM_AUTO_MIGRATE=OFF: read-only checks only. Pending changes are logged; the schema / data never change."""
+    print("[MIGRATION] AWSUM_AUTO_MIGRATE=OFF: startup does not change the database schema or data.")
+    plan = check_platform_schema(engine)
+    if plan["pending"]:
+        print(f"[MIGRATION][WARN] Pending Platform schema changes ({len(describe_schema_check(plan))}):")
+        for line in describe_schema_check(plan):
+            print(f"[MIGRATION][WARN]   {line}")
+        print("[MIGRATION][WARN] Apply an approved migration: python -m tools.migrate_platform --check, "
+              "then --apply --backup auto --confirm-db <database>.")
+    else:
+        print("[MIGRATION] No missing tables / columns detected (index or data steps are applied only by "
+              "tools.migrate_platform --apply).")
+    from backend.services.storage_layout import final_layout_enabled, validate_runtime_references
+    if final_layout_enabled():
+        validate_runtime_references(engine)  # read-only reference check, as before
+
+
 # ✅ Startup 이벤트 (PostgreSQL awsum_platform 초기화 + Seed 데이터 등록)
 @app.on_event("startup")
 def on_startup():
@@ -153,8 +174,17 @@ def on_startup():
         print(f"[INFO] Platform DB URL source: {source}")
     print(f"[INFO] Platform DB URL (masked): {masked_url}")
 
-    ensure_platform_database_exists()
-    init_platform_db()
+    if auto_migrate_enabled():
+        print("[MIGRATION] AWSUM_AUTO_MIGRATE=ON: running the non-destructive Platform migration at startup.")
+        try:
+            ensure_platform_database_exists()
+            init_platform_db()  # never DROP / recreate / delete data automatically
+        except (MigrationBlocked, SchemaMismatchError) as exc:
+            print(f"[MIGRATION][ERROR] {type(exc).__name__}: {exc}")
+            print("[MIGRATION][WARN] Startup continues; nothing destructive was run. Fix it with an approved "
+                  "migration (python -m tools.migrate_platform).")
+    else:
+        report_startup_schema(platform_engine)
     with PlatformSessionLocal() as db:
         idle_timeout(db)
 

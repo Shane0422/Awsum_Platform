@@ -1,0 +1,26 @@
+/* AWSUM Common Lookup Modal (static/js/lookup-modal.js). Builds on the pm-modal look (platform-modal.css). */
+.awsum-lookup-modal .modal-dialog { max-width: min(780px, calc(100vw - 1rem)); }
+.awsum-lookup-fixed { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin-bottom: .6rem; font-size: 12px; color: #496486; }
+.awsum-lookup-fixed b { color: #102e68; }
+.awsum-lookup-filters { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-end; margin-bottom: .65rem; }
+.awsum-lookup-filters .form-label { margin-bottom: .2rem; font-size: 12px; font-weight: 600; color: #496486; }
+.awsum-lookup-search { flex: 1 1 220px; min-width: 0; }
+.awsum-lookup-filter-slots { display: flex; gap: .5rem; flex: 1 1 300px; min-width: 0; }
+.awsum-lookup-filter-slots > div { flex: 1 1 0; min-width: 0; }
+.awsum-lookup-table { border: 1px solid #e1e7ef; border-radius: 6px; overflow: auto; max-height: calc(100dvh - 480px); min-height: 150px; }
+.awsum-lookup-table th { position: sticky; top: 0; z-index: 1; background: #f4f7fb; font-size: 12px; font-weight: 600; color: #496486; white-space: nowrap; }
+.awsum-lookup-table td { font-size: 13px; vertical-align: middle; overflow-wrap: anywhere; }
+.awsum-lookup-table tr[data-index] { cursor: pointer; }
+.awsum-lookup-table tr[data-index]:focus-visible { outline: 2px solid rgba(18, 99, 235, .45); outline-offset: -2px; }
+.awsum-lookup-table tr.selected > td { --bs-table-bg: #e7f0fe; --bs-table-bg-state: #e7f0fe; color: #102e68; }
+.awsum-lookup-table tr.selected > td:first-child { box-shadow: inset 3px 0 0 #1263eb; }
+.awsum-lookup-table tr.disabled > td { color: #8a94a6; cursor: not-allowed; }
+.awsum-lookup-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; }
+.awsum-lookup-badge { margin-left: .4rem; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 10px; font-weight: 600; color: #b45309; }
+.awsum-lookup-badge.current { color: #1263eb; }
+.awsum-lookup-pager { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .65rem; }
+@media (max-width: 575.98px) {
+  .awsum-lookup-table { max-height: calc(100dvh - 540px); }  /* the filters wrap to two rows */
+  .awsum-lookup-wide { display: none; }
+  .awsum-lookup-filter-slots { flex-basis: 100%; }
+}
