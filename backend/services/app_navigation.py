@@ -19,13 +19,18 @@ MASTER_SLUGS = (("common-maintenance", "Common Maintenance", True), ("tax", "Tax
                 ("category-1", "Category I", True), ("category-2", "Category II", True),
                 ("category-3", "Category III", True), ("md-master", "MD Master", True),
                 ("location-master", "Location Master", True))
-# Business > Organizations (Platform: Agencies, Merchants, Stores). Merchant scope: its Stores, not built yet.
-BUSINESS_SLUGS = (("stores", "Stores", False),)
+# Business > Organizations (Platform: Agencies, Merchants, Stores). Merchant Store Management: the Merchant login
+# manages its own Stores (routers.merchant_store). A Store login never has Store Management (no Business menu).
+BUSINESS_SLUGS = (("stores", "Stores", True),)
+BUSINESS_URLS = {"stores": "/merchant/business/stores"}
 TENANT_ROLES = {
     "MERCHANT": {MERCHANT_ADMIN_ROLE_NAME},
     "STORE": {"Admin", "CustomerAdmin", "StoreAdmin"},
 }
 MASTER_PERMISSION = PortalPermission(create=True, update=True, delete=True)
+# Merchant Store Management: view its Stores and edit the allowed operating fields. Store registration, deletion,
+# deactivation and Merchant / Agency assignment are Platform Admin only.
+STORE_MANAGEMENT_PERMISSION = PortalPermission(read=True, update=True)
 # Store Status rule (separate from Feature Entitlement, User Permission and Device License).
 STORE_INACTIVE_READ_ONLY = "This Store is Inactive: view only. Platform Admin can edit and activate it."
 READ_METHODS = frozenset({"GET", "HEAD"})
@@ -45,11 +50,12 @@ class AppScope:
     # None = they could not be read: every feature check of this request is OFF (fail-closed), nothing is written.
     feature_snapshot: object = None
 
-    def require(self, action: str) -> None:
+    def require(self, action: str, permission: PortalPermission = MASTER_PERMISSION,
+                label: str = "Master Group") -> None:
         if not self.permitted or action not in {"read", "create", "update", "delete", "export"}:
-            raise HTTPException(403, "Master Group permission denied.")
-        if not getattr(MASTER_PERMISSION, "read" if action == "export" else action):
-            raise HTTPException(403, "Master Group permission denied.")
+            raise HTTPException(403, f"{label} permission denied.")
+        if not getattr(permission, "read" if action == "export" else action):
+            raise HTTPException(403, f"{label} permission denied.")
 
     # ---- Store Status (common for every Store-scoped API and screen of a Merchant / Store login) ----
     def store_read_only(self, store) -> bool:
@@ -95,6 +101,9 @@ class AppScope:
         return {"read_only": read_only, "read_only_message": STORE_INACTIVE_READ_ONLY if read_only else None}
 
     def navigation(self) -> dict:
+        # Store Management is a Merchant login menu only (Store login: no Business > Organizations > Stores).
+        business_items = [{"label": label, "slug": slug, "available": available, "url": BUSINESS_URLS.get(slug)}
+                          for slug, label, available in BUSINESS_SLUGS]             if self.permitted and self.context == "MERCHANT" else []
         return {
             "scope": self.context, "dashboard_url": "/merchant/dashboard/standard",
             "settings_url": "/auth/change-password",
@@ -104,9 +113,8 @@ class AppScope:
                 for slug, label, available in MASTER_SLUGS
                 if slug != "location-master" or self.location_management
             ] if self.permitted else [],
-            "business_items": [{"label": label, "slug": slug, "available": available}
-                               for slug, label, available in BUSINESS_SLUGS] if self.permitted else [],
-            "business": self.permitted, "reports": self.permitted,
+            "business_items": business_items,
+            "business": bool(business_items), "reports": self.permitted,
             "api_base": f"/{self.context.lower()}/api/master-group",
         }
 

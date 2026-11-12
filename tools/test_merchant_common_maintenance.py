@@ -272,10 +272,15 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
             self.assertEqual(master_menu(page.text), expected)
             self.assertIn(f'href="{prefix}/master-group/common-maintenance"', page.text)
             self.assertIn(f'href="{prefix}/master-group/md-master"', page.text)  # STEP 2: Merchant MD Master (Store: view)
-            business = page.text.split('id="mega-business"', 1)[1].split("</section>", 1)[0]
-            self.assertIn("Organizations", business)
-            self.assertRegex(business, r'disabled[^>]*>Stores<span class="platform-menu-soon">Soon</span>')
-            self.assertNotIn("href=", business)
+            # Business > Organizations > Stores: Merchant Store Management for a Merchant login; a Store login has
+            # no Store Management (no Business menu).
+            if scope == "MERCHANT":
+                business = page.text.split('id="mega-business"', 1)[1].split("</section>", 1)[0]
+                self.assertIn("Organizations", business)
+                self.assertIn('href="/merchant/business/stores"', business)
+            else:
+                self.assertNotIn('id="mega-business"', page.text)
+                self.assertNotIn("/merchant/business/stores", page.text)
             self.assertEqual(self.client.get(f"{prefix}/master-group/md-master").status_code, 200)
             self.assertEqual(self.client.get(f"{prefix}/api/master-group/md").status_code, 200)
             self.assertEqual(self.client.get(f"{prefix}/api/master-group/item_kind").status_code, 403)  # Item Kind: Platform only

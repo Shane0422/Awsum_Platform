@@ -33,6 +33,7 @@ from backend.routers import platform_store_license
 from backend.routers import device_master
 from backend.routers import system_settings
 from backend.routers import master_group
+from backend.routers import merchant_store
 from backend.routers import agency_portal
 from backend.services.reporting import GlobalReportMiddleware
 from backend.services.web_session_http import (enforce_web_session, platform_context_changed_response,
@@ -295,6 +296,7 @@ app.include_router(platform_store.router, prefix="", tags=["PlatformStore"])
 app.include_router(platform_store_license.router, prefix="", tags=["PlatformStoreLicense"])
 app.include_router(system_settings.router, prefix="", tags=["SystemSettings"])
 app.include_router(master_group.router, prefix="", tags=["MasterGroup"])
+app.include_router(merchant_store.router, prefix="", tags=["MerchantStore"])
 app.include_router(agency_portal.router)
 app.include_router(device_master.router, prefix="", tags=["DeviceMaster"])
 app.include_router(subscription.router, prefix="", tags=["Subscription"])

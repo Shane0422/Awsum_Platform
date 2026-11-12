@@ -765,6 +765,25 @@ def list_stores(
             },
         ))
 
+    results, pagination = _query_store_list(
+        db, search=search, status=status, business_type=business_type, operation_type=operation_type,
+        channel_type=channel_type, device_type=device_type, merchant_id=merchant_id, agency_id=agency_id,
+        sort=sort, page=page, page_size=page_size, locate_id=locate_id,
+    )
+    if pagination is not None:
+        return _set_no_cache_headers(JSONResponse({"items": results, **pagination}))
+    return _set_no_cache_headers(JSONResponse(results))
+
+
+def _query_store_list(
+    db: Session, *, search: Optional[str] = None, status: Optional[str] = None, business_type: Optional[str] = None,
+    operation_type: Optional[str] = None, channel_type: Optional[str] = None, device_type: Optional[str] = None,
+    merchant_id: Optional[int] = None, agency_id: Optional[int] = None, sort: Optional[str] = None,
+    page: Optional[int] = None, page_size: int = 20, locate_id: Optional[int] = None,
+    store_search_only: bool = False,
+) -> tuple[list[dict], Optional[dict]]:
+    """Store Management list rows + pagination (None = legacy plain list). Platform passes its filters; the Merchant
+    scope (routers.merchant_store) passes its own merchant_id and filters the row keys it may see."""
     # JSON API request: return the filtered list
     # sort/page switch on the master-grid behavior; plain calls keep the legacy list behavior.
     grid_mode = sort is not None or page is not None
@@ -796,7 +815,10 @@ def list_stores(
     if search and search.strip():
         term = f"%{search.strip()}%"
         code_term = f"%{search.strip().replace('_', '')}%"
-        if grid_mode:
+        if store_search_only:  # Merchant Store Management: Store Name / Store Code only
+            query = query.filter(or_(Store.c_store_name.ilike(term), Store.c_store_code.ilike(term),
+                                     Store.c_store_code.ilike(code_term)))
+        elif grid_mode:
             query = query.filter(
                 or_(
                     agency_alias.c_agency_name.ilike(term),
@@ -918,9 +940,7 @@ def list_stores(
             **_store_license_and_options(s),
         })
 
-    if pagination is not None:
-        return _set_no_cache_headers(JSONResponse({"items": results, **pagination}))
-    return _set_no_cache_headers(JSONResponse(results))
+    return results, pagination
 
 
 @router.get("/platform/store/{store_id}")
@@ -929,7 +949,11 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
     require_platform_admin(user)
 
     store = _get_business_store(db, store_id)
+    return _set_no_cache_headers(JSONResponse(_store_detail_data(db, store)))
 
+
+def _store_detail_data(db: Session, store: Store) -> dict:
+    """Store detail (Platform Store form). The Merchant scope filters the keys it may see (routers.merchant_store)."""
     bt = db.query(BusinessType).filter(BusinessType.i_business_type_id == store.i_business_type).first()
     merchant = db.query(Merchant).filter(Merchant.i_merchant_id == store.i_merchant_id).first() if store.i_merchant_id else None
     store_agency = db.query(Agency).filter(Agency.i_agency_id == store.i_installed_by_agency_id).first() if store.i_installed_by_agency_id else None
@@ -987,8 +1011,7 @@ def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
         "installed_by_agency_name": store_agency.c_agency_name if store_agency else None,
         **_store_license_and_options(store),
     }
-
-    return _set_no_cache_headers(JSONResponse(data))
+    return data
 
 
 @router.post("/platform/merchant/{merchant_id}/logo")
@@ -1290,9 +1313,15 @@ def update_store(store_id: int, payload: dict, request: Request, db: Session = D
 
 
 def _update_store(store_id: int, payload: dict, request: Request, db: Session,
-                  *, image_data: bytes | None = None, remove_image: bool = False):
-    user = get_current_user(request, db)
-    require_platform_admin(user)
+                  *, image_data: bytes | None = None, remove_image: bool = False,
+                  authorized_user=None, activate: bool = True):
+    """Common Store save. Platform (default): Platform Admin, every field. Merchant Store Management passes the user it
+    authorized and an allow-listed payload (routers.merchant_store), with activate=False: a Merchant save never issues
+    the Store Admin login (Store activation stays Platform only)."""
+    user = authorized_user
+    if user is None:
+        user = get_current_user(request, db)
+        require_platform_admin(user)
 
     store = _get_business_store(db, store_id)
     db.refresh(store, with_for_update=True)
@@ -1398,7 +1427,7 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
     _stamp_updated(store, user)
     if store.c_status == "active" and not was_active:
         require_store_activation(db, store)
-    activation = _activate_organization(db, "STORE", store)
+    activation = _activate_organization(db, "STORE", store) if activate else {}
     warning = _commit_store_image(db, store, image_data=image_data, remove_image=remove_image)
     return JSONResponse({"success": True, "image_path": store.c_logo_url,
                          "image_url": image_url(store.c_logo_url), "image_warning": warning, **activation})

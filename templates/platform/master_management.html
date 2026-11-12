@@ -302,6 +302,7 @@
   body.page-master #masterRoleView.store-split .store-pager-page { white-space: nowrap; }
   body.page-master #masterRoleView.store-split > #storeDevicesCol { flex: 0 0 100%; max-width: 100%; min-width: 0; background: #f6f8fb; border-top: 1px solid var(--role-border); }
   body.page-master #masterRoleView.store-split > #storeDevicesCol.d-none { display: none; }
+  body.page-master #masterRoleView.store-split.store-no-devices > #masterListCol { flex: 0 0 100% !important; max-width: 100% !important; }
   body.page-master #masterRoleView.store-split .store-devices-card { border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 16px 20px !important; height: 100%; }
   .store-cell-main { min-width: 0; max-width: 260px; }
   .store-cell-merchant { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2567,7 +2568,9 @@
   #masterEditModal.agency-modal.merchant-modal .merchant-tab-panel { min-height: 390px; }
 </style>
 
-{% call page_header(active_module | replace('-', ' ') | title, 'Manage records, search and filter the list, or select a record to edit.', 'masterListTitle', 'masterListHead') %}
+{# Merchant Store Management: the subtitle names the login's Merchant (fixed by the server scope). #}
+{% set store_policy = merchant_store_policy | default(none) %}
+{% call page_header(active_module | replace('-', ' ') | title, ('Merchant: ' ~ store_policy.merchant_name) if store_policy else 'Manage records, search and filter the list, or select a record to edit.', 'masterListTitle', 'masterListHead') %}
   <button id="btnMasterRefresh" class="btn btn-outline-secondary role-action-btn">Refresh</button>
   <div class="master-list-toolbar-right">
     <button id="btnListAdd" class="btn btn-primary role-action-btn">Add</button>
@@ -3101,7 +3104,15 @@
 <script>
   const activeModuleRaw =  "{{ active_module }}";
   const activeModule = activeModuleRaw;
-  const apiBase = "/platform";
+  // Merchant Store Management (/merchant/business/stores, routers.merchant_store): this same Store screen in the
+  // Merchant scope. The server sends the field policy and enforces it; the screen only mirrors it. null = Platform.
+  const merchantStorePolicy = {{ (merchant_store_policy | default(none)) | tojson }};
+  const apiBase = merchantStorePolicy ? merchantStorePolicy.api_base : "/platform";
+  // Devices stay Platform only (not part of Merchant Store Management).
+  const storeDevicesPanel = merchantStorePolicy ? null : window.AwsumStoreDevices;
+  // Merchant scope list: no Agency / Merchant column, filter or sort; Store Name / Code search; Store Name (A-Z) first.
+  const MERCHANT_STORE_HIDDEN_COLUMNS = new Set(['installed_by_agency_name', 'merchant_name']);
+  const MERCHANT_STORE_SORTS = merchantStorePolicy ? merchantStorePolicy.sorts : null;
 
   const masterListHeader = document.getElementById('masterListHeader');
   const masterListBody = document.getElementById('masterListBody');
@@ -3569,6 +3580,10 @@
         ['Store Code', 'store_code'], ['Store Name', 'store_name'], ['Status', 'status'], ['Created Date', 'created_at']],
     },
   }[activeModule];
+  // Merchant scope: its Merchant is fixed by the login, so the Agency / Merchant columns are not shown.
+  if (organizationGrid && merchantStorePolicy && activeModule === 'store') {
+    organizationGrid.columns = organizationGrid.columns.filter(([, key]) => !MERCHANT_STORE_HIDDEN_COLUMNS.has(key));
+  }
   if (organizationGrid) {
     config.headers = organizationGrid.columns.map(([label]) => label);
     config.statusIndex = config.headers.indexOf('Status');
@@ -3585,6 +3600,22 @@
   (config.tabs || []).forEach(tab => {
     tab.fields = orderOrganizationFields(tab.fields, name => name);
   });
+  // Merchant scope: Platform internal fields (Notes, License Key ...) are not rendered; Platform-only fields are
+  // read-only. Empty tabs (Notes) are dropped.
+  const merchantStoreLocked = new Set(merchantStorePolicy ? merchantStorePolicy.protected_fields : []);
+  if (merchantStorePolicy && activeModule === 'store') {
+    const hidden = new Set(merchantStorePolicy.hidden_fields);
+    config.fields = config.fields.filter(field => !hidden.has(field.name));
+    config.fields.forEach(field => {
+      if (!merchantStoreLocked.has(field.name)) return;
+      if (field.type === 'select') field.disabled = true;
+      else field.readonly = true;
+    });
+    config.tabs = (config.tabs || []).map(tab => ({ ...tab, fields: tab.fields.filter(name => !hidden.has(name)) }))
+      .filter(tab => tab.fields.length || tab.id === 'contact');
+    const license = config.tabs.find(tab => tab.id === 'license');
+    if (license) license.summary = 'Store License managed by AWSUM Platform (view only).';
+  }
   const isListCentricModule = true;
   const moduleLabels = {
     role: { list: 'Roles', singular: 'Role' },
@@ -4095,11 +4126,15 @@
           tools.dataset.built = '1';
         }
         if (tools) tools.classList.remove('d-none');
-        ['storeSplitter', 'storeDevicesCol'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.classList.remove('d-none');
-        });
-        if (window.AwsumStoreDevices) window.AwsumStoreDevices.init();
+        if (storeDevicesPanel) {
+          ['storeSplitter', 'storeDevicesCol'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('d-none');
+          });
+          storeDevicesPanel.init();
+        } else if (roleView) {
+          roleView.classList.add('store-no-devices');
+        }
       } else {
         masterListCol.classList.add('col-xl-12');
       }
@@ -4139,7 +4174,8 @@
     const fields = {
       agency: ['masterSearch', 'masterStatusFilter'],
       merchant: ['masterSearch', 'storeAgencyCombo', 'masterStatusFilter', 'storePageSize'],
-      store: ['masterSearch', 'storeAgencyCombo', 'storeMerchantCombo', 'masterStatusFilter', 'storeSortSelect', 'storePageSize'],
+      store: merchantStorePolicy ? ['masterSearch', 'masterStatusFilter', 'storeSortSelect', 'storePageSize']
+        : ['masterSearch', 'storeAgencyCombo', 'storeMerchantCombo', 'masterStatusFilter', 'storeSortSelect', 'storePageSize'],
     }[activeModule];
     if (!fields) return;
     const surface = document.getElementById('storeToolsArea');
@@ -4387,7 +4423,7 @@
   async function lookupZipCode(zip) {
     const rawZip = String(zip || '').trim();
     if (!/^\d{5}(-\d{4})?$/.test(rawZip)) return { found: false, reason: 'invalid' };
-    const res = await fetch(`/platform/zip-lookup/${encodeURIComponent(rawZip)}`, { credentials: 'same-origin' });
+    const res = await fetch(`${apiBase}/zip-lookup/${encodeURIComponent(rawZip)}`, { credentials: 'same-origin' });
     return res.ok ? res.json() : { found: false, reason: 'unavailable' };
   }
 
@@ -4972,7 +5008,7 @@
     updateMasterSortIndicators();
   }
 
-  const storeGrid = { page: 1, pageSize: 20, total: 0, totalPages: 1, sort: 'merchant_asc', agencyId: '', merchantId: '' };
+  const storeGrid = { page: 1, pageSize: 20, total: 0, totalPages: 1, sort: MERCHANT_STORE_SORTS ? MERCHANT_STORE_SORTS[0] : 'merchant_asc', agencyId: '', merchantId: '' };
 
   function buildQuery(options = {}) {
     const params = new URLSearchParams();
@@ -5096,10 +5132,13 @@
     document.getElementById('storeListPager')?.classList.remove('d-none');
     if (activeModule === 'store') {
       document.getElementById('storeFilterBar')?.classList.remove('d-none');
-      masterSearch.placeholder = 'Search Agency, Merchant or Store name/code...';
+      masterSearch.placeholder = MERCHANT_STORE_SORTS ? 'Search Store name or code...' : 'Search Agency, Merchant or Store name/code...';
     }
 
     const sortSelect = document.getElementById('storeSortSelect');
+    if (MERCHANT_STORE_SORTS) {
+      [...sortSelect.options].forEach(option => { if (!MERCHANT_STORE_SORTS.includes(option.value)) option.remove(); });
+    }
     sortSelect.value = storeGrid.sort;
     sortSelect.addEventListener('change', () => {
       storeGrid.sort = sortSelect.value;
@@ -5124,7 +5163,7 @@
       loadList();
     });
 
-    if (!organizationGrid) return; // Agency / Merchant / Store filters below
+    if (!organizationGrid || MERCHANT_STORE_SORTS) return; // Agency / Merchant / Store filters below (Platform only)
     const filterOptions = (options) => options.map(option => ({
       ...option, label: [option.name, option.code].filter(Boolean).join(' - '),
     }));
@@ -6537,7 +6576,7 @@
     try {
       while (drafts.length) {
         const { contact_id, ...payload } = drafts[0];
-        await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload);
+        await contactRequest(`${apiBase}/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload);
         drafts.shift();
       }
       manager.pendingContacts = null;
@@ -6636,7 +6675,7 @@
     renderBusinessContacts();
     if (!owner || contactDrafts()) return;
     try {
-      const rows = await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
+      const rows = await contactRequest(`${apiBase}/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
       if (revision !== businessContactRevision) return;
       businessContacts = Array.isArray(rows) ? rows : [];
       renderBusinessContacts();
@@ -6706,8 +6745,8 @@
       return;
     }
     const saved = await runContactAction(() => contactId
-      ? contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
-      : contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload),
+      ? contactRequest(`${apiBase}/business-contact/${encodeURIComponent(contactId)}`, 'PUT', payload)
+      : contactRequest(`${apiBase}/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`, 'POST', payload),
       payload.is_primary || businessContacts.some(contact => String(contact.contact_id) === contactId && contact.is_primary));
     if (saved) AwsumToast.done(contactId ? 'updated' : 'created', 'Contact');
   }
@@ -6719,7 +6758,7 @@
       renderBusinessContacts();
       return;
     }
-    return runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'), true);
+    return runContactAction(() => contactRequest(`${apiBase}/business-contact/${encodeURIComponent(contactId)}/primary`, 'POST'), true);
   }
 
   async function deleteBusinessContact(contact) {
@@ -6731,7 +6770,7 @@
       renderBusinessContacts();
       return;
     }
-    if (await runContactAction(() => contactRequest(`/platform/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'))) {
+    if (await runContactAction(() => contactRequest(`${apiBase}/business-contact/${encodeURIComponent(contact.contact_id)}`, 'DELETE'))) {
       AwsumToast.done('deleted', 'Contact');
     }
   }
@@ -6749,7 +6788,7 @@
     if (!owner || target < 0 || target >= businessContacts.length) return;
     const ids = businessContacts.map((c) => c.contact_id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    return runContactAction(() => contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}/order`, 'PUT', { contact_ids: ids }));
+    return runContactAction(() => contactRequest(`${apiBase}/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}/order`, 'PUT', { contact_ids: ids }));
   }
 
   function refreshMerchantStoreModalLogoPreview(item = null) {
@@ -8138,6 +8177,11 @@
       // Store code is always server-generated and immutable from this UI.
       delete data.store_code;
       delete data.id;
+      if (merchantStorePolicy) {
+        // Merchant scope: send only the fields a Merchant may change (the server allow-list refuses the rest).
+        const editable = new Set(merchantStorePolicy.editable_fields);
+        Object.keys(data).forEach(key => { if (!editable.has(key)) delete data[key]; });
+      }
       // Legacy stores may have no Merchant/Agency; an empty selection leaves them unchanged.
       ['merchant_id', 'installed_by_agency_id'].forEach((key) => { if (!String(data[key] || '').trim()) delete data[key]; });
     }
@@ -8315,7 +8359,7 @@
     updateListCentricActionButtons();
     syncStoreOptionScopes();
     setBaselineSnapshot();
-    if (activeModule === 'store' && window.AwsumStoreDevices) window.AwsumStoreDevices.clear();
+    if (activeModule === 'store' && storeDevicesPanel) storeDevicesPanel.clear();
   }
 
   // Store Options: a scope is only meaningful while its option is On. Off only disables it: the saved Scope stays
@@ -8345,7 +8389,33 @@
     updateSectionTitles('edit');
     updateListCentricActionButtons();
     setBaselineSnapshot();
-    if (activeModule === 'store' && window.AwsumStoreDevices) window.AwsumStoreDevices.show(item);
+    if (activeModule === 'store' && storeDevicesPanel) storeDevicesPanel.show(item);
+    applyMerchantStoreAccess(item);
+  }
+
+  // Merchant scope, per Store: an Inactive Store is view only; a Business Option / Item Feature that is not
+  // contracted or that the Merchant turned off cannot be turned on (shown disabled with the reason). A saved ON value
+  // stays as it is (it can be turned off). The server applies the same rules.
+  function applyMerchantStoreAccess(item) {
+    if (!merchantStorePolicy || activeModule !== 'store') return;
+    const readOnly = !!item?.read_only;
+    config.fields.forEach(field => {
+      const input = document.getElementById(`field_${field.name}`);
+      if (!input || field.type === 'section') return;
+      const locked = readOnly || merchantStoreLocked.has(field.name);
+      if (input.tagName === 'SELECT') input.disabled = locked;
+      else input.readOnly = locked;
+    });
+    if (!readOnly) syncStoreOptionScopes();
+    Object.entries(item?.option_access || {}).forEach(([name, state]) => {
+      const input = document.getElementById(`field_${name}`);
+      if (!input) return;
+      if (!state.allowed && input.value !== 'on') input.disabled = true;
+      input.title = state.allowed ? '' : (state.reason || '');
+    });
+    getStoreLogoUploader()?.setDisabled(readOnly);
+    if (btnModalSave) btnModalSave.disabled = readOnly;
+    showMasterModalError(readOnly ? (item.read_only_message || '') : '');
   }
 
   function safeFilePart(value) {
@@ -8679,7 +8749,7 @@
     let needsContactActivation = false;
     if (!dirty && owner && status?.value === 'active') {
       try {
-        const contacts = await contactRequest(`/platform/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
+        const contacts = await contactRequest(`${apiBase}/business-contacts/${owner.ownerType}/${encodeURIComponent(owner.ownerId)}`);
         needsContactActivation = contacts.some(contact => contact.is_primary && contact.status === 'active');
       } catch (error) {
         showMasterModalError(error.message);
@@ -8932,6 +9002,10 @@
   renderListHeader();
   renderForm();
   attachFormChangeWatchers();
+  if (merchantStorePolicy) {
+    // Store registration and deletion / deactivation are Platform Admin only.
+    [btnListAdd, btnListDelete, btnNewRecord, btnDeleteRecord, btnModalDelete].forEach(button => button?.classList.add('d-none'));
+  }
   if (config.allowCreate === false) {
     btnNewRecord.disabled = true;
     btnSaveRecord.disabled = true;
