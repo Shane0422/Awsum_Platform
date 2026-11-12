@@ -2560,7 +2560,10 @@
   #masterEditModal.agency-modal.store-modal .brand-logo-upload-card .btn-outline-danger { color: #dc2626; border-color: #f3c6c6; }
   #masterEditModal.agency-modal.merchant-modal:not(.awsum-modal-inline) .modal-dialog { max-width: min(720px, calc(100vw - 40px)); }
   #masterEditModal.agency-modal.merchant-modal:not(.awsum-modal-inline) .modal-content { height: min(700px, calc(100vh - 2rem)); }
-  #masterEditModal.agency-modal.merchant-modal .merchant-detail-tabs { grid-template-columns: repeat(4, 1fr); }
+  /* Merchant form: one tab row; narrow screens scroll it sideways (the Store form keeps its own grid). */
+  #masterEditModal.agency-modal.merchant-modal .merchant-detail-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+  #masterEditModal.agency-modal.merchant-modal .merchant-detail-tabs .merchant-tab-btn { flex: 0 0 auto; width: auto; padding: 0 .85rem; }
+
   #masterEditModal.agency-modal.merchant-modal .merchant-tab-panel { min-height: 390px; }
 </style>
 
@@ -3089,7 +3092,8 @@
     ],
     "deviceTypes": [
       {% for dt in device_types %}{"value": "{{ dt.i_device_type_id }}", "label": "{{ dt.c_device_type_code }} - {{ dt.c_device_type_name }}", "device_type_code": "{{ dt.c_device_type_code }}", "device_type_name": "{{ dt.c_device_type_name }}", "device_category_id": {{ dt.i_device_category_id }}, "billable_yn": "{{ dt.c_billable_yn }}"}{% if not loop.last %},{% endif %}{% endfor %}
-    ]
+    ],
+    "businessOptions": {{ (business_option_defs | default([])) | tojson }}
   }
 </script>
 
@@ -3385,7 +3389,9 @@
       statusIndex: 5,
       fields: [
         { name: 'id', label: 'Merchant ID', type: 'text', readonly: true, icon: 'hash', placeholder: 'Assigned automatically', colClass: 'd-none' },
-        { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, icon: 'hash', placeholder: 'Auto-generated on save', colClass: 'd-none' },
+        // Merchant Code = the Merchant login Access Code (services.branding.resolve_access_code). System-generated once,
+        // never edited or regenerated here (getFormData drops it; the server keeps it immutable). Merchant ID stays internal.
+        { name: 'merchant_code', label: 'Merchant Code', type: 'text', readonly: true, copy: true, icon: 'hash', placeholder: 'Generated automatically when the Merchant is created', title: 'Merchant login Access Code (system-generated, cannot be changed)', colClass: 'col-12 col-md-6' },
         { name: 'merchant_name', label: 'Merchant Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter merchant name', colClass: 'col-12 col-md-6' },
         { name: 'primary_agency_id', label: 'Primary Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
         { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
@@ -3403,13 +3409,24 @@
         { name: 'country', label: 'Country', type: 'text', placeholder: 'United States', default: 'United States', colClass: 'col-12 col-md-6' },
         { name: 'timezone', label: 'Time Zone', type: 'text', placeholder: 'America/New_York', colClass: 'col-12 col-md-6' },
         { name: 'notes', label: 'Notes', type: 'textarea', rows: 9, placeholder: 'Enter internal notes about this merchant...', help: 'These notes are for internal AWSUM Platform use.', colClass: 'col-12' },
+        // BUSINESS OPTIONS (Platform contract layer, saved with Save Changes as business_options): the same Off / On
+        // select and 2-column grid as the Store form's Business Options. `layer` + `featureKey` = a feature-layer field
+        // (filled from / saved to that layer; FEATURE ENTITLEMENTS will use the same fields with its own layer).
+        ...(masterSeedData.businessOptions || []).map(o => ({
+          name: `bo_${o.key}`, label: o.label, type: 'select', layer: 'business_options', featureKey: o.key,
+          available: o.available, disabled: !o.available, default: o.available && o.tier === 'BASE' ? 'on' : 'off',
+          options: o.available ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : [{ value: 'off', label: 'Coming soon' }],
+          colClass: 'col-12 col-md-6',
+        })),
       ],
       tabs: [
         { id: 'overview', label: 'Overview', title: 'Merchant Information', summary: 'Core merchant identity, primary agency and classification.', fields: ['id', 'merchant_code', 'primary_agency_id', 'merchant_name', 'business_type', 'status', 'website'] },
         { id: 'contact', label: 'Contact', title: 'Primary Contact', summary: 'Merchant contact person and communication details.', fields: [] },
         { id: 'address', label: 'Address', title: 'Business Address', summary: 'Merchant business address. Enter a US ZIP Code to fill City and State.', fields: ['zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'timezone'] },
-        { id: 'notes', label: 'Notes', title: 'Merchant Notes', summary: 'Internal notes and additional information for this merchant.', fields: ['notes'] },
+        { id: 'business_options', label: 'Business Options', title: 'Business Options', summary: 'Contracted features of this Merchant, managed by AWSUM. Turning one Off blocks it for the Merchant and its Stores once enforcement starts; Merchant choices, Store settings and data are always kept.', fields: (masterSeedData.businessOptions || []).map(o => `bo_${o.key}`) },
+        { id: 'feature_entitlements', label: 'Feature Entitlements', title: 'Feature Entitlements', summary: 'The Merchant chooses which contracted features it uses. Available in the next step.', fields: [] },
         { id: 'stores', label: 'Stores', fields: [] },
+        { id: 'notes', label: 'Notes', title: 'Merchant Notes', summary: 'Internal notes and additional information for this merchant.', fields: ['notes'] },
       ],
     },
     store: {
@@ -3423,9 +3440,10 @@
         { name: 'store_name', label: 'Store Name', type: 'text', required: true, icon: 'tag', placeholder: 'Enter store name', colClass: 'col-12 col-md-6' },
         { name: 'merchant_id', label: 'Merchant', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Merchant' }, ...(masterSeedData.storeMerchants || [])], colClass: 'col-12 col-md-6' },
         { name: 'installed_by_agency_id', label: 'Agency', type: 'select', required: true, icon: 'building', options: [{ value: '', label: 'Select Agency' }, ...(masterSeedData.merchantAgencies || [])], colClass: 'col-12 col-md-6' },
-        { name: 'business_type', label: 'Business Type', type: 'select', required: true, icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
+        // Store registration needs only Agency, Merchant and Store Name; the rest can be completed later in Edit.
+        { name: 'business_type', label: 'Business Type', type: 'select', icon: 'briefcase', options: [{ value: '', label: 'Select Business Type' }, ...masterBusinessTypeOptions], colClass: 'col-12 col-md-6' },
         { name: 'operation_type', label: 'Operation Type', type: 'select', icon: 'building', options: [{ value: '', label: 'Select Operation Type' }, ...['Single Store', 'Branch', 'Franchise', 'HQ', 'Warehouse', 'Online Only', 'Other'].map((n) => ({ value: n, label: n }))], colClass: 'col-12 col-md-6' },
-        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+        { name: 'status', label: 'Status', type: 'select', icon: 'check', statusDot: true, help: 'New Stores start Inactive. Add a Primary Contact in Edit before making it Active.', colClass: 'col-12 col-md-6', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
         { name: 'email', label: 'Contact Email', type: 'email', icon: 'mail', placeholder: 'Enter contact email', colClass: 'col-12 col-md-6' },
         { name: 'phone', label: 'Contact Phone', type: 'text', icon: 'phone', placeholder: 'Enter contact phone', colClass: 'col-12 col-md-6' },
         { name: 'zip', label: 'ZIP Code', type: 'text', icon: 'pin', placeholder: '12345 or 12345-6789', colClass: 'col-12 col-md-6' },
@@ -5382,6 +5400,25 @@
     pin: '<path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
   };
 
+  async function copyFieldValue(input, button, label) {
+    const value = String(input.value || '').trim();
+    if (!value) {
+      AwsumToast.warning(`${label} is generated when the record is saved.`);
+      return;
+    }
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+      else {
+        const area = document.createElement('textarea');
+        area.value = value; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+      }
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+    } catch (_) {
+      window.prompt(`Copy ${label}:`, value);
+    }
+  }
+
   function createField(field) {
     const wrapper = document.createElement('div');
     wrapper.className = field.colClass || 'col-12 col-md-6';
@@ -5496,6 +5533,18 @@
       dotWrap.className = 'agency-status-wrap';
       dotWrap.appendChild(input);
       wrapper.appendChild(dotWrap);
+    } else if (field.copy) { // common: read-only value with a Copy button (e.g. Merchant Code)
+      const inputGroup = document.createElement('div');
+      inputGroup.className = 'input-group';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn-outline-secondary';
+      copy.textContent = 'Copy';
+      copy.id = `field_${field.name}_copy`;
+      copy.setAttribute('aria-label', `Copy ${field.label}`);
+      copy.addEventListener('click', () => copyFieldValue(input, copy, field.label));
+      inputGroup.append(input, copy);
+      wrapper.appendChild(inputGroup);
     } else {
       wrapper.appendChild(input);
     }
@@ -6903,7 +6952,7 @@
     if (fields.id) fields.id.value = '';
     if (fields.code) fields.code.value = '';
     if (fields.name) fields.name.value = '';
-    if (fields.status) fields.status.value = 'active';
+    if (fields.status) fields.status.value = 'inactive'; // a new Store starts Inactive
     if (fields.business_type) fields.business_type.value = '';
     if (fields.operation_type) fields.operation_type.value = '';
     if (fields.contact_name) fields.contact_name.value = '';
@@ -7638,7 +7687,7 @@
 
     return {
       store_name: document.getElementById('field_merchant_store_name')?.value || '',
-      store_status: document.getElementById('field_merchant_store_status')?.value || 'active',
+      store_status: document.getElementById('field_merchant_store_status')?.value || 'inactive',
       business_type: document.getElementById('field_merchant_store_business_type')?.value || '',
       operation_type: document.getElementById('field_merchant_store_operation_type')?.value || '',
       contact_name: document.getElementById('field_merchant_store_contact_name')?.value || '',
@@ -8058,6 +8107,12 @@
       if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
+      if (field.layer) { // feature-layer field: one object per layer; a disabled field (Coming soon / not loaded) is not sent
+        if (!input.disabled && (input.value === 'on' || input.value === 'off')) {
+          (data[field.layer] = data[field.layer] || {})[field.featureKey] = input.value === 'on';
+        }
+        return;
+      }
       let value = field.type === 'money' ? AwsumMoneyInput.getValue(input) : input.value;
       if (field.type === 'date') {
         value = parseDisplayDate(value);
@@ -8147,6 +8202,19 @@
     });
   }
 
+  // Feature-layer select (Merchant BUSINESS OPTIONS; FEATURE ENTITLEMENTS later): the saved value, else the registry
+  // default (item null = a new record). When the layer could not be read the select is disabled and left empty,
+  // never shown as allowed. Coming soon stays disabled.
+  function setFeatureLayerField(field, input, item) {
+    const states = item ? item[field.layer] : null;
+    const state = Array.isArray(states) ? states.find(s => s.key === field.featureKey) : null;
+    const failed = !!item && !Array.isArray(states);
+    input.value = state ? (state.enabled ? 'on' : 'off') : (failed ? '' : field.default);
+    input.disabled = field.available === false || failed;
+    input.title = failed ? (item[`${field.layer}_error`] || 'Could not be loaded. Reload the page.')
+      : field.available === false ? 'Coming soon: cannot be turned on yet.' : '';
+  }
+
   function populateForm(item) {
     const scopedMerchant = document.getElementById('field_merchant_id');
     if (merchantScopedStoreModules.has(activeModule) && scopedMerchant) {
@@ -8168,6 +8236,7 @@
       if (field.name === 'country' && (activeModule === 'store' || activeModule === 'merchant' || activeModule === 'agency') && !String(value).trim()) {
         value = US_COUNTRY_NAME;
       }
+      if (field.layer) { setFeatureLayerField(field, input, item); return; }
       if (field.type === 'money') AwsumMoneyInput.setValue(input, value);
       else input.value = value;
     });
@@ -8208,8 +8277,9 @@
       if (field.type === 'section') return;
       const input = document.getElementById(`field_${field.name}`);
       if (!input) return;
+      if (field.layer) { setFeatureLayerField(field, input, null); return; }
       if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'user' || activeModule === 'merchant' || activeModule === 'agency' || activeModule === 'agency-type' || activeModule === 'license' || activeModule === 'pricing-plan' || activeModule === 'payment-method' || activeModule === 'role' || activeModule === 'business-type' || activeModule === 'device-category' || activeModule === 'device-type') && field.name === 'status') {
-        input.value = activeModule === 'agency' ? 'inactive' : 'active';
+        input.value = (activeModule === 'agency' || activeModule === 'store') ? 'inactive' : 'active'; // new Agency / Store: Inactive
       } else if (activeModule === 'session' && field.name === 'status') {
         input.value = 'active';
       } else if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'agency') && field.default !== undefined) {
@@ -8248,7 +8318,8 @@
     if (activeModule === 'store' && window.AwsumStoreDevices) window.AwsumStoreDevices.clear();
   }
 
-  // Store Options: a scope is only meaningful while its option is On.
+  // Store Options: a scope is only meaningful while its option is On. Off only disables it: the saved Scope stays
+  // (shown, sent unchanged, kept by the server) and is used again when the option is turned back On.
   function syncStoreOptionScopes() {
     if (activeModule !== 'store') return;
     [['opt_customer', 'customer_scope'], ['opt_loyalty', 'loyalty_scope']].forEach(([optionName, scopeName]) => {
@@ -8257,8 +8328,7 @@
       if (!option || !scope) return;
       const enabled = option.value === 'on';
       scope.disabled = !enabled;
-      if (!enabled) scope.value = '';
-      else if (!scope.value) scope.value = 'STORE';
+      if (enabled && !scope.value) scope.value = 'STORE';
     });
   }
 
@@ -8496,7 +8566,6 @@
     if (!String(data.store_name || '').trim()) { errors.push('Store Name is required.'); mark('store_name'); }
     if (agencyModalMode === 'create' && !String(data.merchant_id || '').trim()) { errors.push('Merchant is required.'); mark('merchant_id'); }
     if (agencyModalMode === 'create' && !String(data.installed_by_agency_id || '').trim()) { errors.push('Agency is required.'); mark('installed_by_agency_id'); }
-    if (agencyModalMode === 'create' && !String(data.business_type || '').trim()) { errors.push('Business Type is required.'); mark('business_type'); }
     const email = String(data.email || '').trim();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { errors.push('Please enter a valid contact email address.'); mark('email'); }
     const rEmail = String(data.receipt_email || '').trim();

@@ -1,6 +1,6 @@
 """HTTP integration for all common web sessions, independent of module routes."""
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from backend.database.pg_platform import PlatformSessionLocal
@@ -52,6 +52,30 @@ def session_login_path(request: Request, db) -> str:
 def login_path(request: Request) -> str:
     with PlatformSessionLocal() as db:
         return session_login_path(request, db)
+
+
+PLATFORM_CONTEXT_CHANGED = "Your Platform session has ended or changed. Please sign in again as Platform Admin."
+OTHER_LOGIN_SCOPES = frozenset({"agency", "merchant", "store"})
+
+
+def platform_session_changed(request: Request) -> bool:
+    """True when a refused /platform request carries another login context's session (Agency / Merchant / Store),
+    i.e. this browser's Platform session was replaced. Reads the claims recorded by get_platform_admin_session."""
+    claims = getattr(request.state, "platform_auth_diagnostics", None) or {}
+    return claims.get("scope_type") in OTHER_LOGIN_SCOPES
+
+
+def platform_context_changed_response(request: Request):
+    """Still refused (403, same as before), with a clear message. The cookie is kept: it belongs to the other login
+    (e.g. the Merchant tab of the same browser), which must keep working."""
+    if "text/html" in (request.headers.get("accept") or ""):
+        response = HTMLResponse(f"<!doctype html><meta charset=\"utf-8\"><title>Sign in again</title><p>{PLATFORM_CONTEXT_CHANGED}</p>"
+                                '<p><a href="/platform-admin">Platform Admin sign-in</a></p>', status_code=403)
+    else:
+        response = JSONResponse({"detail": PLATFORM_CONTEXT_CHANGED, "code": "SESSION_CONTEXT_CHANGED",
+                                 "login_url": "/platform-admin"}, status_code=403)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def session_error_response(request: Request, message: str):

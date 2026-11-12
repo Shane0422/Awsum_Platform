@@ -667,28 +667,30 @@ class MasterGroupTests(unittest.TestCase):
             svc.create_md_detail(self.db, b["id"], self._detail_payload(barcode="RACE-1"), 1)
         self.assertIn(a["code"], ctx.exception.errors["barcode"])
         self.assertEqual(self.db.query(MdDetail).filter(MdDetail.c_barcode == "RACE-1").count(), 1)
-        # The index compares trimmed values and ignores blanks.
+        # The index compares trimmed values (within the owner: Platform = 0) and ignores blanks.
         with self.engine.begin() as conn:
-            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_detail_no, b_is_default, c_barcode, c_unit, n_price) "
-                              "VALUES (:md, 90, 0, '', 'EA', 0), (:md, 91, 0, '', 'EA', 0)"), {"md": b["id"]})
+            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_owner_key, i_detail_no, b_is_default, c_barcode, c_unit, "
+                              "n_price) VALUES (:md, 0, 90, 0, '', 'EA', 0), (:md, 0, 91, 0, '', 'EA', 0)"), {"md": b["id"]})
         with self.assertRaises(IntegrityError), self.engine.begin() as conn:
-            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_detail_no, b_is_default, c_barcode, c_unit, n_price) "
-                              "VALUES (:md, 92, 0, ' RACE-1 ', 'EA', 0)"), {"md": b["id"]})
+            conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_owner_key, i_detail_no, b_is_default, c_barcode, c_unit, "
+                              "n_price) VALUES (:md, 0, 92, 0, ' RACE-1 ', 'EA', 0)"), {"md": b["id"]})
 
     def test_barcode_unique_migration_reports_duplicates_without_changing_data(self):
         from sqlalchemy import create_engine, inspect, text
         from backend.database.md_barcode_unique_migration import barcode_index_exists, migrate_md_barcode_unique
-        from backend.services.barcode import UNIQUE_INDEX
+        from backend.services.barcode import LEGACY_UNIQUE_INDEX, UNIQUE_INDEX
 
         engine = create_engine("sqlite://")
         self.addCleanup(engine.dispose)
-        with engine.begin() as conn:
+        with engine.begin() as conn:  # owner 0 = Platform, 20 = a Merchant (STEP 2: unique per owner)
             conn.execute(text("CREATE TABLE tb_md_master (i_md_id INTEGER PRIMARY KEY, c_item_code VARCHAR(20))"))
             conn.execute(text("CREATE TABLE tb_md_detail (i_md_detail_id INTEGER PRIMARY KEY, i_md_id INTEGER, "
-                              "i_detail_no INTEGER, c_barcode VARCHAR(100))"))
-            conn.execute(text("INSERT INTO tb_md_master VALUES (1, 'MD00001'), (2, 'MD00002')"))
-            conn.execute(text("INSERT INTO tb_md_detail VALUES (1, 1, 1, '8801116056934'), (2, 2, 1, '8801116056934 '), "
-                              "(3, 1, 2, NULL), (4, 2, 2, ''), (5, 2, 3, '')"))
+                              "i_detail_no INTEGER, c_barcode VARCHAR(100), i_owner_key INTEGER)"))
+            conn.execute(text(f"CREATE UNIQUE INDEX {LEGACY_UNIQUE_INDEX} ON tb_md_detail (i_md_detail_id)"))  # stand-in
+            conn.execute(text("INSERT INTO tb_md_master VALUES (1, 'MD00001'), (2, 'MD00002'), (3, 'MD00003')"))
+            conn.execute(text("INSERT INTO tb_md_detail VALUES (1, 1, 1, '8801116056934', 0), (2, 2, 1, '8801116056934 ', 0), "
+                              "(3, 1, 2, NULL, 0), (4, 2, 2, '', 0), (5, 2, 3, '', 0), "
+                              "(6, 3, 1, '8801116056934', 20)"))  # another owner: never a duplicate
         snapshot = lambda: engine.connect().execute(text("SELECT * FROM tb_md_detail ORDER BY 1")).all()
         before = snapshot()
         index_exists = lambda: barcode_index_exists(engine.connect())
@@ -701,9 +703,11 @@ class MasterGroupTests(unittest.TestCase):
         # After a manual fix the next startup creates the index; repeat runs are no-ops.
         with engine.begin() as conn:
             conn.execute(text("UPDATE tb_md_detail SET c_barcode = '8801116056941' WHERE i_md_detail_id = 2"))
+        self.assertTrue(barcode_index_exists(engine.connect(), LEGACY_UNIQUE_INDEX))  # kept while the new one is missing
         self.assertEqual(migrate_md_barcode_unique(engine), [])
         self.assertEqual(migrate_md_barcode_unique(engine), [])
         self.assertTrue(index_exists())
+        self.assertFalse(barcode_index_exists(engine.connect(), LEGACY_UNIQUE_INDEX))  # dropped only after it
 
     def test_item_kind_seed_is_idempotent_and_keeps_display_names(self):
         from backend.database.item_kind_migration import SYSTEM_ITEM_KINDS

@@ -43,7 +43,10 @@ from reportlab.lib.pagesizes import letter
 from backend.services.report_pdf import GlobalReportCanvas
 from backend.services.reporting import ReportPrintContext, report_context
 from backend.services.resource_storage import AwsumStorageService
-from backend.services.store_item_features import ITEM_FEATURES, store_option_default, store_option_enabled
+from backend.services.features import FeatureCheckUnavailable, store_option_fields
+from backend.services.merchant_features import business_options_for, save_business_options
+from backend.services.master_group import initialize_merchant_common_codes
+from backend.services.store_item_features import store_option_default, store_option_enabled
 from backend.services.images import image_url, image_mutation_form
 from backend.services.image_service import commit_entity_image, image_operation_lock
 from backend.services.paths import AwsumPathResolver
@@ -110,18 +113,9 @@ def _normalize_country(value) -> str:
 
 STORE_LICENSE_STATUSES = ("ACTIVE", "SUSPENDED", "EXPIRED", "CANCELLED")
 STORE_OPTION_SCOPES = ("STORE", "MERCHANT")
-# payload key -> (option column, scope payload key, scope column)
-STORE_OPTION_FIELDS = {
-    "opt_customer": ("b_opt_customer", "customer_scope", "c_customer_scope"),
-    "opt_time_attendance": ("b_opt_time_attendance", None, None),
-    "opt_inventory": ("b_opt_inventory", None, None),
-    # Use Location Management (shown under Inventory Management, independent of it).
-    "opt_location_management": ("b_opt_use_shelf_location", None, None),
-    "opt_loyalty": ("b_opt_loyalty", "loyalty_scope", "c_loyalty_scope"),
-    "opt_accounting": ("b_opt_accounting", None, None),
-    # Store Options > Item Features (no scope).
-    **{option_key: (column, None, None) for option_key, column, _default in ITEM_FEATURES.values()},
-}
+# payload key -> (option column, scope payload key, scope column): Business Options + Item Features, from the
+# Common Feature Registry (services.features), the single definition of every Store Option.
+STORE_OPTION_FIELDS = store_option_fields()
 _LICENSE_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -171,8 +165,7 @@ def _apply_store_license_and_options(db: Session, store: Store, payload: dict, c
         if not scope_col:
             continue
         if not getattr(store, option_col):
-            setattr(store, scope_col, None)
-            continue
+            continue  # OFF keeps the saved Scope (never reset); turning the option ON again uses it as before
         if scope_key in payload or not getattr(store, scope_col):
             scope = str(payload.get(scope_key) or "").strip().upper() or "STORE"
             if scope not in STORE_OPTION_SCOPES:
@@ -1242,7 +1235,7 @@ def _create_store(request: Request, payload: dict, db: Session, *, image_data: b
             n_license_count=payload.get("license_count"),
             i_max_user_count=payload.get("max_user_count"),
             i_max_terminal_count=payload.get("max_terminal_count"),
-            c_status=payload.get("store_status") or "active",
+            c_status=payload.get("store_status") or "inactive",  # a new Store starts Inactive
             c_is_test=0,
             c_dashboard_type=_normalize_dashboard_type(payload.get("dashboard_type")),
             c_operation_type=payload.get("operation_type") or payload.get("store_purpose"),
@@ -1267,6 +1260,8 @@ def _create_store(request: Request, payload: dict, db: Session, *, image_data: b
         db.add(store)
         try:
             db.flush()
+            if store.c_status == "active":
+                require_store_activation(db, store)
             activation = _activate_organization(db, "STORE", store)
             warning = _commit_store_image(db, store, image_data=image_data)
             storage = AwsumStorageService(db).initialize_after_registration("STORE", next_id)
@@ -1301,6 +1296,7 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
 
     store = _get_business_store(db, store_id)
     db.refresh(store, with_for_update=True)
+    was_active = store.c_status == "active"
 
     # Bulk-update allowed fields
     for key, value in {
@@ -1400,6 +1396,8 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
 
     _apply_store_license_and_options(db, store, payload, creating=False)
     _stamp_updated(store, user)
+    if store.c_status == "active" and not was_active:
+        require_store_activation(db, store)
     activation = _activate_organization(db, "STORE", store)
     warning = _commit_store_image(db, store, image_data=image_data, remove_image=remove_image)
     return JSONResponse({"success": True, "image_path": store.c_logo_url,
@@ -2179,6 +2177,24 @@ def _agency_phone_password(phone: object) -> str | None:
 
 def _activate_agency(db: Session, agency: Agency) -> dict:
     return _activate_organization(db, "AGENCY", agency)
+
+
+# Store registration needs only Agency, Merchant and Store Name (saved Inactive). Making a Store Active checks the
+# existing operating conditions below (add new ones here only); Feature Entitlement, User Permission and Device
+# License stay separate conditions.
+def store_activation_problems(db: Session, store: Store) -> list[str]:
+    missing = []
+    # The Store Admin login is created from the active Primary Contact (_activate_organization), unless it exists.
+    if not organization_admin_query(db, "STORE", store.i_store_id).first()             and not BusinessContactService(db).get_primary_contact("STORE", store.i_store_id):
+        missing.append("Primary Contact")
+    return missing
+
+
+def require_store_activation(db: Session, store: Store) -> None:
+    missing = store_activation_problems(db, store)
+    if missing:
+        raise HTTPException(400, f"To make this Store Active, complete: {', '.join(missing)}. "
+                                 "Save it as Inactive, add them in Edit, then change Status to Active.")
 
 
 def _activate_organization(db: Session, owner_type: str, owner) -> dict:
@@ -4241,7 +4257,48 @@ def list_merchants(
     agency_map = {a.i_agency_id: a for a in db.query(Agency).all()}
     bt_name_map = {b.i_business_type_id: b.c_name for b in db.query(BusinessType).all()}
     items = query.order_by(Merchant.i_merchant_id).all()
-    return _set_no_cache_headers(JSONResponse([_serialize_merchant(i, agency_map, bt_name_map) for i in items]))
+    try:
+        options = business_options_for(db, [i.i_merchant_id for i in items])
+        options_error = None
+    except FeatureCheckUnavailable as exc:
+        options, options_error = {}, str(exc)
+    return _set_no_cache_headers(JSONResponse([
+        {**_serialize_merchant(i, agency_map, bt_name_map), "business_options": options.get(i.i_merchant_id),
+         **({"business_options_error": options_error} if options_error else {})}
+        for i in items
+    ]))
+
+
+# ---------- Merchant BUSINESS OPTIONS (Platform contract layer; services.merchant_features) ----------
+
+@router.get("/platform/api/merchants/{merchant_id}/business-options")
+def get_merchant_business_options(merchant_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    if not db.get(Merchant, merchant_id):
+        raise HTTPException(404, "Merchant not found.")
+    return _business_options_response(db, merchant_id, editable=True)
+
+
+@router.get("/merchant/api/business-options")
+def get_own_business_options(request: Request, db: Session = Depends(get_db)):
+    """Merchant Admin: its own Merchant's Business Options, read-only (no write route for a Merchant login)."""
+    from backend.services.app_navigation import resolve_app_scope
+
+    user = get_current_user(request, db)
+    scope = resolve_app_scope(request, db, user)
+    if scope.context != "MERCHANT":
+        raise HTTPException(403, "Merchant login required.")
+    scope.require("read")
+    return _business_options_response(db, scope.merchant_id, editable=False)
+
+
+def _business_options_response(db: Session, merchant_id: int, *, editable: bool) -> JSONResponse:
+    try:
+        items = business_options_for(db, [merchant_id])[merchant_id]
+    except FeatureCheckUnavailable as exc:
+        raise HTTPException(503, str(exc)) from None
+    return _set_no_cache_headers(JSONResponse({"merchant_id": merchant_id, "editable": editable, "items": items}))
 
 
 @router.post("/platform/merchant")
@@ -4293,6 +4350,10 @@ def _create_merchant(payload: dict, request: Request, db: Session, *, image_data
         db.add(item)
         try:
             db.flush()
+            # BUSINESS OPTIONS set while registering (unchanged registry defaults are not written).
+            save_business_options(db, item.i_merchant_id, payload.get("business_options"), _actor_id(user))
+            # Common Maintenance: this Merchant's own copy of the Platform UNIT / COLOR defaults (same transaction).
+            initialize_merchant_common_codes(db, item.i_merchant_id, _actor_id(user), commit=False)
             activation = _activate_organization(db, "MERCHANT", item)
             warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data)
             db.refresh(item)
@@ -4370,6 +4431,7 @@ def _update_merchant(merchant_id: int, payload: dict, request: Request, db: Sess
         item.c_country = _normalize_country(_merchant_clean_text(payload, "country"))
 
     _stamp_updated(item, user)
+    save_business_options(db, merchant_id, payload.get("business_options"), _actor_id(user))
     try:
         activation = _activate_organization(db, "MERCHANT", item)
         warning = _commit_organization_image(db, item, "MERCHANT", image_data=image_data, remove_image=remove_image)

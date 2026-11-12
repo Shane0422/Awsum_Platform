@@ -18,8 +18,8 @@
   <script src="/static/js/master-detail.js?v=1"></script>
   <script src="/static/js/barcode-input.js?v=1"></script>
   <script src="/static/js/code-input.js?v=2"></script>
-  <script src="/static/js/option-group.js?v=5"></script>
-  <link rel="stylesheet" href="/static/css/awsum-option-group.css?v=4">
+  <script src="/static/js/option-group.js?v=6"></script>
+  <link rel="stylesheet" href="/static/css/awsum-option-group.css?v=5">
   <title>{{ APP_NAME }} - {% block page_title %}Platform{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ brand_icon_path }}">
   <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
@@ -203,7 +203,7 @@
               <h2>{{ nav_icon('master-group') }}Master Group</h2>
               <ul class="platform-menu-list">
                 {% for item in app_navigation.master_items %}
-                {{ nav_link(item.label, item.url, active_page == 'master-group' and active_module == item.slug) }}
+                {% if item.available %}{{ nav_link(item.label, item.url, active_page == 'master-group' and active_module == item.slug) }}{% else %}{{ soon(item.label) }}{% endif %}
                 {% endfor %}
               </ul>
             </section>
@@ -213,8 +213,12 @@
         {% if app_navigation.business %}
         <div class="platform-mega-menu" id="mega-business" aria-labelledby="nav-business" hidden>
           <section class="platform-menu-section">
-            <h2>{{ nav_icon('business') }}Business</h2>
-            <p class="text-muted mb-0">Coming soon.</p>
+            <h2>{{ nav_icon('business') }}Organizations</h2>
+            <ul class="platform-menu-list">
+              {% for item in app_navigation.business_items %}
+              {% if item.available %}{{ nav_link(item.label, item.url) }}{% else %}{{ soon(item.label) }}{% endif %}
+              {% endfor %}
+            </ul>
           </section>
         </div>
         {% endif %}
@@ -232,13 +236,13 @@
             <section class="platform-menu-section">
               <h2>{{ nav_icon('master-group') }}Master Group</h2>
               <ul class="platform-menu-list">
-                {{ nav_link('Tax', '/platform/master-group/tax', active_page == 'master-group' and active_module == 'tax') }}
                 {{ nav_link('Common Maintenance', '/platform/master-group/common-maintenance', active_page == 'master-group' and active_module == 'common-maintenance') }}
-                {{ nav_link('Location Master', '/platform/master-group/location-master', active_page == 'master-group' and active_module == 'location-master') }}
+                {{ nav_link('Tax', '/platform/master-group/tax', active_page == 'master-group' and active_module == 'tax') }}
                 {{ nav_link('Category I', '/platform/master-group/category-1', active_page == 'master-group' and active_module == 'category-1') }}
                 {{ nav_link('Category II', '/platform/master-group/category-2', active_page == 'master-group' and active_module == 'category-2') }}
                 {{ nav_link('Category III', '/platform/master-group/category-3', active_page == 'master-group' and active_module == 'category-3') }}
                 {{ nav_link('MD Master', '/platform/master-group/md-master', active_page == 'master-group' and active_module == 'md-master') }}
+                {{ nav_link('Location Master', '/platform/master-group/location-master', active_page == 'master-group' and active_module == 'location-master') }}
               </ul>
             </section>
             <section class="platform-menu-section">

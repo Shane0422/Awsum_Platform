@@ -88,8 +88,9 @@ class CommonAppNavigationTests(unittest.TestCase):
             self.assertEqual(report.status_code, 200, report.text)
             self.assertNotIn("Platform only", report.text)
             self.assertNotIn("Other only", report.text)
-        self.assertEqual(self.client.get("/store/api/master-group/md").status_code, 403)
-        self.assertEqual(self.client.get("/store/master-group/md-master").status_code, 403)
+        # STEP 2: a Store login views its Merchant's MD Master (none here; Platform MD never shows).
+        self.assertEqual(self.client.get("/store/api/master-group/md").json()["total"], 0)
+        self.assertEqual(self.client.get("/store/master-group/md-master").status_code, 200)
         self.assertEqual(self.client.get("/merchant/api/master-group/category1").status_code, 403)
         self.assertEqual(self.client.get("/platform/api/master-group/category1").status_code, 403)
         removed = self.client.delete(f"/store/api/master-group/tax/{tax.json()['item']['id']}")

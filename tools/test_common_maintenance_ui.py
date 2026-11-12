@@ -119,12 +119,14 @@ const wait=async(check,label)=>{for(let i=0;i<100;i++){if(check())return;await t
   assert(created.group==='UNIT'&&created.payload.code==='CTN'&&created.payload.name==='Carton'&&!('value' in created.payload),'create payload '+JSON.stringify(created));
   await wait(()=>!f('code')&&/Code\s*CTN\s*\(cannot be changed\)/.test(find('mgFields').textContent),'code fixed after save');
 
-  // EA (default Unit): status locked, no Deactivate / Delete.
+  // EA (default Unit): status locked, no Deactivate; Delete shown disabled with the reason.
   await openRow(21);
-  assert(f('active').disabled&&!visible('mgMdToggle')&&!visible('mgMdDelete'),'EA protected');
-  // In-use code: Deactivate asks first (Common Confirm); Cancel sends nothing, OK deactivates.
+  assert(f('active').disabled&&!visible('mgMdToggle'),'EA protected');
+  assert(visible('mgMdDelete')&&find('mgMdDelete').disabled&&/protected default code/.test(find('mgMdDelete').title),'EA: Delete disabled with reason');
+  // In-use code: Delete disabled with the reason; Deactivate asks first (Common Confirm); Cancel sends nothing, OK deactivates.
   await openRow(22);
   assert(visible('mgMdToggle')&&visible('mgMdDelete'),'BOX actions');
+  assert(find('mgMdDelete').disabled&&/in use/.test(find('mgMdDelete').title),'BOX in use: Delete disabled with reason');
   const puts=()=>win.requests.filter(r=>r.method==='PUT').length;
   const before=puts();
   find('mgMdToggle').click();await wait(()=>win.confirms.length===1,'confirm');
@@ -149,6 +151,18 @@ const wait=async(check,label)=>{for(let i=0;i<100;i++){if(check())return;await t
   find('mgSave').click();
   await wait(()=>win.requests.filter(r=>r.method==='PUT').length===before+2,'save currency');
   assert(win.requests.filter(r=>r.method==='PUT').pop().payload.value==='2500.50','money payload is comma-free');
+  // A code not in use: Delete enabled; Common Confirm (Group / Code / Name) first, Cancel sends nothing, OK deletes.
+  await openRow(41);
+  assert(visible('mgMdDelete')&&!find('mgMdDelete').disabled&&!find('mgMdDelete').title,'BTL: Delete enabled');
+  const deletes=()=>win.requests.filter(r=>r.method==='DELETE').length;
+  win.confirmAnswer=false;const asked=win.confirms.length;
+  find('mgMdDelete').click();await wait(()=>win.confirms.length===asked+1,'delete confirm');await tick();
+  const ask=win.confirms[win.confirms.length-1];
+  assert(deletes()===0&&ask.title==='Delete Code'&&ask.variant==='danger'&&JSON.stringify(ask.details)===JSON.stringify([['Group','CUR'],['Code','BTL'],['Name','Bottle']]),'cancel sends nothing: '+JSON.stringify(ask));
+  win.confirmAnswer=true;find('mgMdDelete').click();
+  await wait(()=>deletes()===1,'delete');
+  const del=win.requests.find(r=>r.method==='DELETE');
+  assert(del.group==='CUR'&&del.path.endsWith('/common_code/41'),'delete request '+JSON.stringify(del));
   await select('TXT');
   find('mgAddBtn').click();await wait(()=>f('value'),'TXT form');
   assert(f('value').maxLength===20&&!f('value').hasAttribute('data-awsum-decimal'),'text input');

@@ -95,9 +95,10 @@ class StoreItemFeatureScopeTests(unittest.TestCase):
         self.assertEqual(self.client.get("/store/api/master-group/options").json()["item_features"], {
             "color": True, "modifier": False, "bottle_deposit": False, "sugar_tax": False, "output_device": False,
         })
-        # MD Master access is unchanged: still Platform-only for a Store login (the earlier Color API was removed).
-        self.assertEqual(self.client.get("/store/api/master-group/md").status_code, 403)
-        self.assertEqual(self.client.post("/store/api/master-group/md", json={"modifier": "x"}).status_code, 403)
+        # STEP 2: a Store login views its Merchant's MD Master only; every write is refused (403).
+        self.assertEqual(self.client.get("/store/api/master-group/md").status_code, 200)
+        self.assertEqual(self.client.post("/store/api/master-group/md", json={"modifier": "x"},
+                                          headers={"origin": "http://testserver"}).status_code, 403)
         self.assertEqual(self.client.get("/store/api/master-group/color").status_code, 404)  # removed (COLOR step 6)
         self.login("MERCHANT")
         self.assertEqual(self.client.get("/merchant/api/master-group/color").status_code, 404)
@@ -110,6 +111,46 @@ class StoreItemFeatureScopeTests(unittest.TestCase):
                                        headers={"origin": "http://testserver"})
             self.assertEqual(response.status_code, 403, response.text)
             self.assertIn("Platform Admin", response.json()["detail"])
+
+
+class StoreOptionScopeKeepTests(unittest.TestCase):
+    """Customer / Loyalty OFF keeps the saved Scope; turning the option back ON restores it (never reset to NULL)."""
+
+    def save(self, store, payload, creating=False):
+        platform_store._apply_store_license_and_options(None, store, payload, creating=creating)
+        data = platform_store._store_license_and_options(store)
+        return {k: data[k] for k in ("opt_customer", "customer_scope", "opt_loyalty", "loyalty_scope")}
+
+    def test_create_defaults(self):
+        self.assertEqual(self.save(Store(c_store_license_key="SL-A"), {}, creating=True),
+                         {"opt_customer": "off", "customer_scope": "", "opt_loyalty": "off", "loyalty_scope": ""})
+        self.assertEqual(self.save(Store(c_store_license_key="SL-B"), {"opt_customer": "on", "opt_loyalty": "on"}, creating=True),
+                         {"opt_customer": "on", "customer_scope": "STORE", "opt_loyalty": "on", "loyalty_scope": "STORE"})
+
+    def test_off_keeps_scope_and_on_restores_it(self):
+        store = Store(c_store_license_key="SL-C")
+        self.save(store, {"opt_customer": "on", "customer_scope": "MERCHANT", "opt_loyalty": "on", "loyalty_scope": "MERCHANT"},
+                  creating=True)
+        # OFF: kept, also when an older form sends an empty Scope.
+        self.assertEqual(self.save(store, {"opt_customer": "off", "customer_scope": "", "opt_loyalty": "off"}),
+                         {"opt_customer": "off", "customer_scope": "MERCHANT", "opt_loyalty": "off", "loyalty_scope": "MERCHANT"})
+        self.assertEqual((store.c_customer_scope, store.c_loyalty_scope), ("MERCHANT", "MERCHANT"))
+        # Another save while OFF (scope ignored, even an invalid one) keeps it.
+        self.assertEqual(self.save(store, {"opt_customer": "off", "customer_scope": "BAD"})["customer_scope"], "MERCHANT")
+        # ON again: the saved Scope is restored (without a Scope key, or with the value the form shows).
+        self.assertEqual(self.save(store, {"opt_customer": "on"})["customer_scope"], "MERCHANT")
+        self.assertEqual(self.save(store, {"opt_loyalty": "on", "loyalty_scope": "MERCHANT"})["loyalty_scope"], "MERCHANT")
+
+    def test_on_changes_and_validation_are_unchanged(self):
+        store = Store(c_store_license_key="SL-D")
+        self.save(store, {"opt_customer": "on", "customer_scope": "MERCHANT"}, creating=True)
+        self.assertEqual(self.save(store, {"opt_customer": "on", "customer_scope": "STORE"})["customer_scope"], "STORE")
+        with self.assertRaises(platform_store.HTTPException) as ctx:
+            self.save(store, {"opt_customer": "on", "customer_scope": "BAD"})
+        self.assertEqual(ctx.exception.status_code, 400)
+        # ON with no saved Scope: STORE (as before).
+        empty = Store(c_store_license_key="SL-E", b_opt_customer=False, c_customer_scope=None)
+        self.assertEqual(self.save(empty, {"opt_customer": "on"})["customer_scope"], "STORE")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ its optional typed Value (TEXT / NUMBER / CURRENCY / COLOR, NULL = no Value).
 tb_common_code holds the codes. A Value lives in exactly one typed column: c_value_text (TEXT, COLOR
 "#RRGGBB") or n_value NUMERIC(18,6) (NUMBER, CURRENCY; exact, never FLOAT). NULL means "no value", 0 is a value.
 
-i_merchant_id NULL = Platform code (the only kind for now; Merchant extension codes are structure only).
+i_merchant_id NULL = Platform code; set = that Merchant's own code (copied once from Platform, see tb_merchant_common_init).
 SIZE and ITEM_KIND are not Common Maintenance groups (Size stays free text, Item Kind is its own master).
 """
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, Numeric, String, Text, text
@@ -71,3 +71,16 @@ class CommonCode(PlatformBase, AuditMixin):
     i_display_order = Column(Integer, nullable=False, default=100)
     b_active = Column(Boolean, nullable=False, default=True, index=True)
     c_notes = Column(Text, nullable=True)
+
+
+class MerchantCommonInit(PlatformBase, AuditMixin):
+    """One row per Merchant and Common Group once its Platform defaults were copied (services.master_group.
+    initialize_merchant_common_codes). The row, never a code count, decides "initialized": codes a Merchant
+    deletes later are never copied again, and Platform changes never reach an initialized Merchant.
+    The primary key also stops two concurrent first visits from copying twice."""
+    __tablename__ = "tb_merchant_common_init"
+
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), primary_key=True, autoincrement=False)
+    c_group_code = Column(String(30), primary_key=True)  # UNIT / COLOR
+    i_copied_count = Column(Integer, nullable=False, default=0)
+    i_skipped_count = Column(Integer, nullable=False, default=0)  # codes the Merchant already had (kept as they are)

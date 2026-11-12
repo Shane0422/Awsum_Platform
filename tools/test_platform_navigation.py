@@ -12,13 +12,14 @@ from tools import test_image_components as browser
 
 MENU_LINKS = [
     ("Dashboard", "/platform/dashboard"),
-    ("Tax", "/platform/master-group/tax"),
+    # Master Group order: Common Maintenance, Tax, Category I-III, MD Master, Location Master.
     ("Common Maintenance", "/platform/master-group/common-maintenance"),
-    ("Location Master", "/platform/master-group/location-master"),
+    ("Tax", "/platform/master-group/tax"),
     ("Category I", "/platform/master-group/category-1"),
     ("Category II", "/platform/master-group/category-2"),
     ("Category III", "/platform/master-group/category-3"),
     ("MD Master", "/platform/master-group/md-master"),
+    ("Location Master", "/platform/master-group/location-master"),
     ("Agency Types", "/platform/master/agency-type?v=20260322"),
     ("Business Types", "/platform/master/business-type"),
     ("Agencies", "/platform/master/agency"),
@@ -91,6 +92,9 @@ class PlatformNavigationTemplateTests(unittest.TestCase):
                   if "platform-nav-link" in attrs.get("class", "") or
                   "platform-menu-link" in attrs.get("class", "")]
         self.assertEqual(Counter(actual), Counter(MENU_LINKS))
+        master = [label for label, href in actual if href.startswith("/platform/master-group/") and label != "Item Kind"]
+        self.assertEqual(master, ["Common Maintenance", "Tax", "Category I", "Category II", "Category III",
+                                  "MD Master", "Location Master"])  # Master Group mega menu order
         self.assertNotIn("platform-sidebar", html)
         self.assertNotIn("sidebar-width", html)
         self.assertEqual(html.count('aria-disabled="true"'), 4)

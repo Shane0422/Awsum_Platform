@@ -14,9 +14,10 @@ from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models_admin.common_code import COMMON_VALUE_TYPES, CommonCode, CommonGroup
+from backend.models_admin.common_code import COMMON_VALUE_TYPES, CommonCode, CommonGroup, MerchantCommonInit
 from backend.models_admin.invoice import InvoiceLine
-from backend.models_admin.master_group import Category1, Category2, Category3, ItemKind, MdDetail, MdMaster, Tax
+from backend.models_admin.master_group import (Category1, Category2, Category3, ItemKind, MdDetail,
+                                               MdMaster, Tax, md_owner_key)
 from backend.database.item_kind_migration import SYSTEM_ITEM_KIND_CODES
 from backend.models_admin.store_location import DEFAULT_LOCATION_AREA, LOCATION_AREAS, StoreLocation, StoreMdLocation
 from backend.services import images
@@ -89,12 +90,23 @@ ENTITIES = {
     # Location Master: one Store's own data (store_scoped) with a user-entered code (manual_code).
     "location": dict(model=StoreLocation, pk="i_location_id", code="c_location_code", name="c_location_name",
                      prefix=None, store_scoped=True, manual_code=True),
-    # Common Maintenance: Platform codes (i_merchant_id NULL) of one Common Group (group_scoped, ?group=UNIT).
+    # Common Maintenance: the codes of one Common Group (group_scoped, ?group=UNIT) in the request's scope:
+    # Platform codes (i_merchant_id NULL) or one Merchant's own codes. Groups (definitions) are shared by every scope.
     # Code issue mode comes from the group (MANUAL typed / AUTO prefix + number).
     "common_code": dict(model=CommonCode, pk="i_common_code_id", code="c_code", name="c_name", prefix=None,
                         group_scoped=True, manual_code=True, search=("c_description",)),
 }
-PLATFORM_ONLY_MODELS = (MdMaster, ItemKind, CommonCode)
+PLATFORM_ONLY_MODELS = (ItemKind,)  # Item Kind: one global System Master (Merchant MD selects from it)
+# MD Master fields used only by the Platform (agency supply price levels, billing, license). A Merchant MD never
+# shows them and the server never takes them from a Merchant payload: they stay at these "not set" values.
+MERCHANT_MD_FIXED_VALUES = {
+    "c_billing_cycle": "ONE_TIME", "b_license_required": False, "c_license_type": None, "i_licenses_per_unit": None,
+    **{f"{prefix}{n}{suffix}": None for n in (1, 2, 3) for prefix, suffix in (("c_p", "_mode"),
+                                                                             ("n_p", "_discount_pct"), ("n_p", "_price"))},
+}
+# The protected default Unit every Merchant gets with its first initialization (initialize_merchant_common_codes),
+# even if the Platform EA were missing or inactive. EA is protected in every scope (PROTECTED_COMMON_CODES).
+MERCHANT_DEFAULT_UNITS = (("EA", "Each"),)
 # Common Maintenance groups shown now. SIZE and ITEM_KIND are never Common Maintenance groups.
 COMMON_MAINTENANCE_GROUPS = ("COLOR", "UNIT")
 # View-only Common Groups (none since COLOR step 5-2: COLOR is managed here; the mechanism stays for later groups).
@@ -134,6 +146,8 @@ def entity_config(entity: str) -> dict:
 
 
 def _scoped_query(db: Session, model, merchant_id: int | None):
+    if model is MdMaster:  # the scope's own MD only: Platform (owner 0) or exactly this Merchant, never mixed
+        return db.query(model).filter(MdMaster.i_owner_key == md_owner_key(merchant_id))
     if model in PLATFORM_ONLY_MODELS:
         if merchant_id is not None:
             raise NotFound("This master is not available in this scope.")
@@ -155,16 +169,19 @@ def _entity_query(db: Session, entity: str, merchant_id: int | None, store_id: i
                   group: str | None = None):
     """Rows visible in the current scope: Store-scoped masters by the (already authorized) Store, others as before."""
     cfg = entity_config(entity)
-    if cfg.get("group_scoped"):  # Platform codes of one group; Merchant extension codes are not enabled
-        if merchant_id is not None:
-            raise NotFound("This master is not available in this scope.")
+    if cfg.get("group_scoped"):  # one group's codes of this scope only (Platform or this Merchant)
         return db.query(CommonCode).filter(CommonCode.i_common_group_id == common_group(db, group).i_common_group_id,
-                                           CommonCode.i_merchant_id.is_(None))
+                                           common_code_scope(merchant_id))
     if cfg.get("store_scoped"):
         if store_id is None:
             raise NotFound("Select a Store.")
         return db.query(cfg["model"]).filter(cfg["model"].i_store_id == store_id)
     return _scoped_query(db, cfg["model"], merchant_id)
+
+
+def common_code_scope(merchant_id: int | None):
+    """Filter for one scope's Common Codes: Platform (NULL) or exactly this Merchant; never both, never another."""
+    return CommonCode.i_merchant_id.is_(None) if merchant_id is None else CommonCode.i_merchant_id == merchant_id
 
 
 def _scoped_parent(db: Session, model, item_id: int | None, merchant_id: int | None):
@@ -442,7 +459,7 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
         _validate_location(db, payload, current, values, errors, store_id)
 
     elif entity == "common_code":
-        _validate_common_code(db, payload, current, values, errors, common_group(db, group))
+        _validate_common_code(db, payload, current, values, errors, common_group(db, group), merchant_id)
 
     elif entity == "category2":
         values["c_category_name"] = _text(payload, "name", 100, errors, required=True, label="Name")
@@ -505,7 +522,7 @@ def _validate_payload(db: Session, entity: str, payload: dict, current, can_cost
         values.update(_validate_common(payload, errors, ordered=True))
 
     else:  # md
-        _validate_md(db, payload, current, values, errors, can_cost)
+        _validate_md(db, payload, current, values, errors, can_cost, merchant_id)
 
     if errors:
         raise FieldErrors(errors)
@@ -583,26 +600,28 @@ def common_value_text(row: CommonCode, group: CommonGroup) -> str | None:
     return row.c_value_text if group.c_value_type in COMMON_VALUE_TYPES else None
 
 
-def _next_common_code(db: Session, group: CommonGroup) -> str:
+def _next_common_code(db: Session, group: CommonGroup, merchant_id: int | None = None) -> str:
     prefix = group.c_code_prefix or ""
     pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
     top = 0
     for (code,) in db.query(CommonCode.c_code).filter(CommonCode.i_common_group_id == group.i_common_group_id,
-                                                     CommonCode.i_merchant_id.is_(None)):
+                                                     common_code_scope(merchant_id)):
         match = pattern.match(code or "")
         if match:
             top = max(top, int(match.group(1)))
     return f"{prefix}{top + 1:0{CODE_DIGITS}d}"
 
 
-def _validate_common_code(db: Session, payload: dict, current, values: dict, errors: dict, group: CommonGroup) -> None:
+def _validate_common_code(db: Session, payload: dict, current, values: dict, errors: dict, group: CommonGroup,
+                          merchant_id: int | None = None) -> None:
+    # Code / Name are unique per group within one scope (Platform, or one Merchant); other scopes may reuse them.
     same_group = db.query(CommonCode.i_common_code_id).filter(
-        CommonCode.i_common_group_id == group.i_common_group_id, CommonCode.i_merchant_id.is_(None))
+        CommonCode.i_common_group_id == group.i_common_group_id, common_code_scope(merchant_id))
     if current is not None:
         same_group = same_group.filter(CommonCode.i_common_code_id != current.i_common_code_id)
     if current is None:  # the Code is set once on create and never changes (MD stores UNIT codes as text)
         if group.c_code_mode == "AUTO":
-            values["c_code"] = _next_common_code(db, group)
+            values["c_code"] = _next_common_code(db, group, merchant_id)
         else:
             limit = min(int(group.i_code_max_length or 30), 30)
             code = (_text(payload, "code", limit, errors, required=True, label="Code") or "").upper()
@@ -642,64 +661,138 @@ def set_common_group_value_type(db: Session, group_code: str, value_type: str | 
 
 
 def common_code_in_use(db: Session, group_code: str, row: CommonCode) -> bool:
+    owner = md_owner_key(row.i_merchant_id)  # only the code's own scope's MD can use it
     if group_code == "UNIT":  # MD Master and MD Detail store the UNIT code as text
-        return bool(db.query(MdMaster.i_md_id).filter(MdMaster.c_unit == row.c_code).first()
-                    or db.query(MdDetail.i_md_detail_id).filter(MdDetail.c_unit == row.c_code).first())
+        return bool(db.query(MdMaster.i_md_id).filter(MdMaster.i_owner_key == owner, MdMaster.c_unit == row.c_code).first()
+                    or db.query(MdDetail.i_md_detail_id).filter(MdDetail.i_owner_key == owner,
+                                                                MdDetail.c_unit == row.c_code).first())
     if group_code == "COLOR":  # MD Detail references the COLOR code (i_color_code_id)
         return bool(db.query(MdDetail.i_md_detail_id).filter(MdDetail.i_color_code_id == row.i_common_code_id).first())
     return False
 
 
-def color_code_options(db: Session) -> list[dict]:
-    """COLOR codes for the MD Color selector (inactive ones too, so a saved Color keeps its name)."""
+def color_code_options(db: Session, merchant_id: int | None = None) -> list[dict]:
+    """COLOR codes of the scope for the MD Color selector (inactive ones too, so a saved Color keeps its name)."""
     if not inspect(db.get_bind()).has_table(CommonGroup.__tablename__):
         return []
-    rows = (db.query(CommonCode).join(CommonGroup, CommonGroup.i_common_group_id == CommonCode.i_common_group_id)
-            .filter(CommonGroup.c_group_code == "COLOR", CommonCode.i_merchant_id.is_(None))
-            .order_by(CommonCode.i_display_order, CommonCode.c_code))
+    rows = _color_code_query(db, merchant_id).order_by(CommonCode.i_display_order, CommonCode.c_code)
     return [{"id": r.i_common_code_id, "code": r.c_code, "name": r.c_name, "swatch_hex": r.c_value_text,
              "active": bool(r.b_active)} for r in rows]
 
 
-def _color_code_query(db: Session):
+def _color_code_query(db: Session, merchant_id: int | None = None):
     return (db.query(CommonCode).join(CommonGroup, CommonGroup.i_common_group_id == CommonCode.i_common_group_id)
-            .filter(CommonGroup.c_group_code == "COLOR", CommonCode.i_merchant_id.is_(None)))
+            .filter(CommonGroup.c_group_code == "COLOR", common_code_scope(merchant_id)))
 
 
 
-def active_unit_codes(db: Session) -> set[str] | None:
-    """Active UNIT codes (Platform), or None when the Common UNIT group is not available (not migrated / inactive)."""
+def active_unit_codes(db: Session, merchant_id: int | None = None) -> set[str] | None:
+    """Active UNIT codes of the scope (Platform or one Merchant), or None when the Common UNIT group is not
+    available (not migrated / inactive)."""
     if not inspect(db.get_bind()).has_table(CommonGroup.__tablename__):
         return None
     group = db.query(CommonGroup).filter(CommonGroup.c_group_code == "UNIT").first()
     if group is None or not group.b_active:
         return None
     return {code for (code,) in db.query(CommonCode.c_code).filter(
-        CommonCode.i_common_group_id == group.i_common_group_id, CommonCode.i_merchant_id.is_(None),
+        CommonCode.i_common_group_id == group.i_common_group_id, common_code_scope(merchant_id),
         CommonCode.b_active.is_(True))}
 
 
-def unit_options(db: Session) -> list[dict]:
-    """UNIT codes for the MD Unit selector (inactive ones too, so a saved inactive Unit keeps its name)."""
-    if active_unit_codes(db) is None:
+def unit_options(db: Session, merchant_id: int | None = None) -> list[dict]:
+    """UNIT codes of the scope for the MD Unit selector (inactive ones too, so a saved inactive Unit keeps its name)."""
+    if active_unit_codes(db, merchant_id) is None:
         return []
     rows = (db.query(CommonCode).join(CommonGroup, CommonGroup.i_common_group_id == CommonCode.i_common_group_id)
-            .filter(CommonGroup.c_group_code == "UNIT", CommonCode.i_merchant_id.is_(None))
+            .filter(CommonGroup.c_group_code == "UNIT", common_code_scope(merchant_id))
             .order_by(CommonCode.i_display_order, CommonCode.c_code))
     return [{"code": r.c_code, "name": r.c_name, "active": bool(r.b_active)} for r in rows]
 
 
-def _unit(db: Session | None, payload: dict, saved: str | None, errors: dict) -> str | None:
+def _unit(db: Session | None, payload: dict, saved: str | None, errors: dict,
+          merchant_id: int | None = None) -> str | None:
     """MD Master / MD Detail Unit (c_unit text, no FK). A new or changed value must be an active UNIT code; the
     unchanged saved value is kept even when inactive or not in the UNIT list. Without the Common UNIT group
     (not migrated) only the original text rule applies."""
     value = _text(payload, "unit", 30, errors, required=True, label="Unit")
     if not value or "unit" in errors or db is None or (saved is not None and value == saved):
         return value
-    active = active_unit_codes(db)
+    active = active_unit_codes(db, merchant_id)  # the scope's own UNIT codes (Platform or this Merchant)
     if active is not None and value not in active:
         errors["unit"] = "Select an active Unit."
     return value
+
+
+def _copy_platform_group(db: Session, group: CommonGroup, merchant_id: int, user_id) -> dict:
+    """Copy this group's active Platform codes to the Merchant once and record it (no commit).
+
+    The init row is written first: a concurrent first visit for the same Merchant and group stops on its primary
+    key. Codes the Merchant already has (same Code, or same Name) are skipped and kept exactly as they are.
+    """
+    record = MerchantCommonInit(i_merchant_id=merchant_id, c_group_code=group.c_group_code)
+    _stamp(record, user_id, created=True)
+    db.add(record)
+    db.flush()  # claims the group (PK); raises IntegrityError when another request already did
+    mine = db.query(CommonCode.c_code, CommonCode.c_name).filter(
+        CommonCode.i_common_group_id == group.i_common_group_id, common_code_scope(merchant_id)).all()
+    codes = {str(code).upper() for code, _name in mine}
+    names = {str(name).lower() for _code, name in mine}
+    source = [(r.c_code, r.c_name, r.c_description, r.c_value_text, r.n_value, r.i_display_order)
+              for r in db.query(CommonCode).filter(
+                  CommonCode.i_common_group_id == group.i_common_group_id, CommonCode.i_merchant_id.is_(None),
+                  CommonCode.b_active.is_(True)).order_by(CommonCode.i_display_order, CommonCode.c_code)]
+    if group.c_group_code == "UNIT":  # the protected default Unit always exists, even without a Platform EA
+        known = {str(code).upper() for code, *_rest in source}
+        source += [(code, name, None, None, None, order * 10)
+                   for order, (code, name) in enumerate(MERCHANT_DEFAULT_UNITS, start=1) if code not in known]
+    copied = skipped = 0
+    for code, name, description, value_text, value, order in source:
+        if code.upper() in codes or name.lower() in names:
+            skipped += 1
+            continue
+        row = CommonCode(i_common_group_id=group.i_common_group_id, i_merchant_id=merchant_id, c_code=code,
+                         c_name=name, c_description=description, c_value_text=value_text, n_value=value,
+                         i_display_order=order, b_active=True)
+        _stamp(row, user_id, created=True)
+        db.add(row)
+        codes.add(code.upper())
+        names.add(name.lower())
+        copied += 1
+    record.i_copied_count, record.i_skipped_count = copied, skipped
+    db.flush()
+    return {"copied": copied, "skipped": skipped}
+
+
+def initialize_merchant_common_codes(db: Session, merchant_id: int | None, user_id, *, commit: bool = True) -> dict:
+    """First initialization of a Merchant's Common Maintenance: each active group (COLOR / UNIT) that has no
+    tb_merchant_common_init row gets the active Platform codes copied once. Returns {group: counts} for the
+    groups initialized now ({} when every group was already done).
+
+    The init row, never a code count, decides: codes deleted later are not copied again and Platform changes
+    never reach an initialized Merchant. Existing Merchant codes are never changed (same Code / Name skipped).
+    commit=False (Merchant registration): runs inside the caller's transaction, errors propagate.
+    commit=True (first Merchant visit): each group commits on its own; a concurrent request that initialized the
+    group first only rolls this attempt back (no duplicate, no error for the user).
+    """
+    if merchant_id is None or not inspect(db.connection()).has_table(MerchantCommonInit.__tablename__):  # same connection: never ends the caller's transaction
+        return {}
+    done = {code for (code,) in db.query(MerchantCommonInit.c_group_code).filter(
+        MerchantCommonInit.i_merchant_id == merchant_id)}
+    groups = [g for g in db.query(CommonGroup).filter(CommonGroup.c_group_code.in_(COMMON_MAINTENANCE_GROUPS),
+                                                       CommonGroup.b_active.is_(True))
+              .order_by(CommonGroup.i_display_order) if g.c_group_code not in done]
+    result = {}
+    for group in groups:
+        code = group.c_group_code
+        if not commit:
+            result[code] = _copy_platform_group(db, group, merchant_id, user_id)
+            continue
+        try:
+            result[code] = _copy_platform_group(db, group, merchant_id, user_id)
+            db.commit()
+        except IntegrityError:  # initialized by a concurrent request first: its copy stands
+            db.rollback()
+    return result
 
 
 def common_groups(db: Session) -> list[dict]:
@@ -793,7 +886,10 @@ def _validate_pricing(payload: dict, values: dict, errors: dict, retail) -> None
         values[f"n_p{n}_price"] = price
 
 
-def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict, can_cost: bool = False) -> None:
+def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict, can_cost: bool = False,
+                 merchant_id: int | None = None) -> None:
+    """merchant_id None = Platform MD. A Merchant MD uses that Merchant's own Category I-III / Tax / UNIT, the global
+    Item Kind, and never takes the Platform-only fields (MERCHANT_MD_FIXED_VALUES) or Recommended Locations."""
     values["c_item_name"] = _text(payload, "name", 200, errors, required=True, label="Item Name")
     values["c_second_name"] = _text(payload, "second_name", 200, errors, label="Second Name")
     values["c_description"] = _text(payload, "description", 2000, errors)
@@ -807,23 +903,29 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
         errors["item_kind"] = "This Item Kind has no program logic yet and cannot be used."
     values["c_item_kind"] = kind
 
-    cycle = str(payload.get("billing_cycle") or "").strip().upper()
-    if cycle not in BILLING_CYCLES:
-        errors["billing_cycle"] = "Select One-time, Monthly or Annual."
-    values["c_billing_cycle"] = cycle
+    if merchant_id is None:
+        cycle = str(payload.get("billing_cycle") or "").strip().upper()
+        if cycle not in BILLING_CYCLES:
+            errors["billing_cycle"] = "Select One-time, Monthly or Annual."
+        values["c_billing_cycle"] = cycle
 
     # Item overrides; NULL inherits the Category III default (checked against it after the category chain below).
     values["i_inventory_type"] = _inventory_type(payload, errors, current)
     values["c_keep"] = _keep(payload, errors, current)
     values["i_output_devices"] = _output_devices(payload, errors, current)
-    values.update(_recommended_locations(db, payload, current, errors))  # NULL = inherit the Category III value (MD: Platform)
+    if merchant_id is None:
+        values.update(_recommended_locations(db, payload, current, errors))  # NULL = inherit the Category III value
+    else:  # Merchant MD: Recommended Location waits for the Merchant shared Location Master; payload keys ignored
+        values.update({column: getattr(current, column) if current is not None else None
+                       for _key, column in LOCATION_FIELDS})
 
-    values["c_unit"] = _unit(db, payload, current.c_unit if current is not None else None, errors)
+    values["c_unit"] = _unit(db, payload, current.c_unit if current is not None else None, errors, merchant_id)
     values["n_default_unit_price"] = _decimal(
         payload, "retail_price", errors, places=2, maximum=MAX_PRICE, label="Retail Price"
     )
     # Always re-derived, so a Retail change refreshes DISCOUNT levels while FIXED levels keep their amount.
-    _validate_pricing(payload, values, errors, values["n_default_unit_price"])
+    if merchant_id is None:
+        _validate_pricing(payload, values, errors, values["n_default_unit_price"])
     if can_cost:
         values["n_cost"] = _decimal(payload, "cost", errors, places=2, maximum=MAX_PRICE, label="Cost", required=False)
 
@@ -837,9 +939,9 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
         errors["category3_id"] = "Select Category II before Category III."
     cat_bad = {"category1_id", "category2_id", "category3_id"} & set(errors)
     if not cat_bad:
-        p1 = _scoped_parent(db, Category1, c1, None)
-        p2 = _scoped_parent(db, Category2, c2, None)
-        p3 = _scoped_parent(db, Category3, c3, None)
+        p1 = _scoped_parent(db, Category1, c1, merchant_id)  # another scope's category is "does not exist"
+        p2 = _scoped_parent(db, Category2, c2, merchant_id)
+        p3 = _scoped_parent(db, Category3, c3, merchant_id)
         if not p1:
             errors["category1_id"] = "Category I does not exist."
         elif c2 is not None and not p2:
@@ -860,16 +962,18 @@ def _validate_md(db: Session, payload: dict, current, values: dict, errors: dict
                     errors[key] = "This category is inactive."
 
     if tax_id is not None and "default_tax_id" not in errors:
-        tax = _scoped_parent(db, Tax, tax_id, None)
+        tax = _scoped_parent(db, Tax, tax_id, merchant_id)
         if not tax:
             errors["default_tax_id"] = "Tax does not exist."
         elif not tax.b_active and (current is None or current.i_default_tax_id != tax_id):
             errors["default_tax_id"] = "Tax is inactive."
 
-    license_required = _bool(payload, "license_required", False)
+    values["b_serial_required"] = _bool(payload, "serial_required", False)  # every scope (not tied to licenses)
+    license_required = _bool(payload, "license_required", False) if merchant_id is None else False
     values["b_license_required"] = license_required
-    values["b_serial_required"] = _bool(payload, "serial_required", False)
-    if license_required:
+    if merchant_id is not None:
+        values.update(MERCHANT_MD_FIXED_VALUES)  # whatever the payload says
+    elif license_required:
         ltype = str(payload.get("license_type") or "").strip().upper()
         if ltype not in LICENSE_TYPES:
             errors["license_type"] = "Select POS, KIOSK or Customer Ordering."
@@ -900,8 +1004,9 @@ def _serialize_md_detail(row: MdDetail) -> dict:
     }
 
 
-def _md_parent_for_detail(db: Session, md_id: int, *, lock: bool = False) -> MdMaster:
-    query = db.query(MdMaster).filter(MdMaster.i_md_id == md_id)
+def _md_parent_for_detail(db: Session, md_id: int, *, lock: bool = False, merchant_id: int | None = None) -> MdMaster:
+    """The MD of this scope (Platform when merchant_id is None); another owner's MD is "not found"."""
+    query = db.query(MdMaster).filter(MdMaster.i_md_id == md_id, MdMaster.i_owner_key == md_owner_key(merchant_id))
     if lock:
         query = query.with_for_update()
     row = query.first()
@@ -910,16 +1015,17 @@ def _md_parent_for_detail(db: Session, md_id: int, *, lock: bool = False) -> MdM
     return row
 
 
-def list_md_details(db: Session, md_id: int) -> list[dict]:
-    _md_parent_for_detail(db, md_id)
+def list_md_details(db: Session, md_id: int, merchant_id: int | None = None) -> list[dict]:
+    _md_parent_for_detail(db, md_id, merchant_id=merchant_id)
     rows = db.query(MdDetail).filter(MdDetail.i_md_id == md_id).order_by(MdDetail.i_detail_no).all()
     return [_serialize_md_detail(row) for row in rows]
 
 
-def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict, db: Session | None = None) -> dict:
+def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict, db: Session | None = None,
+                        merchant_id: int | None = None) -> dict:
     values = {}
     values["c_barcode"] = _text(payload, "barcode", 100, errors)
-    values["c_unit"] = _unit(db, payload, current.c_unit if current is not None else None, errors)
+    values["c_unit"] = _unit(db, payload, current.c_unit if current is not None else None, errors, merchant_id)
     values["c_pk_size"] = _text(payload, "pk_size", 100, errors)
     values["c_size"] = _text(payload, "size", 100, errors)
     values["n_cost"] = _decimal(
@@ -932,7 +1038,7 @@ def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict, d
     values["c_modifier"] = (_text(payload, "modifier", 2000, errors)
                             if "modifier" in payload or current is None else current.c_modifier)
     # Same rule for Color (a Store with Use Color OFF omits color_code_id: saved value kept); blank/null clears it.
-    values["i_color_code_id"] = _detail_color(db, payload, current, errors)
+    values["i_color_code_id"] = _detail_color(db, payload, current, errors, merchant_id)
     if "is_default" in payload:
         values["b_is_default"] = _bool(payload, "is_default", False)
     elif current is not None:
@@ -944,7 +1050,8 @@ def _validate_md_detail(payload: dict, current: MdDetail | None, errors: dict, d
     return values
 
 
-def _detail_color(db: Session | None, payload: dict, current: MdDetail | None, errors: dict) -> int | None:
+def _detail_color(db: Session | None, payload: dict, current: MdDetail | None, errors: dict,
+                  merchant_id: int | None = None) -> int | None:
     """i_color_code_id of an MD Detail: a COLOR common code; must exist, and be active unless it is the detail's
     saved Color (kept when inactive). Key absent (Use Color OFF) keeps the saved value. The removed tb_color id
     (color_id) is refused, whatever its value, so an earlier client never believes it saved a Color."""
@@ -958,7 +1065,8 @@ def _detail_color(db: Session | None, payload: dict, current: MdDetail | None, e
         return saved
     if code_id is None:
         return None
-    code = _color_code_query(db).filter(CommonCode.i_common_code_id == code_id).first() if db is not None else None
+    code = (_color_code_query(db, merchant_id).filter(CommonCode.i_common_code_id == code_id).first()
+            if db is not None else None)  # the scope's own COLOR codes only
     if code is None:
         errors["color_code_id"] = "Color does not exist."
     elif not code.b_active and code_id != saved:
@@ -966,47 +1074,49 @@ def _detail_color(db: Session | None, payload: dict, current: MdDetail | None, e
     return code_id
 
 
-def _ensure_barcode_free(db: Session, barcode: str | None, detail: MdDetail | None) -> None:
-    """System-wide uniqueness (Common services.barcode); the message names the Item that already has it."""
+def _ensure_barcode_free(db: Session, barcode: str | None, detail: MdDetail | None, owner_key: int) -> None:
+    """Unique within the MD's owner (Common services.barcode); the message names the owner's Item that has it."""
     message = barcode_rules.barcode_conflict(
-        db, barcode, exclude_detail_id=detail.i_md_detail_id if detail is not None else None,
+        db, barcode, owner_key=owner_key, exclude_detail_id=detail.i_md_detail_id if detail is not None else None,
         current_barcode=detail.c_barcode if detail is not None else None,
     )
     if message:
         raise FieldErrors({"barcode": message}, message)
 
 
-def _commit_detail(db: Session, barcode: str | None) -> None:
+def _commit_detail(db: Session, barcode: str | None, owner_key: int) -> None:
     """Commit; a concurrent save that took the same barcode first hits the DB UNIQUE index instead."""
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        message = barcode_rules.barcode_conflict(db, barcode)
+        message = barcode_rules.barcode_conflict(db, barcode, owner_key=owner_key)
         if message:
             raise FieldErrors({"barcode": message}, message) from None
         raise
 
 
-def check_default_barcode(db: Session, md_id: int | None, barcode) -> dict:
-    """Pre-save check for the MD form's Barcode (the Default Detail's barcode); read-only."""
+def check_default_barcode(db: Session, md_id: int | None, barcode, merchant_id: int | None = None) -> dict:
+    """Pre-save check for the MD form's Barcode (the Default Detail's barcode) within the scope's owner; read-only."""
+    owner = md_owner_key(merchant_id)
     default = None
     if md_id is not None:
-        default = db.query(MdDetail).filter(MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True)).first()
+        default = db.query(MdDetail).filter(MdDetail.i_md_id == md_id, MdDetail.i_owner_key == owner,
+                                            MdDetail.b_is_default.is_(True)).first()
     message = barcode_rules.barcode_conflict(
-        db, barcode, exclude_detail_id=default.i_md_detail_id if default is not None else None,
+        db, barcode, owner_key=owner, exclude_detail_id=default.i_md_detail_id if default is not None else None,
         current_barcode=default.c_barcode if default is not None else None,
     )
     return {"barcode": barcode_rules.normalize_barcode(barcode), "available": message is None, "message": message}
 
 
-def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> dict:
-    parent = _md_parent_for_detail(db, md_id, lock=True)
+def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int, merchant_id: int | None = None) -> dict:
+    parent = _md_parent_for_detail(db, md_id, lock=True, merchant_id=merchant_id)
     current_default = db.query(MdDetail).filter(
         MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True),
     ).first()
-    values = _validate_md_detail(payload, None, {}, db)
-    _ensure_barcode_free(db, values["c_barcode"], None)
+    values = _validate_md_detail(payload, None, {}, db, parent.i_merchant_id)
+    _ensure_barcode_free(db, values["c_barcode"], None, parent.i_owner_key)
     if current_default is None:
         values["b_is_default"] = True
     next_no = (db.query(func.max(MdDetail.i_detail_no))
@@ -1015,7 +1125,7 @@ def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> di
         current_default.b_is_default = False
         _stamp(current_default, user_id, created=False)
         db.flush()
-    row = MdDetail(i_md_id=md_id, i_detail_no=next_no, **values)
+    row = MdDetail(i_md_id=md_id, i_owner_key=parent.i_owner_key, i_detail_no=next_no, **values)
     _stamp(row, user_id, created=True)
     db.add(row)
     if row.b_is_default:
@@ -1023,20 +1133,21 @@ def create_md_detail(db: Session, md_id: int, payload: dict, user_id: int) -> di
         parent.n_default_unit_price = row.n_price
         parent.n_cost = row.n_cost
         _stamp(parent, user_id, created=False)
-    _commit_detail(db, values["c_barcode"])
+    _commit_detail(db, values["c_barcode"], parent.i_owner_key)
     db.refresh(row)
     return _serialize_md_detail(row)
 
 
-def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, user_id: int) -> dict:
-    parent = _md_parent_for_detail(db, md_id, lock=True)
+def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, user_id: int,
+                     merchant_id: int | None = None) -> dict:
+    parent = _md_parent_for_detail(db, md_id, lock=True, merchant_id=merchant_id)
     row = db.query(MdDetail).filter(
         MdDetail.i_md_detail_id == detail_id, MdDetail.i_md_id == md_id,
     ).with_for_update().first()
     if row is None:
         raise NotFound("MD Detail not found.")
-    values = _validate_md_detail(payload, row, {}, db)
-    _ensure_barcode_free(db, values["c_barcode"], row)
+    values = _validate_md_detail(payload, row, {}, db, parent.i_merchant_id)
+    _ensure_barcode_free(db, values["c_barcode"], row, parent.i_owner_key)
     if row.b_is_default and not values["b_is_default"]:
         raise FieldErrors({"is_default": "An MD must have one Default Detail."})
     if values["b_is_default"] and not row.b_is_default:
@@ -1055,13 +1166,13 @@ def update_md_detail(db: Session, md_id: int, detail_id: int, payload: dict, use
         parent.n_default_unit_price = row.n_price
         parent.n_cost = row.n_cost
         _stamp(parent, user_id, created=False)
-    _commit_detail(db, values["c_barcode"])
+    _commit_detail(db, values["c_barcode"], parent.i_owner_key)
     db.refresh(row)
     return _serialize_md_detail(row)
 
 
-def delete_md_detail(db: Session, md_id: int, detail_id: int) -> None:
-    _md_parent_for_detail(db, md_id, lock=True)
+def delete_md_detail(db: Session, md_id: int, detail_id: int, merchant_id: int | None = None) -> None:
+    _md_parent_for_detail(db, md_id, lock=True, merchant_id=merchant_id)
     row = db.query(MdDetail).filter(
         MdDetail.i_md_detail_id == detail_id, MdDetail.i_md_id == md_id,
     ).with_for_update().first()
@@ -1337,7 +1448,10 @@ def _serialize_md_writes(command):
 def _commit_md(db: Session, row: MdMaster, *, image_data: bytes | None = None,
                remove_image: bool = False, delete: bool = False) -> str | None:
     from backend.services.resource_storage import AwsumStorageService
-    return commit_entity_image(db, row, AwsumStorageService(db).resolve_owner("PLATFORM"), row.c_item_code,
+    storage = AwsumStorageService(db)
+    owner = (storage.resolve_owner("MERCHANT", row.i_merchant_id) if row.i_merchant_id is not None
+             else storage.resolve_owner("PLATFORM"))
+    return commit_entity_image(db, row, owner, row.c_item_code,
                                category="master", image_data=image_data, remove_image=remove_image, delete=delete)
 
 
@@ -1354,8 +1468,10 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
         _lock_md_images(db)
     cfg = entity_config(entity)
     values = _validate_payload(db, entity, payload, None, can_cost, merchant_id, store_id, group)
-    if hasattr(cfg["model"], "i_merchant_id"):  # Platform-only masters (MD) have no Merchant scope
+    if hasattr(cfg["model"], "i_merchant_id"):  # the scope's owner, never a payload value
         values["i_merchant_id"] = merchant_id
+    if entity == "md":
+        values["i_owner_key"] = md_owner_key(merchant_id)  # = COALESCE(i_merchant_id, 0) (DB CHECK)
     if cfg.get("group_scoped"):
         values["i_common_group_id"] = common_group(db, group).i_common_group_id  # never a payload value
     if cfg.get("store_scoped"):
@@ -1373,6 +1489,7 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
                 db.flush()
                 detail = MdDetail(
                     i_md_id=row.i_md_id,
+                    i_owner_key=row.i_owner_key,
                     i_detail_no=1,
                     b_is_default=True,
                     c_unit=row.c_unit,
@@ -1679,19 +1796,28 @@ def export_table(db: Session, entity: str, *, q="", active="", sort="", directio
             _yn(r.b_serial_required), status(r), r.c_notes or "",
         ]
         data.append(line)
+    if merchant_id is not None:  # Merchant MD: no Platform-only columns (not used) and no Recommended Location yet
+        keep = [i for i, name in enumerate(headers) if name not in MERCHANT_MD_HIDDEN_EXPORT_COLUMNS]
+        headers = [headers[i] for i in keep]
+        data = [[line[i] for i in keep] for line in data]
     return headers, data
+
+
+MERCHANT_MD_HIDDEN_EXPORT_COLUMNS = frozenset({
+    "Billing Cycle", "License Required", "License Type", "Licenses per Unit", "Sales Floor Location",
+    "Warehouse Location", *(f"P{n} {part}" for n in (1, 2, 3) for part in ("Mode", "Discount %", "Price")),
+})
 
 def _get(db: Session, entity: str, item_id: int, merchant_id: int | None = None, store_id: int | None = None,
          group: str | None = None):
     cfg = entity_config(entity)
     if entity == "md":
-        row = db.query(MdMaster).filter(MdMaster.i_md_id == item_id).populate_existing().with_for_update().first()
+        row = (db.query(MdMaster).filter(MdMaster.i_md_id == item_id, MdMaster.i_owner_key == md_owner_key(merchant_id))
+               .populate_existing().with_for_update().first())
     else:
         row = _entity_query(db, entity, merchant_id, store_id, group).filter(
             getattr(cfg["model"], cfg["pk"]) == item_id,
         ).first()
-    if entity == "md" and merchant_id is not None:
-        raise NotFound("Record not found.")
     if not row:
         raise NotFound("Record not found.")
     return row
@@ -1700,14 +1826,15 @@ def _get(db: Session, entity: str, item_id: int, merchant_id: int | None = None,
 def category3_inventory_impact(db: Session, category3_id: int, merchant_id: int | None = None) -> dict:
     """Read-only counts for the Category III Inventory Type scope confirmation."""
     row = _get(db, "category3", category3_id, merchant_id)
-    items = db.query(MdMaster.i_md_id).filter(MdMaster.i_category3_id == row.i_category3_id)
+    items = db.query(MdMaster.i_md_id).filter(MdMaster.i_owner_key == md_owner_key(merchant_id),
+                                              MdMaster.i_category3_id == row.i_category3_id)
     return {
         "id": row.i_category3_id,
         "name": row.c_category_name,
         "inventory_type": row.i_inventory_type,
         "md_total": items.count(),
         "override_total": items.filter(MdMaster.i_inventory_type.isnot(None)).count(),
-        # MD Master is Platform-only, so only the Platform scope may apply the change to its items.
+        # "Apply to all MD Master" stays Platform-only in STEP 2 (a Merchant version comes later).
         "can_apply_to_md": merchant_id is None,
     }
 
@@ -1833,7 +1960,7 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         ],
         "default_item_kind": DEFAULT_ITEM_KIND,
         # MD Color selector: COLOR codes from Common Maintenance (MD Detail color_code_id).
-        "color_codes": color_code_options(db) if merchant_id is None else [],
+        "color_codes": color_code_options(db, merchant_id),
         "billing_cycles": list(BILLING_CYCLES),
         # Behavior flags come from the Common definition so the UI never re-derives them from numbers.
         "inventory_types": [b.as_dict() for b in inventory.inventory_types()],
@@ -1843,7 +1970,7 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         "license_types": list(LICENSE_TYPES),
         "location_areas": [{"code": code, "name": name} for code, name in LOCATION_AREAS.items()],
         # Common Maintenance groups (COLOR / UNIT) with their code / Value rules; additive key (MD unaffected).
-        "common_groups": common_groups(db) if merchant_id is None else [],
+        "common_groups": common_groups(db),  # group definitions are shared; their codes are per scope
         # MD Unit selector: UNIT codes from Common Maintenance (empty = not migrated: Unit stays free text).
-        "units": unit_options(db) if merchant_id is None else [],
+        "units": unit_options(db, merchant_id),
     }

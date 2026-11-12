@@ -67,6 +67,8 @@ def _deliver(request: Request, db: Session, image: images.ImagePath):
             Agency.c_agency_code == image.owner_code, PlatformUser.c_image_path == image.logical_path,
         ).first():
             raise HTTPException(404, "User photo not found.")
+    elif image.context_type == "MERCHANT" and image.image_category == "master":
+        images.authorize_merchant_master_read(request, db, image.owner_code)  # + its Stores' logins (view only)
     elif not public:
         images.authorize_images(request, db, image.context_type, image.owner_code, merchant_code=image.merchant_code)
     if image.image_category == "users" and not agency_user_photo:
@@ -170,9 +172,10 @@ def delete_image(request: Request, image_path: str, db: Session = Depends(get_db
 
 
 def _protect_md_image(db: Session, image: images.ImagePath) -> None:
+    """MD item images (Platform and Merchant master images) change only through MD Master Save / Delete."""
     if image.image_category == "users":
         raise HTTPException(409, "Manage profile photos through the authorized User Save workflow.")
-    if image.context_type != "PLATFORM" or image.image_category != "master":
+    if image.context_type not in ("PLATFORM", "MERCHANT") or image.image_category != "master":
         return
     from backend.services.master_group import _lock_md_images
     from backend.models_admin.master_group import MdMaster

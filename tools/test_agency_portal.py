@@ -229,7 +229,9 @@ class AgencyPortalTests(unittest.TestCase):
     def test_forbidden_diagnostics_identify_scope_without_logging_credentials(self):
         with self.assertLogs(auth.logger, level="WARNING") as captured:
             response = self.client.get("/platform/master/store", headers={"Accept": "text/html"})
-        self.assertEqual((response.status_code, response.text), (403, "Forbidden"))
+        # Still refused (403); this browser's login is the Agency one, so the page explains it (no bare "Forbidden").
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Your Platform session has ended or changed. Please sign in again as Platform Admin.", response.text)
         message = captured.records[0].getMessage()
         details = json.loads(message.split("PLATFORM_AUTH_FORBIDDEN ", 1)[1])
         self.assertEqual(details, {
@@ -242,6 +244,42 @@ class AgencyPortalTests(unittest.TestCase):
         for secret in (self.client.cookies.get("access_token"), self.password,
                        self.password_hash, "same@example.test"):
             self.assertNotIn(secret, message)
+
+    def test_replaced_platform_session_is_refused_with_a_clear_message_and_keeps_the_other_login(self):
+        # This browser holds the Agency login (setUp). A Platform API call is still refused with 403, now explained.
+        with self.assertLogs(auth.logger, level="WARNING"):
+            response = self.client.put("/platform/merchant/1", json={"business_options": {"accounting": True}},
+                                       headers={"Accept": "application/json"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {
+            "detail": "Your Platform session has ended or changed. Please sign in again as Platform Admin.",
+            "code": "SESSION_CONTEXT_CHANGED", "login_url": "/platform-admin"})
+        self.assertNotIn("access_token", response.headers.get("set-cookie", ""))  # the other login's cookie is kept
+        self.assertEqual(self.client.get("/agency/dashboard").status_code, 200)    # and keeps working
+
+    def test_platform_user_without_admin_role_still_gets_plain_forbidden(self):
+        with TestClient(self.app) as platform:
+            login = platform.post("/platform-admin/login", data={
+                "login_mode": "platform_admin", "access_code": "ADMIN",
+                "email": "platform@example.test", "password": self.password,
+            }, follow_redirects=False)
+            self.assertEqual(login.status_code, 303, login.text)
+            with self.factory() as db:
+                db.get(Role, 1).c_name = "Staff"  # a real permission problem, same Platform login
+                db.commit()
+            with self.assertLogs(auth.logger, level="WARNING"):
+                api = platform.put("/platform/merchant/1", json={}, headers={"Accept": "application/json"})
+                page = platform.get("/platform/master/merchant", headers={"Accept": "text/html"})
+            self.assertEqual((api.status_code, api.json()), (403, {"detail": "Forbidden"}))
+            self.assertEqual((page.status_code, page.text), (403, "Forbidden"))
+
+    def test_session_changed_only_for_other_login_scopes(self):
+        from types import SimpleNamespace
+        from backend.services.web_session_http import platform_session_changed
+        for scope, expected in (("agency", True), ("merchant", True), ("store", True), ("platform", False), (None, False)):
+            request = SimpleNamespace(state=SimpleNamespace(platform_auth_diagnostics={"scope_type": scope}))
+            self.assertIs(platform_session_changed(request), expected, scope)
+        self.assertFalse(platform_session_changed(SimpleNamespace(state=SimpleNamespace())))
 
     def test_master_role_diagnostic_preserves_403_and_expired_redirect(self):
         with self.factory() as db:

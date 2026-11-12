@@ -15,19 +15,23 @@
   // inherits: '' means "inherit" (not "empty"), so the Clear button is labelled Reset and stays available when required.
   //   While inheriting, the value in effect (setInherited) is shown CHECKED but the group stays in the "inherited"
   //   state: getValue() returns '' so saving keeps NULL. Only a user click makes it an Override; Reset inherits again.
-  function html({ id, name, options, value, clearable = false, required = false, inherits = false, ariaLabel = '', multiple = false }) {
+  // disabled: every choice disabled (no change possible), reason: the explanation shown under the choices.
+  function html({ id, name, options, value, clearable = false, required = false, inherits = false, ariaLabel = '', multiple = false,
+    disabled = false, reason = '' }) {
     const selected = new Set(multiple ? toList(value) : [value == null ? '' : String(value)]);
     const current = multiple ? (selected.size ? 'x' : '') : [...selected][0];
     const items = (options || []).map(({ value: v, label }) => {
       const checked = selected.has(String(v)) ? ' checked' : '';
-      return `<label class="awsum-option"><input class="awsum-option-input" type="${multiple ? 'checkbox' : 'radio'}" name="${esc(name)}" value="${esc(v)}"${checked}>`
+      return `<label class="awsum-option"><input class="awsum-option-input" type="${multiple ? 'checkbox' : 'radio'}" name="${esc(name)}" value="${esc(v)}"${checked}${disabled ? ' disabled' : ''}>`
         + `<span class="awsum-option-body"><span class="awsum-option-dot" aria-hidden="true"></span>${esc(label)}</span></label>`;
     }).join('');
-    const classes = ['awsum-option-group', multiple ? 'is-multiple' : '', current ? 'has-value' : '', required ? 'is-required' : ''].filter(Boolean).join(' ');
-    return `<div class="${classes}" id="${esc(id)}" role="${multiple ? 'group' : 'radiogroup'}" data-awsum-option-group data-name="${esc(name)}"${multiple ? ' data-option-multiple' : ''}`
+    const classes = ['awsum-option-group', multiple ? 'is-multiple' : '', current ? 'has-value' : '', required ? 'is-required' : '',
+      disabled ? 'is-disabled' : ''].filter(Boolean).join(' ');
+    return `<div class="${classes}" id="${esc(id)}" role="${multiple ? 'group' : 'radiogroup'}" data-awsum-option-group${disabled ? ' aria-disabled="true"' : ''} data-name="${esc(name)}"${multiple ? ' data-option-multiple' : ''}`
       + `${required ? ' aria-required="true"' : ''}${inherits ? ` data-option-inherits data-option-state="${current && !multiple ? 'override' : 'inherited'}"` : ''}${ariaLabel ? ` aria-label="${esc(ariaLabel)}"` : ''}>${items}`
       + `${clearable ? `<button type="button" class="awsum-option-clear" data-option-clear>${inherits ? 'Reset' : 'Clear'}</button>` : ''}`
-      + `${inherits && !multiple ? '<span class="awsum-option-source" aria-live="polite"></span>' : ''}</div>`;
+      + `${inherits && !multiple ? '<span class="awsum-option-source" aria-live="polite"></span>' : ''}`
+      + `${disabled && reason ? `<span class="awsum-option-reason">${esc(reason)}</span>` : ''}</div>`;
   }
 
   const toList = (value) => (Array.isArray(value) ? value : (value == null || value === '' ? [] : [value])).map(String);
@@ -100,6 +104,20 @@
     sync(group);
   }
 
+  // Disabled = no choice can change (the saved value stays checked); reason is shown under the choices.
+  function setDisabled(group, disabled, reason = '') {
+    inputs(group).forEach((input) => { input.disabled = !!disabled; });
+    group.classList.toggle('is-disabled', !!disabled);
+    if (disabled) group.setAttribute('aria-disabled', 'true'); else group.removeAttribute('aria-disabled');
+    const clear = group.querySelector('[data-option-clear]');
+    if (clear) clear.disabled = !!disabled;
+    let note = group.querySelector('.awsum-option-reason');
+    if (disabled && reason) {
+      if (!note) { note = document.createElement('span'); note.className = 'awsum-option-reason'; group.appendChild(note); }
+      note.textContent = reason;
+    } else if (note) note.remove();
+  }
+
   function setRequired(group, required) {
     group.classList.toggle('is-required', !!required);
     if (required) group.setAttribute('aria-required', 'true');
@@ -129,5 +147,5 @@
     container.querySelectorAll('[data-awsum-option-group]').forEach(bind);
   }
 
-  return Object.freeze({ html, bind, bindAll, getValue, setValue, setOptionLabel, setInherited, setRequired });
+  return Object.freeze({ html, bind, bindAll, getValue, setValue, setOptionLabel, setInherited, setRequired, setDisabled });
 });

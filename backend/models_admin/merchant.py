@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, String, Text
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
@@ -8,6 +8,8 @@ from backend.models_common.contact_mixin import ContactMixin
 
 class Merchant(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     __tablename__ = "tb_merchant"
+    # Merchant IDs are positive: 0 is the Platform owner key of MD data (master_group.PLATFORM_OWNER_KEY).
+    __table_args__ = (CheckConstraint("i_merchant_id > 0", name="ck_tb_merchant_id_positive"),)
 
     i_merchant_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     c_merchant_code = Column(String(20), nullable=False, unique=True)

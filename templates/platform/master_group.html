@@ -65,6 +65,8 @@
   /* Common Location Selector (Category III / MD Master): read-only code + Search / Clear. */
   .mg-loc-picker .form-control[readonly] { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; }
   .mg-loc-picker + .invalid-feedback:not(:empty) { display: block; }
+  .mg-store-note { display: flex; align-items: flex-start; gap: .4rem; margin-top: .35rem; font-size: 12px; color: #496486; }
+  .mg-store-badge { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; background: #eef1f5; color: #5b6b80; font-size: 11px; font-weight: 600; }
   .mg-loc-picker .form-control[readonly]::placeholder { font-family: inherit; font-weight: 400; }  /* hints (Not set / Category III) are not codes */
   /* Common Location picker (locationInput): 6px gap between the field and its buttons, each part keeps its own corners;
      the magnifier is a square as tall as the field (Category III / MD, Sales Floor / Warehouse). */
@@ -187,7 +189,9 @@
       {# Store-scoped master: Store selector (hidden for a Store login, which is fixed to its own Store). #}
       <div class="mg-md-filter mg-store-filter" id="mgStoreWrap">
         <label for="mgStore" class="awsum-list-filter-label">Store</label>
-        <select id="mgStore" class="form-select" aria-label="Store"></select>
+        <select id="mgStore" class="form-select" aria-label="Store" aria-describedby="mgStoreNote"></select>
+        {# Inactive Store of a Merchant login: Inactive badge + view-only note (the server refuses changes too). #}
+        <div class="mg-store-note d-none" id="mgStoreNote" role="status"></div>
       </div>
       {% endif %}
       {% if mg_entity == 'common_code' %}
@@ -333,5 +337,5 @@
 <script src="/static/js/confirm-modal.js?v=1"></script>
 {% if mg_entity in ('category3', 'md') %}<script src="/static/js/lookup-modal.js?v=1"></script>{% endif %}
 <script src="/static/js/page-actions.js?v=1"></script>
-<script src="/static/js/master_group.js?v=79"></script>
+<script src="/static/js/master_group.js?v=83"></script>
 {% endblock %}

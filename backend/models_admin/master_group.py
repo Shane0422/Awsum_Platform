@@ -4,11 +4,21 @@ MD Master stores per-item management rules only. Individual serial numbers and
 real license keys never live here: serials belong to delivered/installed units
 (see tb_device.c_serial_no) and keys to tb_license.
 """
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (Boolean, CheckConstraint, Column, ForeignKey, ForeignKeyConstraint, Index, Integer, Numeric,
+                        String, Text, UniqueConstraint, func, text)
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
 from backend.models_admin import common_code  # noqa: F401  (registers tb_common_code for MdDetail.i_color_code_id)
+
+# MD ownership key (STEP 2): 0 = Platform, otherwise the owning Merchant's ID (tb_merchant.i_merchant_id > 0 is a DB
+# CHECK, so 0 can never be a Merchant). tb_md_master keeps it equal to COALESCE(i_merchant_id, 0) (CHECK) and every
+# tb_md_detail row carries its MD's key through a composite FK, so barcodes can be unique per owner in the database.
+PLATFORM_OWNER_KEY = 0
+
+
+def md_owner_key(merchant_id: int | None) -> int:
+    return PLATFORM_OWNER_KEY if merchant_id is None else int(merchant_id)
 
 
 class Tax(PlatformBase, AuditMixin):
@@ -93,8 +103,15 @@ class Category3(PlatformBase, AuditMixin):
 
 class MdMaster(PlatformBase, AuditMixin):
     __tablename__ = "tb_md_master"
+    __table_args__ = (
+        CheckConstraint("i_owner_key = COALESCE(i_merchant_id, 0)", name="ck_tb_md_master_owner_key"),
+        UniqueConstraint("i_md_id", "i_owner_key", name="uq_tb_md_master_id_owner"),  # target of the Detail FK
+    )
 
     i_md_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    # Owner: NULL = Platform MD, set = that Merchant's MD (shared by its Stores). Never changed after create.
+    i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), nullable=True, index=True)
+    i_owner_key = Column(Integer, nullable=False, default=PLATFORM_OWNER_KEY, server_default=text("0"))
     c_item_code = Column(String(20), nullable=False, unique=True, index=True)
     c_item_name = Column(String(200), nullable=False)
     c_second_name = Column(String(200), nullable=True)
@@ -143,6 +160,9 @@ class MdDetail(PlatformBase, AuditMixin):
     __tablename__ = "tb_md_detail"
     __table_args__ = (
         UniqueConstraint("i_md_id", "i_detail_no", name="uq_tb_md_detail_md_detail_no"),
+        # The Detail's owner is always its MD's owner (a different value is refused by the database).
+        ForeignKeyConstraint(["i_md_id", "i_owner_key"], ["tb_md_master.i_md_id", "tb_md_master.i_owner_key"],
+                             name="fk_tb_md_detail_md_owner", onupdate="CASCADE", ondelete="CASCADE"),
         Index(
             "uq_tb_md_detail_default",
             "i_md_id",
@@ -154,6 +174,7 @@ class MdDetail(PlatformBase, AuditMixin):
 
     i_md_detail_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     i_md_id = Column(Integer, ForeignKey("tb_md_master.i_md_id", ondelete="CASCADE"), nullable=False, index=True)
+    i_owner_key = Column(Integer, nullable=False)  # copy of the MD's i_owner_key (no default: always stated)
     i_detail_no = Column(Integer, nullable=False)
     b_is_default = Column(Boolean, nullable=False, default=False)
     c_barcode = Column(String(100), nullable=True, index=True)
@@ -168,10 +189,12 @@ class MdDetail(PlatformBase, AuditMixin):
     i_color_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id"), nullable=True, index=True)
 
 
-# System-wide barcode uniqueness (services.barcode): non-empty trimmed barcodes are unique across all MD Details.
+# Barcode uniqueness per owner (services.barcode): within Platform, and within each Merchant (all its Stores share
+# its MD), a non-empty trimmed barcode belongs to one MD Detail; different owners may use the same barcode.
 # Existing databases get it from database/md_barcode_unique_migration once their data has no duplicates.
 Index(
-    "uq_tb_md_detail_barcode",
+    "uq_tb_md_detail_owner_barcode",
+    MdDetail.i_owner_key,
     func.trim(MdDetail.c_barcode),
     unique=True,
     postgresql_where=text("c_barcode IS NOT NULL AND trim(c_barcode) <> ''"),

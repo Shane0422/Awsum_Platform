@@ -650,6 +650,11 @@ class ShelfMasterPortalApiTests(unittest.TestCase):
             db.add(Store(i_store_id=12, i_merchant_id=11, c_store_code="STR26OTHR", c_store_name="Foreign", c_status="active"))
             db.add(Store(i_store_id=13, i_merchant_id=11, c_store_code="STR26GONE", c_store_name="Closed", c_status="inactive"))
             db.commit()
+            # STEP 3-3C: these scope rules apply to a Merchant contracted for Use Location Management (Business
+            # Option, ADDON); without it the feature is refused (tools.test_feature_enforcement).
+            from backend.services.merchant_features import save_business_options
+            save_business_options(db, 10, {"location_management": True}, 1)
+            db.commit()
 
     def login(self, scope):
         codes = {"MERCHANT": "MER26ABCD", "STORE": "STR26ABCD"}

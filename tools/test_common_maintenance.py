@@ -1,6 +1,6 @@
 """Common Maintenance step 3 (API / service): group-scoped codes (COLOR view-only, UNIT CRUD), Code fixed after
 save, case-insensitive Name duplicates, EA protection, in-use rules (MD Master + MD Detail), typed Values by the
-group's Value Type, the Value Type lock and Platform-only access. SQLite only; no real database is touched."""
+group's Value Type, the Value Type lock and the per-scope codes (Platform / Merchant). SQLite only; no real database is touched."""
 import json
 import tempfile
 import unittest
@@ -224,14 +224,25 @@ class CommonMaintenanceTests(unittest.TestCase):
         self.assertEqual(svc.set_common_group_value_type(self.db, "UNIT", None, 1).c_value_type, None)  # same type: fine
 
     # ---- scope / pages ----
-    def test_platform_only_and_merchant_extension_disabled(self):
+    def test_merchant_scope_has_its_own_codes(self):
+        # STEP 1: Common Maintenance is per scope; a Merchant sees only its own codes (none of the Platform's).
         merchant = self.req("/merchant/api/master-group")
         merchant.state.master_merchant_id = 5
-        with self.assertRaises(HTTPException) as ctx:
-            router_module._entity("common_code", merchant)
-        self.assertEqual(ctx.exception.status_code, 403)
-        with self.assertRaises(svc.NotFound):
-            svc.list_items(self.db, "common_code", merchant_id=5, group="UNIT")
+        self.assertEqual(router_module._entity("common_code", merchant), "common_code")
+        self.assertEqual(svc.list_items(self.db, "common_code", merchant_id=5, group="UNIT")["total"], 0)
+        # Item Kind stays Platform-only (403); MD Master is per owner since STEP 2 (tools.test_merchant_md_master).
+        self.assertEqual(router_module._entity("md", merchant), "md")
+        for entity in ("item_kind",):
+            with self.assertRaises(HTTPException) as ctx:
+                router_module._entity(entity, merchant)
+            self.assertEqual(ctx.exception.status_code, 403)
+        # A Merchant code stays in its scope: the Platform list and another Merchant never see it.
+        svc.create_item(self.db, "common_code", {"code": "CTN", "name": "Carton"}, 1, merchant_id=5, group="UNIT")
+        self.assertEqual([i["code"] for i in svc.list_items(self.db, "common_code", merchant_id=5, group="UNIT")["items"]],
+                         ["CTN"])
+        self.assertEqual(svc.list_items(self.db, "common_code", merchant_id=6, group="UNIT")["total"], 0)
+        self.assertEqual(self.listing(size=100)[1]["total"], 14)
+        self.assertNotIn("CTN", {i["code"] for i in self.listing(size=100)[1]["items"]})
         self.assertEqual(router_module.PAGES["common-maintenance"], ("common_code", "Common Maintenance"))
         self.assertNotIn("size", {e for e, _t in router_module.PAGES.values()})
         export = router_module.master_group_export("common_code", self.req(), db=self.db, group="UNIT")
@@ -249,7 +260,7 @@ class MdUnitSelectorTests(CommonMaintenanceTests):
     test_unit_in_use_by_md_master_or_md_detail = None
     test_value_types_text_number_currency_color = None
     test_value_type_cannot_change_once_a_group_has_codes = None
-    test_platform_only_and_merchant_extension_disabled = None
+    test_merchant_scope_has_its_own_codes = None
 
     def md(self, unit="EA", **extra):
         c1 = svc.create_item(self.db, "category1", {"name": f"Cat {unit}"}, 1)

@@ -608,7 +608,7 @@ PLATFORM_MODEL_MODULES = (
     "device_type", "device", "device_log", "agency", "agency_type", "billing", "payment_method", "subscription",
     "pricing_plan", "invoice", "contract", "provision_log", "store_sync_status", "store_entitlement",
     "license_device_link", "license_email_log", "system_settings", "system_settings_audit", "master_group",
-    "store_location", "business_contact", "common_code",
+    "store_location", "business_contact", "common_code", "merchant_feature",
 )
 
 
@@ -727,7 +727,14 @@ def init_platform_db(*, allow_destructive: bool = False) -> None:
     migrate_master_scopes(platform_engine)
     from backend.services.paths import AwsumPathResolver, resource_storage_path
     backup_path = resource_storage_path(AwsumPathResolver("PLATFORM").get_data_path("audit"))
+    from backend.database.merchant_feature_migration import merchant_feature_table_exists, seed_new_merchant_feature_table
+    merchant_feature_existed = merchant_feature_table_exists(platform_engine)
+    # STEP 2-1 MD owner (Platform / Merchant) + per-owner barcode index: one transaction, before the generic step.
+    from backend.database.md_owner_scope_migration import migrate_md_owner_scope
+    migrate_md_owner_scope(platform_engine)
     safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
+    # Merchant Feature Entitlement: initial rows from current Store usage, only in the run that creates the table.
+    seed_new_merchant_feature_table(platform_engine, merchant_feature_existed)
     from backend.database.md_detail_migration import migrate_md_details
     migrate_md_details(platform_engine)
     from backend.database.md_barcode_unique_migration import migrate_md_barcode_unique

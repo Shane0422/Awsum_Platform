@@ -25,6 +25,7 @@ from backend.services.app_navigation import resolve_app_scope
 from backend.services.branding import resolve_branding
 from backend.services.store_item_features import item_features, without_disabled_item_features
 from backend.services.store_locations import location_management_enabled
+from backend.services.features import entitlement_exempt
 from backend.models_admin.store import Store
 from backend.models_admin.merchant import Merchant
 from backend.models_admin.store_location import StoreLocation, StoreMdLocation
@@ -49,7 +50,12 @@ RECORD_TITLES = {"location": "Location", "common_code": "Code"}
 # keeps redirecting so bookmarks still work.
 PAGE_REDIRECTS = {"shelf-location": "location-master", "color": "common-maintenance?group=COLOR"}
 ENTITY_TO_SLUG = {entity: slug for slug, (entity, _title) in PAGES.items()}
-PLATFORM_ONLY_ENTITIES = {"md": "MD Master", "item_kind": "Item Kind", "common_code": "Common Maintenance"}
+PLATFORM_ONLY_ENTITIES = {"item_kind": "Item Kind"}
+# Merchant Master Data that a Store login inherits and views only (the Merchant manages it). Server enforced:
+# every write (MD Detail, MD image and barcode writes included) is refused with 403.
+STORE_VIEW_ONLY_ENTITIES = {"common_code": "Common Maintenance", "md": "MD Master"}
+STORE_VIEW_ONLY_MESSAGE = "Managed by your Merchant. Store logins can view it only."
+READ_METHODS = frozenset({"GET", "HEAD"})
 # System Masters managed only by Platform Super Admin (screen, list, export and every write).
 # Other Platform Admins still read active Item Kinds through /options to select them on MD Master.
 SUPER_ADMIN_ENTITIES = {"item_kind": "Item Kind"}
@@ -72,17 +78,43 @@ def _admin(request: Request, db: Session):
     return user
 
 
-def _can_view_cost(db: Session, user) -> bool:
-    # Cost is restricted to Super Admin. Change this single rule to widen or narrow access.
-    return bool(_is_super_admin(db, user))
+def _initialize_merchant_common(request: Request, db: Session, user) -> None:
+    """First Merchant-login visit: copy the Platform Common defaults once (tb_merchant_common_init decides).
+    Never for Platform or a Store login (a Store only views its Merchant's codes)."""
+    scope = getattr(request.state, "app_scope", None)
+    if scope is not None and scope.context == "MERCHANT":
+        svc.initialize_merchant_common_codes(db, scope.merchant_id, user.i_platform_user_id)
+
+
+def _can_view_cost(request: Request, db: Session, user) -> bool:
+    """The single Cost rule. Platform: Super Admin only. Merchant login (Merchant Admin, the only permitted
+    Merchant role): its own MD Cost. Store login: never (it views its Merchant's MD without Cost)."""
+    scope = getattr(request.state, "app_scope", None)
+    if scope is None:
+        return bool(_is_super_admin(db, user))
+    return scope.context == "MERCHANT" and scope.permitted
 
 
 def _item_features(request: Request, db: Session, user) -> dict:
-    # Platform Admin / Merchant Portal: every MD field. Store login: its own Store Options > Item Features.
+    """MD Item Features in effect (STEP 3-3C: Common Feature Resolver with the login's saved layers).
+    Platform Admin: every MD field. Merchant login: its Merchant level (contract + Feature Entitlement). Store login:
+    + its own Store Options and Status. Unreadable layers: every Item Feature OFF (fail-closed; saved values kept)."""
     scope = getattr(request.state, "app_scope", None)
-    if scope is None or scope.context != "STORE":
+    if scope is None:
         return item_features()
-    return item_features(db.get(Store, user.i_store_id) or Store())
+    if scope.feature_snapshot is None:
+        return {key: False for key in item_features()}
+    store = (db.get(Store, user.i_store_id) or Store()) if scope.context == "STORE" else None
+    return item_features(store, scope.feature_snapshot)
+
+
+LOCATION_OFF_MESSAGE = "Use Location Management is not available for this login (Business Options / Store Options)."
+
+
+def _location_management_on(request: Request) -> bool:
+    """Use Location Management for this request: Platform Admin always; Merchant / Store login from its AppScope."""
+    scope = getattr(request.state, "app_scope", None)
+    return scope is None or bool(scope.location_management)
 
 
 LOCATION_PAYLOAD_KEYS = ("sales_location", "warehouse_location")
@@ -92,9 +124,8 @@ def _md_payload(entity: str, payload: dict, request: Request, db: Session, user)
     # OFF features are ignored (saved values kept), never cleared. Permission checks are unchanged.
     if entity == "md":
         payload = without_disabled_item_features(payload, _item_features(request, db, user))
-    # Common recommended positions: a Store login with Use Location Management OFF never changes them.
-    scope = getattr(request.state, "app_scope", None)
-    if entity in ("md", "category3") and scope is not None and scope.context == "STORE"             and not location_management_enabled(db.get(Store, user.i_store_id)):
+    # Common recommended positions: a login without Use Location Management never changes them (saved values kept).
+    if entity in ("md", "category3") and not _location_management_on(request):
         payload = {key: value for key, value in payload.items() if key not in LOCATION_PAYLOAD_KEYS}
     return payload
 
@@ -105,14 +136,17 @@ def _md_payload(entity: str, payload: dict, request: Request, db: Session, user)
 def _authorized_store_id(request: Request, db: Session, user, requested: int | None) -> int:
     """The Store whose Location data this request may use; checked on the server for every scope.
 
-    Platform: any existing Store. Merchant: only its own Stores. Store login: only its own Store, and only
-    while its Use Location Management option is ON (saved data is kept while OFF).
+    Platform: any existing Store. Merchant: only its own Stores; an Inactive one is read-only (common Store Status
+    rule, AppScope.require_store_access). Store login: only its own Store, and only while its Use Location
+    Management option is ON (saved data is kept while OFF).
     """
     scope = getattr(request.state, "app_scope", None)
+    if not _location_management_on(request):  # Merchant level or Store policy (STEP 3-3C); Location data is kept
+        raise HTTPException(403, LOCATION_OFF_MESSAGE)
     if scope is not None and scope.context == "STORE":
         store = db.get(Store, user.i_store_id)
-        if store is None or not location_management_enabled(store):
-            raise HTTPException(403, "Use Location Management is off for this Store.")
+        if store is None:
+            raise HTTPException(403, LOCATION_OFF_MESSAGE)
         if requested is not None and requested != store.i_store_id:
             raise HTTPException(403, "A Store login can only use its own Store.")
         return store.i_store_id
@@ -123,6 +157,8 @@ def _authorized_store_id(request: Request, db: Session, user, requested: int | N
         raise HTTPException(404, "Store not found.")
     if scope is not None and store.i_merchant_id != scope.merchant_id:
         raise HTTPException(403, "This Store does not belong to your Merchant.")
+    if scope is not None:
+        scope.require_store_access(store, request.method)
     return store.i_store_id
 
 
@@ -141,14 +177,19 @@ def _group_scope(entity: str, db: Session, group: str | None) -> str | None:
 
 
 def _store_choices(request: Request, db: Session, user) -> list[dict]:
-    """Stores offered by the Store selector: active ones, plus inactive ones that already have Location data."""
+    """Stores offered by the Store selector.
+
+    Platform: active ones, plus inactive ones that already have Location data. Merchant: every own Store, Inactive
+    ones too (view only, read_only flag from the common Store Status rule). Store login: its own Store.
+    """
     scope = getattr(request.state, "app_scope", None)
+    cache: dict = {}
     query = db.query(Store, Merchant.c_merchant_name).outerjoin(Merchant, Merchant.i_merchant_id == Store.i_merchant_id)
     if scope is not None and scope.context == "STORE":
         query = query.filter(Store.i_store_id == user.i_store_id)
+    elif scope is not None:
+        query = query.filter(Store.i_merchant_id == scope.merchant_id)
     else:
-        if scope is not None:
-            query = query.filter(Store.i_merchant_id == scope.merchant_id)
         has_data = or_(
             db.query(StoreLocation.i_location_id).filter(StoreLocation.i_store_id == Store.i_store_id).exists(),
             db.query(StoreMdLocation.i_store_md_location_id).filter(StoreMdLocation.i_store_id == Store.i_store_id).exists(),
@@ -156,9 +197,26 @@ def _store_choices(request: Request, db: Session, user) -> list[dict]:
         query = query.filter(or_(Store.c_status == "active", has_data))
     return [
         {"id": store.i_store_id, "code": store.c_store_code, "name": store.c_store_name, "merchant_name": merchant_name,
-         "active": store.c_status == "active", "location_management": location_management_enabled(store)}
+         "active": store.c_status == "active", "location_management": _store_location_flag(scope, store, db, cache),
+         **(scope.store_status_info(store) if scope is not None else {"read_only": False, "read_only_message": None})}
         for store, merchant_name in query.order_by(Merchant.c_merchant_name, Store.c_store_name, Store.i_store_id)
     ]
+
+
+def _store_location_flag(scope, store, db: Session, cache: dict) -> bool:
+    """Store selector flag: Use Location Management in effect for that Store (Common Feature Resolver, full policy).
+    Merchant / Store login: its request snapshot. Platform Admin: each Merchant's saved layers (read once per Merchant;
+    unreadable = OFF). Informational only: Platform Admin still manages every Store's Locations."""
+    if scope is not None:
+        return scope.feature_on("location_management", store)
+    from backend.services.features import FeatureCheckUnavailable, load_feature_snapshot
+    key = "admin" if entitlement_exempt(store) else store.i_merchant_id
+    if key not in cache:
+        try:
+            cache[key] = load_feature_snapshot(db, store=store)
+        except FeatureCheckUnavailable:
+            cache[key] = None
+    return cache[key] is not None and location_management_enabled(store, cache[key])
 
 
 def _fail(exc: Exception) -> JSONResponse:
@@ -176,6 +234,13 @@ def _entity(entity: str, request: Request | None = None, db: Session | None = No
         raise HTTPException(status_code=404, detail="Unknown master type.")
     if request is not None and getattr(request.state, "master_merchant_id", None) is not None and entity in PLATFORM_ONLY_ENTITIES:
         raise HTTPException(403, f"{PLATFORM_ONLY_ENTITIES[entity]} is Platform-only.")
+    scope = getattr(request.state, "app_scope", None) if request is not None else None
+    if (scope is not None and scope.context == "STORE" and entity in STORE_VIEW_ONLY_ENTITIES
+            and str(getattr(request, "method", "GET")).upper() not in READ_METHODS):
+        raise HTTPException(403, f"{STORE_VIEW_ONLY_ENTITIES[entity]}: {STORE_VIEW_ONLY_MESSAGE}")
+    # STEP 3-3C: Location Master (page, list, CRUD, initialize, range, selector codes) needs Use Location Management.
+    if scope is not None and svc.entity_config(entity).get("store_scoped") and not scope.location_management:
+        raise HTTPException(403, LOCATION_OFF_MESSAGE)
     if entity in SUPER_ADMIN_ENTITIES and not (db is not None and user is not None and _is_super_admin(db, user)):
         raise HTTPException(403, f"{SUPER_ADMIN_ENTITIES[entity]} is managed by Platform Super Admin only.")
     return entity
@@ -231,15 +296,25 @@ def master_group_page(slug: str, request: Request, db: Session = Depends(get_db)
 def master_group_options(request: Request, db: Session = Depends(get_db)):
     user = _admin(request, db)
     scope = getattr(request.state, "app_scope", None)
-    return _set_no_cache_headers(JSONResponse({**svc.lookup_options(
-        db, _can_view_cost(db, user), merchant_id=request.state.master_merchant_id,
-    ), "item_features": _item_features(request, db, user),
+    _initialize_merchant_common(request, db, user)
+    options = svc.lookup_options(db, _can_view_cost(request, db, user), merchant_id=request.state.master_merchant_id)
+    if scope is not None and scope.context == "STORE":  # inherited Common Maintenance: view only (existing group flag)
+        for group in options["common_groups"]:
+            group.update(read_only=True, read_only_message=STORE_VIEW_ONLY_MESSAGE)
+    return _set_no_cache_headers(JSONResponse({**options, "item_features": _item_features(request, db, user),
         # Store selector for Store-scoped masters; a Store login is fixed to its own Store.
         "stores": _store_choices(request, db, user),
         "store_fixed": user.i_store_id if scope is not None and scope.context == "STORE" else None,
-        # Use Location Management: Platform / Merchant always; a Store login follows its own option.
-        "location_management": (location_management_enabled(db.get(Store, user.i_store_id))
-                                if scope is not None and scope.context == "STORE" else True)}))
+        # Use Location Management in effect (STEP 3-3C): Platform always; Merchant / Store login from its AppScope.
+        "location_management": _location_management_on(request),
+        # MD Master in this scope: Platform-only fields (Price Level P1-P3, Billing Cycle, License) and the
+        # Recommended Location exist on Platform MD only; the server ignores them for a Merchant MD anyway.
+        "md_platform_fields": request.state.master_merchant_id is None,
+        "md_recommended_location": request.state.master_merchant_id is None,
+        # Store login: inherited Merchant masters it can only view (the server refuses their writes); and MD Detail
+        # Cost is not shown to it.
+        "view_only_entities": sorted(STORE_VIEW_ONLY_ENTITIES) if scope is not None and scope.context == "STORE" else [],
+        "detail_cost": not (scope is not None and scope.context == "STORE")}))
 
 
 @router.get("/platform/api/master-group/{entity}")
@@ -253,17 +328,36 @@ def master_group_list(
     user = _admin(request, db)
     _entity(entity, request, db, user)
     scoped_store = _store_scope(entity, request, db, user, store_id)
+    group = _group_scope(entity, db, group)
+    scope = getattr(request.state, "app_scope", None)
+    if entity == "common_code":
+        _initialize_merchant_common(request, db, user)
     try:
         data = svc.list_items(
             db, entity, q=q, active=active, sort=sort, direction=direction, page=page, size=size,
-            can_cost=_can_view_cost(db, user),
+            can_cost=_can_view_cost(request, db, user),
             merchant_id=request.state.master_merchant_id,
-            store_id=scoped_store, group=_group_scope(entity, db, group),
+            store_id=scoped_store, group=group,
             location_area=location_area,  # Location Master: optional Area filter (two-column list)
         )
     except svc.FieldErrors as exc:
         return _fail(exc)
+    _mark_store_read_only(request, db, scoped_store, data["items"])
+    if entity in STORE_VIEW_ONLY_ENTITIES and scope is not None and scope.context == "STORE":
+        for item in data["items"]:  # rows open view-only (existing read_only row mode)
+            item.update(read_only=True, read_only_message=STORE_VIEW_ONLY_MESSAGE)
     return _set_no_cache_headers(JSONResponse(data))
+
+
+def _mark_store_read_only(request: Request, db: Session, store_id: int | None, items: list) -> None:
+    """Rows of a read-only (Inactive) Store open view-only on the screen: the existing read_only row mode."""
+    scope = getattr(request.state, "app_scope", None)
+    if store_id is None or scope is None:
+        return
+    info = scope.store_status_info(db.get(Store, store_id))
+    if info["read_only"]:
+        for item in items:
+            item.update(info)
 
 
 def _safe_cell(value: str) -> str:
@@ -286,7 +380,7 @@ def master_group_export(
     fmt = (format or "").lower()
     if fmt not in ("csv", "excel", "pdf"):
         raise HTTPException(status_code=400, detail="Unsupported export format.")
-    can_cost = _can_view_cost(db, user)  # Cost column is omitted entirely without permission
+    can_cost = _can_view_cost(request, db, user)  # Cost column is omitted entirely without permission
     headers, rows = svc.export_table(db, entity, q=q, active=active, sort=sort, direction=direction,
                                     can_cost=can_cost, merchant_id=request.state.master_merchant_id,
                                     store_id=scoped_store, group=group)
@@ -334,7 +428,7 @@ def master_group_create(entity: str, payload: dict, request: Request, db: Sessio
     scoped_store = _store_scope(entity, request, db, user, store_id)
     try:
         item = svc.create_item(db, entity, _md_payload(entity, payload, request, db, user), user.i_platform_user_id,
-                               _can_view_cost(db, user), merchant_id=request.state.master_merchant_id,
+                               _can_view_cost(request, db, user), merchant_id=request.state.master_merchant_id,
                                store_id=scoped_store, group=group)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
@@ -343,15 +437,20 @@ def master_group_create(entity: str, payload: dict, request: Request, db: Sessio
 
 
 @router.post("/platform/api/master-group/md/with-image")
+@router.post("/merchant/api/master-group/md/with-image")
+@router.post("/store/api/master-group/md/with-image")
 def md_create_with_image(
     request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
     remove_image: bool = Form(False), db: Session = Depends(get_db),
 ):
     user = _admin(request, db)
     _validate_origin(request)
+    _entity("md", request, db, user)  # Store login: 403 (view only)
     values, data = image_mutation_form(payload, remove_image, image)
     try:
-        item = svc.create_item(db, "md", values, user.i_platform_user_id, _can_view_cost(db, user), image_data=data)
+        item = svc.create_item(db, "md", _md_payload("md", values, request, db, user), user.i_platform_user_id,
+                               _can_view_cost(request, db, user), image_data=data,
+                               merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -359,16 +458,20 @@ def md_create_with_image(
 
 
 @router.put("/platform/api/master-group/md/{item_id}/with-image")
+@router.put("/merchant/api/master-group/md/{item_id}/with-image")
+@router.put("/store/api/master-group/md/{item_id}/with-image")
 def md_update_with_image(
     item_id: int, request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
     remove_image: bool = Form(False), db: Session = Depends(get_db),
 ):
     user = _admin(request, db)
     _validate_origin(request)
+    _entity("md", request, db, user)
     values, data = image_mutation_form(payload, remove_image, image)
     try:
-        item = svc.update_item(db, "md", item_id, values, user.i_platform_user_id,
-                               _can_view_cost(db, user), image_data=data, remove_image=remove_image)
+        item = svc.update_item(db, "md", item_id, _md_payload("md", values, request, db, user), user.i_platform_user_id,
+                               _can_view_cost(request, db, user), image_data=data, remove_image=remove_image,
+                               merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -376,30 +479,43 @@ def md_update_with_image(
 
 
 @router.get("/platform/api/master-group/md/barcode-check")
+@router.get("/merchant/api/master-group/md/barcode-check")
 def md_barcode_check(request: Request, barcode: str = "", md_id: int | None = None, db: Session = Depends(get_db)):
-    """Read-only: is this barcode free for the MD's Default Detail? Saving still re-checks on the server."""
+    """Read-only: is this barcode free for the MD's Default Detail within the scope's owner (Platform or this
+    Merchant)? Saving still re-checks on the server. No Store route: a Store login never edits MD."""
     _admin(request, db)
     _entity("md", request)
-    return _set_no_cache_headers(JSONResponse(svc.check_default_barcode(db, md_id, barcode)))
+    return _set_no_cache_headers(JSONResponse(
+        svc.check_default_barcode(db, md_id, barcode, merchant_id=request.state.master_merchant_id)))
 
 
 @router.get("/platform/api/master-group/md/{item_id}/details")
+@router.get("/merchant/api/master-group/md/{item_id}/details")
+@router.get("/store/api/master-group/md/{item_id}/details")
 def md_detail_list(item_id: int, request: Request, db: Session = Depends(get_db)):
     _admin(request, db)
     _entity("md", request)
+    scope = getattr(request.state, "app_scope", None)
     try:
-        return _set_no_cache_headers(JSONResponse({"items": svc.list_md_details(db, item_id)}))
+        items = svc.list_md_details(db, item_id, merchant_id=request.state.master_merchant_id)
     except svc.NotFound as exc:
         return _fail(exc)
+    if scope is not None and scope.context == "STORE":  # a Store login never receives MD Cost
+        for item in items:
+            item.pop("cost", None)
+    return _set_no_cache_headers(JSONResponse({"items": items}))
 
 
 @router.post("/platform/api/master-group/md/{item_id}/details")
+@router.post("/merchant/api/master-group/md/{item_id}/details")
+@router.post("/store/api/master-group/md/{item_id}/details")
 def md_detail_create(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
     user = _admin(request, db)
     _validate_origin(request)
     _entity("md", request)
     try:
-        item = svc.create_md_detail(db, item_id, _md_payload("md", payload, request, db, user), user.i_platform_user_id)
+        item = svc.create_md_detail(db, item_id, _md_payload("md", payload, request, db, user), user.i_platform_user_id,
+                                    merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -407,6 +523,8 @@ def md_detail_create(item_id: int, payload: dict, request: Request, db: Session 
 
 
 @router.put("/platform/api/master-group/md/{item_id}/details/{detail_id}")
+@router.put("/merchant/api/master-group/md/{item_id}/details/{detail_id}")
+@router.put("/store/api/master-group/md/{item_id}/details/{detail_id}")
 def md_detail_update(
     item_id: int, detail_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
 ):
@@ -415,7 +533,7 @@ def md_detail_update(
     _entity("md", request)
     try:
         item = svc.update_md_detail(db, item_id, detail_id, _md_payload("md", payload, request, db, user),
-                                    user.i_platform_user_id)
+                                    user.i_platform_user_id, merchant_id=request.state.master_merchant_id)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -423,12 +541,14 @@ def md_detail_update(
 
 
 @router.delete("/platform/api/master-group/md/{item_id}/details/{detail_id}")
+@router.delete("/merchant/api/master-group/md/{item_id}/details/{detail_id}")
+@router.delete("/store/api/master-group/md/{item_id}/details/{detail_id}")
 def md_detail_delete(item_id: int, detail_id: int, request: Request, db: Session = Depends(get_db)):
     _admin(request, db)
     _validate_origin(request)
     _entity("md", request)
     try:
-        svc.delete_md_detail(db, item_id, detail_id)
+        svc.delete_md_detail(db, item_id, detail_id, merchant_id=request.state.master_merchant_id)
     except (svc.Conflict, svc.NotFound) as exc:
         db.rollback()
         return _fail(exc)
@@ -549,11 +669,11 @@ def master_group_update(entity: str, item_id: int, payload: dict, request: Reque
     _entity(entity, request, db, user)
     scoped_store = _store_scope(entity, request, db, user, store_id)
     if payload.get("apply_inventory_to_md") and request.state.master_merchant_id is not None:
-        # MD Master is Platform-only: a Merchant / Store scope can never bulk-change MD items.
+        # Category III "Apply to all MD Master" stays Platform-only (STEP 2): a Merchant / Store scope never bulk-changes MD.
         raise HTTPException(403, "Applying to MD Master is available only in Platform Admin.")
     try:
         item = svc.update_item(db, entity, item_id, _md_payload(entity, payload, request, db, user),
-                               user.i_platform_user_id, _can_view_cost(db, user),
+                               user.i_platform_user_id, _can_view_cost(request, db, user),
                                merchant_id=request.state.master_merchant_id, store_id=scoped_store, group=group)
     except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
         db.rollback()

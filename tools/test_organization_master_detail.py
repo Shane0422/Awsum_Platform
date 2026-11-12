@@ -310,6 +310,189 @@ const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await t
 """
         self.run_browser(script)
 
+    def test_merchant_code_is_shown_read_only_with_copy(self):
+        script = f"const page={json.dumps(module_page('merchant')).replace('</', '<' + chr(92) + '/')};\n" + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=(ms=40)=>new Promise(resolve=>setTimeout(resolve,ms));
+const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await tick();}throw Error('Timed out: '+label);};
+(async()=>{
+  const frame=document.createElement('iframe');frame.style.cssText='border:0;width:1440px;height:900px';frame.srcdoc=page;
+  const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),field=name=>find('field_'+name);
+  const body=find('masterListBody');
+  await wait(()=>body.querySelector('tr[data-row-select="1"]'),'merchant list');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>!find('masterEditModal').hidden&&field('merchant_name')?.value==='Alpha Mart','selected merchant');
+  const code=field('merchant_code'),copy=find('field_merchant_code_copy');
+  // OVERVIEW: Merchant Code read-only with Copy (common field option); the internal Merchant ID stays hidden.
+  assert(code.getClientRects().length>0&&code.readOnly&&code.value==='CLT0001','Merchant Code shown read-only: '+code.value);
+  assert(code.closest('[class*="col-"]').querySelector('label').textContent.trim()==='Merchant Code','label');
+  assert(copy&&copy.textContent==='Copy'&&code.parentElement===copy.parentElement&&code.parentElement.classList.contains('input-group'),'Copy button');
+  assert(field('id').closest('.d-none'),'Merchant ID stays internal (hidden)');
+  // Layout: Merchant Code | Primary Agency share the first row; the other fields keep their order.
+  const top=name=>Math.round(field(name).getBoundingClientRect().top);
+  assert(top('merchant_code')===top('primary_agency_id')&&top('merchant_name')===top('business_type')&&top('merchant_code')<top('merchant_name'),'2-column layout');
+  // Headless Chromium has no clipboard permission: stub it (and never block on the prompt fallback).
+  const copied=[];win.prompt=()=>null;
+  Object.defineProperty(win.navigator,'clipboard',{configurable:true,value:{writeText:async(v)=>{copied.push(v);}}});
+  copy.click();
+  await wait(()=>copy.textContent==='Copied','copied');
+  assert(copied.join()==='CLT0001'||copied.length===0,'copied value: '+copied.join());
+  // Saving never sends the code (server-generated, immutable).
+  field('merchant_name').value='Alpha Market';field('merchant_name').dispatchEvent(new win.Event('input',{bubbles:true}));
+  const before=win.requests.length;
+  find('btnModalSave').click();
+  await wait(()=>win.requests.slice(before).some(r=>r.method==='PUT'),'save');
+  const put=win.requests.slice(before).find(r=>r.method==='PUT');
+  const sent=put.body instanceof win.FormData?JSON.parse(put.body.get('payload')):JSON.parse(put.body);
+  assert(!('merchant_code' in sent)&&!('id' in sent),'code / ID not sent: '+Object.keys(sent).join(','));
+  // Create form: empty code with the placeholder; Copy explains it is generated on save.
+  find('btnListAdd').click();
+  await wait(()=>find('btnModalSave').textContent.includes('Create Merchant'),'create form');
+  assert(field('merchant_code').value===''&&field('merchant_code').placeholder.startsWith('Generated automatically'),'create: placeholder');
+  find('field_merchant_code_copy').click();
+  await wait(()=>(find('awsumToastRegion')||{textContent:''}).textContent.includes('Merchant Code is generated when the record is saved.'),'create: copy explains');
+  frame.remove();
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
+"""
+        self.run_browser(script)
+
+    def test_merchant_business_options_tab_saves_with_save_changes(self):
+        # Server shape of /platform/merchants: business_options = registry rows with enabled / saved (like the API).
+        bo_mock = r"""<script>(()=>{const base=window.fetch;
+const defs=[['customer','Customer Management',true],['loyalty','Loyalty / Points',true],['gift_card','Gift Card',false],
+  ['time_attendance','Time & Attendance',true],['inventory','Inventory Management',true],
+  ['location_management','Use Location Management',true],['accounting','Accounting',true]];
+const saved={1:{customer:true},2:{loyalty:true}};
+const rowsFor=id=>defs.map(([key,label,available])=>({key,label,tier:'ADDON',available,
+  enabled:available&&!!(saved[id]||{})[key],saved:key in (saved[id]||{})}));
+window.fetch=async(path,options={})=>{const url=new URL(String(path),'http://127.0.0.1'),method=(options.method||'GET').toUpperCase();
+  const put=/^\/platform\/merchant\/(\d+)(?:\/with-image)?$/.exec(url.pathname);
+  if(put&&method==='PUT'){const body=options.body instanceof FormData?JSON.parse(options.body.get('payload')||'{}'):JSON.parse(options.body||'{}');
+    Object.entries(body.business_options||{}).forEach(([k,v])=>{const cur=(saved[put[1]]||{})[k]??false;if(cur!==v)(saved[put[1]]=saved[put[1]]||{})[k]=v;});
+    return base(path,options);}
+  const res=await base(path,options);
+  if(url.pathname==='/platform/merchants'&&method==='GET'){const list=await res.json();
+    return new Response(JSON.stringify(list.map(m=>({...m,business_options:rowsFor(m.id)}))),{headers:{'Content-Type':'application/json'}});}
+  return res;};})();</script></head>"""
+        page = module_page("merchant").replace("</head>", bo_mock, 1)
+        defs = [{"key": k, "label": l, "tier": "ADDON", "available": a} for k, l, a in (
+            ("customer", "Customer Management", True), ("loyalty", "Loyalty / Points", True), ("gift_card", "Gift Card", False),
+            ("time_attendance", "Time & Attendance", True), ("inventory", "Inventory Management", True),
+            ("location_management", "Use Location Management", True), ("accounting", "Accounting", True))]
+        page = page.replace('"businessOptions": []', '"businessOptions": ' + json.dumps(defs), 1)
+        script = f"const page={json.dumps(page).replace('</', '<' + chr(92) + '/')};\n" + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=(ms=40)=>new Promise(resolve=>setTimeout(resolve,ms));
+const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await tick();}throw Error('Timed out: '+label);};
+(async()=>{
+  const frame=document.createElement('iframe');frame.style.cssText='border:0;width:1440px;height:900px';frame.srcdoc=page;
+  const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),field=name=>find('field_'+name);
+  const body=find('masterListBody');
+  await wait(()=>body.querySelector('tr[data-row-select="1"]'),'merchant list');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>!find('masterEditModal').hidden&&field('merchant_name')?.value==='Alpha Mart','selected merchant');
+  // Tab order, one row.
+  const tabs=[...find('masterEditModal').querySelectorAll('.merchant-detail-tabs .merchant-tab-btn')];
+  assert(tabs.map(t=>t.textContent).join('|')==='Overview|Contact|Address|Business Options|Feature Entitlements|Stores|Notes','tab order: '+tabs.map(t=>t.textContent).join('|'));
+  assert(new Set(tabs.map(t=>Math.round(t.getBoundingClientRect().top))).size===1,'one tab row');
+  tabs[3].click();await tick();
+  const keys=['customer','loyalty','gift_card','time_attendance','inventory','location_management','accounting'];
+  const selects=keys.map(k=>field('bo_'+k));
+  // The Store form's Off / On select (same Common field type, form-select), 7 fields visible.
+  assert(selects.every(s=>s&&s.tagName==='SELECT'&&s.classList.contains('form-select')&&s.getClientRects().length>0),'Store-style selects');
+  assert(!find('masterEditModal').querySelector('[data-tab-panel="business_options"] [data-awsum-option-group]'),'no option group on BUSINESS OPTIONS');
+  const labels=selects.map(s=>s.closest('[class*="col-"]').querySelector('label').textContent.trim());
+  assert(labels.join('|')==='Customer Management|Loyalty / Points|Gift Card|Time & Attendance|Inventory Management|Use Location Management|Accounting','registry labels: '+labels.join('|'));
+  // Two-column grid like the Store form: pairs share a row at 1440px.
+  const tops=selects.map(s=>Math.round(s.getBoundingClientRect().top)),lefts=selects.map(s=>Math.round(s.getBoundingClientRect().left));
+  assert(tops[0]===tops[1]&&tops[2]===tops[3]&&tops[1]<tops[2]&&lefts[0]<lefts[1]&&lefts[0]===lefts[2],'2-column grid: '+tops.join(',')+' / '+lefts.join(','));
+  assert([...selects[0].options].map(o=>o.value+':'+o.textContent).join(',')==='off:Off,on:On','Off / On options');
+  assert(field('bo_customer').value==='on'&&field('bo_inventory').value==='off'&&field('bo_loyalty').value==='off','saved On / default Off');
+  const gift=field('bo_gift_card');
+  assert(gift.disabled&&gift.value==='off'&&gift.options[gift.selectedIndex].textContent==='Coming soon','Gift Card: Coming soon, disabled');
+  // Change only one Business Option -> Save Changes sends business_options (no Gift Card) through the existing Merchant save.
+  field('bo_inventory').value='on';field('bo_inventory').dispatchEvent(new win.Event('change',{bubbles:true}));await tick();
+  const before=win.requests.length;
+  find('btnModalSave').click();
+  await wait(()=>win.requests.slice(before).some(r=>r.method==='PUT'&&r.path.startsWith('/platform/merchant/1')),'Save Changes');
+  const put=win.requests.slice(before).find(r=>r.method==='PUT'&&r.path.startsWith('/platform/merchant/1'));
+  const sent=put.body instanceof win.FormData?JSON.parse(put.body.get('payload')):JSON.parse(put.body);
+  assert(JSON.stringify(sent.business_options)==='{"customer":true,"loyalty":false,"time_attendance":false,"inventory":true,"location_management":false,"accounting":false}','payload: '+JSON.stringify(sent.business_options));
+  assert(!Object.keys(sent).some(k=>k.startsWith('bo_')),'no raw option fields in the payload');
+  // Reload the record: the saved state comes back from the list.
+  await wait(()=>win.requests.slice(before).filter(r=>r.path==='/platform/merchants').length>0,'list reloaded');
+  body.querySelector('tr[data-row-select="2"]').click();
+  await wait(()=>field('merchant_name').value==='Beta Deli','other merchant');
+  assert(field('bo_inventory').value==='off'&&field('bo_loyalty').value==='on','other Merchant unaffected');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>field('merchant_name').value==='Alpha Mart'&&field('bo_inventory').value==='on','saved value after reload');
+  // Add Merchant: registry defaults (all Off), Gift Card still disabled.
+  find('btnListAdd').click();
+  await wait(()=>field('merchant_name').value===''&&find('btnModalSave').textContent.includes('Create Merchant'),'create form');
+  assert(keys.every(k=>field('bo_'+k).value==='off')&&field('bo_gift_card').disabled&&!field('bo_customer').disabled,'new Merchant: registry defaults');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>field('merchant_name').value==='Alpha Mart','back to Alpha Mart');
+  // Narrow screen: one tab row, scrolls sideways; the page itself does not.
+  frame.style.width='390px';await tick(120);
+  const bar=find('masterEditModal').querySelector('.merchant-detail-tabs');
+  assert(new Set(tabs.map(t=>Math.round(t.getBoundingClientRect().top))).size===1&&bar.scrollWidth>bar.clientWidth
+    &&win.getComputedStyle(bar).overflowX==='auto','390px: one row, horizontal tab scroll');
+  assert(doc.documentElement.scrollWidth<=390+1,'no page overflow at 390px');
+  frame.remove();
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
+"""
+        self.run_browser(script)
+
+    def test_store_option_off_keeps_scope_and_on_restores_it(self):
+        # One Store with Customer ON (Scope MERCHANT) and Loyalty OFF with a saved Scope MERCHANT.
+        store_mock = r"""<script>(()=>{const base=window.fetch;
+const stores=[{id:7,store_code:'ST0007',store_name:'Scope Store',merchant_id:1,merchant_name:'Alpha Mart',installed_by_agency_id:10,
+  agency_name:'North Agency',business_type:'Retail',status:'active',opt_customer:'on',customer_scope:'MERCHANT',
+  opt_loyalty:'off',loyalty_scope:'MERCHANT',country:'United States',created_at:'2026-01-01'}];
+window.fetch=async(path,options={})=>{const url=new URL(String(path),'http://127.0.0.1');
+  if(url.pathname==='/platform/stores'){requests.push({path:url.pathname,method:'GET'});
+    return new Response(JSON.stringify({items:stores,total:1,total_pages:1,page:1,page_size:20}),{headers:{'Content-Type':'application/json'}});}
+  return base(path,options);};})();</script></head>"""
+        page = module_page("store").replace("</head>", store_mock, 1)
+        script = f"const page={json.dumps(page).replace('</', '<' + chr(92) + '/')};\n" + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=(ms=40)=>new Promise(resolve=>setTimeout(resolve,ms));
+const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await tick();}throw Error('Timed out: '+label);};
+(async()=>{
+  const frame=document.createElement('iframe');frame.style.cssText='border:0;width:1440px;height:900px';frame.srcdoc=page;
+  const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),field=name=>find('field_'+name);
+  await wait(()=>find('masterListBody').querySelector('tr[data-item-id="7"]'),'store list');
+  find('masterListBody').querySelector('tr[data-item-id="7"]').click();
+  await wait(()=>field('customer_scope')&&field('opt_customer').value==='on','store form');
+  const set=(name,value)=>{field(name).value=value;field(name).dispatchEvent(new win.Event('change',{bubbles:true}));};
+  const st=key=>`${field('opt_'+key).value}|${field(key+'_scope').value}|${field(key+'_scope').disabled}`;
+  // Loaded: OFF shows the saved Scope disabled (no longer cleared); ON keeps its Scope enabled.
+  assert(st('customer')==='on|MERCHANT|false','Customer ON: '+st('customer'));
+  assert(st('loyalty')==='off|MERCHANT|true','Loyalty OFF keeps the saved Scope (disabled): '+st('loyalty'));
+  // OFF -> the Scope stays (disabled); ON again -> the same Scope.
+  set('opt_customer','off');
+  assert(st('customer')==='off|MERCHANT|true','OFF keeps MERCHANT: '+st('customer'));
+  set('opt_customer','on');
+  assert(st('customer')==='on|MERCHANT|false','ON restores MERCHANT: '+st('customer'));
+  set('opt_loyalty','on');
+  assert(st('loyalty')==='on|MERCHANT|false','Loyalty ON restores its saved Scope: '+st('loyalty'));
+  // ON without any saved Scope: STORE (unchanged).
+  set('opt_loyalty','off');field('loyalty_scope').value='';set('opt_loyalty','on');
+  assert(st('loyalty')==='on|STORE|false','no saved Scope -> STORE: '+st('loyalty'));
+  frame.remove();
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
+"""
+        self.run_browser(script)
+
 
 if __name__ == "__main__":
     unittest.main()

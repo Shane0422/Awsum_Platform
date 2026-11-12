@@ -43,7 +43,7 @@
     md: 'Sellable and billable items with their license and serial management rules.',
     item_kind: 'Super Admin System Master. Codes (IKC00001) are issued automatically; System Codes are fixed program logic keys.',
     location: 'Sales Floor and Warehouse Location Codes of the selected Store.',
-    common_code: 'Platform common codes by group. Select a group to manage its codes.',
+    common_code: 'Common codes of this scope by group (Platform and each Merchant keep their own). Select a group to manage its codes.',
   };
 
   const taxLabel = (tax) => tax ? `${tax.name} (${Number(tax.rate)}%)` : '';
@@ -241,7 +241,7 @@
   // Store has no Location and was never initialized). Asked once per Store per page; failures are left to the list.
   const initializedStores = new Set();
   async function ensureDefaultLocations() {
-    if (!twoAreaList || !state.storeId || initializedStores.has(state.storeId)) return;
+    if (!twoAreaList || !state.storeId || initializedStores.has(state.storeId) || storeReadOnly()) return;
     initializedStores.add(state.storeId);
     try {
       const result = await api('POST', scoped(`${BASE}/location/initialize`));
@@ -284,9 +284,19 @@
   // Store Options > Item Features (from /options). Platform / Merchant get every feature ON.
   // OFF only hides the field and leaves it out of the save payload; the saved value is kept.
   // 'location' = Business Options > Use Location Management (not an Item Feature): Platform / Merchant always on.
-  const featureOn = (feature) => (feature === 'location'
-    ? !(state.options && state.options.location_management === false)
-    : !(state.options && state.options.item_features && state.options.item_features[feature] === false));
+  // 'platform_md' = MD fields used only by Platform MD (Price Level P1-P3, Billing Cycle, License): off for a
+  // Merchant / Store scope (options.md_platform_fields). MD Recommended Location: off there too for now
+  // (options.md_recommended_location; the Merchant shared Location Master comes later). The server ignores both.
+  const featureOn = (feature) => {
+    const o = state.options;
+    if (feature === 'platform_md') return !(o && o.md_platform_fields === false);
+    if (feature === 'location') {
+      return !(o && o.location_management === false) && !(entity === 'md' && o && o.md_recommended_location === false);
+    }
+    return !(o && o.item_features && o.item_features[feature] === false);
+  };
+  // Store login: inherited Merchant masters it views only (options.view_only_entities; the server refuses writes).
+  const viewOnly = () => ((state.options && state.options.view_only_entities) || []).includes(entity);
   function applyItemFeatures(root) {
     root.querySelectorAll('[data-item-feature]').forEach((el) => {
       const off = !featureOn(el.dataset.itemFeature);
@@ -631,8 +641,8 @@
       + basePriceHtml(detailInput);
     // Description sits in the GENERAL tab after MD Detail and Options (same field; value/save unchanged).
     const description = field('description', 'Description', textarea('description'), { col: 'col-12' });
-    const license = field('billing_cycle', 'Billing Cycle', select('billing_cycle'), { required: true, col: 'col-md-4' })
-      + field('license_required', 'License Required', select('license_required'), { col: 'col-md-4' })
+    const license = field('billing_cycle', 'Billing Cycle', select('billing_cycle'), { required: true, col: 'col-md-4', feature: 'platform_md' })
+      + field('license_required', 'License Required', select('license_required'), { col: 'col-md-4', feature: 'platform_md' })
       + field('license_type', 'License Type', select('license_type'), { required: true, col: 'col-md-4' })
       + field('licenses_per_unit', 'Licenses per Unit', input('licenses_per_unit', 'number', 'min="1" step="1"'), { required: true, col: 'col-md-4' })
       + field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6' });
@@ -658,7 +668,7 @@
           <div class="alert alert-danger py-2 d-none" id="mgDetailMessage" role="alert"></div>
           <div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-2">
-              <thead><tr><th>Default</th><th>Barcode</th><th data-item-feature="color">Color</th><th>Unit</th><th>PK/Size</th><th>Size</th><th>Cost</th><th>Price</th><th data-item-feature="modifier">Modifier</th><th class="text-end">Actions</th></tr></thead>
+              <thead><tr><th>Default</th><th>Barcode</th><th data-item-feature="color">Color</th><th>Unit</th><th>PK/Size</th><th>Size</th>${detailCostOn() ? '<th>Cost</th>' : ''}<th>Price</th><th data-item-feature="modifier">Modifier</th><th class="text-end">Actions</th></tr></thead>
               <tbody id="mgDetailBody"><tr><td colspan="9" class="text-center text-muted">Save the MD Master before adding details.</td></tr></tbody>
             </table>
           </div>
@@ -685,22 +695,22 @@
             <li class="nav-item" role="presentation">
               <button class="nav-link active" id="mgMdTabGeneral" data-bs-toggle="tab" data-bs-target="#mgMdPaneGeneral" type="button" role="tab" aria-controls="mgMdPaneGeneral" aria-selected="true">GENERAL</button>
             </li>
-            <li class="nav-item" role="presentation">
+            <li class="nav-item" role="presentation" data-item-feature="platform_md">
               <button class="nav-link" id="mgMdTabOption1" data-bs-toggle="tab" data-bs-target="#mgMdPaneOption1" type="button" role="tab" aria-controls="mgMdPaneOption1" aria-selected="false">PRICE LEVEL</button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" id="mgMdTabOption2" data-bs-toggle="tab" data-bs-target="#mgMdPaneOption2" type="button" role="tab" aria-controls="mgMdPaneOption2" aria-selected="false">LICENSE</button>
+              <button class="nav-link" id="mgMdTabOption2" data-bs-toggle="tab" data-bs-target="#mgMdPaneOption2" type="button" role="tab" aria-controls="mgMdPaneOption2" aria-selected="false">${featureOn('platform_md') ? 'LICENSE' : 'SERIAL'}</button>
             </li>
           </ul>
           <div class="tab-content">
             <div class="tab-pane fade show active" id="mgMdPaneGeneral" role="tabpanel" aria-labelledby="mgMdTabGeneral" tabindex="0">
               <div class="row g-3">${details}${section('Options', options)}${section('Location', location, 'Recommended position for all Stores. Empty = Category III default. Stock is not affected.', 'id="mgLocSection" data-item-feature="location"')}${section('', outputs)}${section('', description)}</div>
             </div>
-            <div class="tab-pane fade" id="mgMdPaneOption1" role="tabpanel" aria-labelledby="mgMdTabOption1" tabindex="0">
+            <div class="tab-pane fade" id="mgMdPaneOption1" role="tabpanel" aria-labelledby="mgMdTabOption1" tabindex="0" data-item-feature="platform_md">
               <div class="row g-3">${section('Price Level', priceLevelsHtml(), 'USD &middot; all prices are before tax')}</div>
             </div>
             <div class="tab-pane fade" id="mgMdPaneOption2" role="tabpanel" aria-labelledby="mgMdTabOption2" tabindex="0">
-              <div class="row g-3">${section('License', license)}</div>
+              <div class="row g-3">${section(featureOn('platform_md') ? 'License' : 'Serial Number', license)}</div>
             </div>
           </div>
         </div>`;
@@ -811,7 +821,7 @@
   }
   function refreshLicenseFields() {
     if (entity !== 'md') return;
-    const on = f('license_required').value === 'true';
+    const on = f('license_required').value === 'true' && featureOn('platform_md'); // Merchant MD: never shown
     ['license_type', 'licenses_per_unit'].forEach((n) => {
       f(n).disabled = !on;
       f(n).closest('[data-field-wrap]').classList.toggle('d-none', !on);
@@ -971,13 +981,28 @@
     if (!split) return;
     const row = state.editing;
     $('mgMdToggle').classList.toggle('d-none', !row || !!row.read_only || (!!row.active_locked && row.active));
-    $('mgMdDelete').classList.toggle('d-none', !row || !!row.system || !!row.read_only);
+    // Common Maintenance: Delete stays visible for a selected code; a protected (EA) or in-use code shows it disabled
+    // with the reason (the server refuses both with 409 anyway). Other screens keep hiding it for System rows.
+    const commonCode = entity === 'common_code';
+    $('mgMdDelete').classList.toggle('d-none', !row || !!row.read_only || (!commonCode && !!row.system));
+    if (commonCode) {
+      const reason = deleteBlockedReason(row);
+      $('mgMdDelete').disabled = !!reason;
+      $('mgMdDelete').title = reason;
+      $('mgMdDelete').setAttribute('aria-label', reason ? `Delete (not available: ${reason})` : 'Delete');
+    }
     if (row) $('mgMdToggle').textContent = row.active ? 'Deactivate' : 'Activate';
     // Page Header buttons follow the form state: nothing selected / new record / existing record.
     // A read-only Common Group (COLOR) has no record actions: the page stays in 'none'.
     if (pageActions) pageActions.setMode(row && !row.read_only ? 'edit' : (formOpen && !row ? 'create' : 'none'));
   }
   const article = (text) => (/^(md|[aeiou])/i.test(text) ? 'an' : 'a');
+  function deleteBlockedReason(row) {
+    if (!row) return '';
+    if (row.protected) return `${row.code} is a protected default code and cannot be deleted.`;
+    if (row.in_use) return `${row.code} is in use and cannot be deleted. Deactivate it instead.`;
+    return '';
+  }
   function resetMdForm() {
     discardImage();
     state.editing = null;
@@ -1031,7 +1056,7 @@
     if (row && row.read_only) { // read-only Common Group (COLOR): view only; the server refuses writes too
       $('mgFields').querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = true; });
       $('mgSave').disabled = true;
-      const message = (currentGroup() && currentGroup().read_only_message) || 'This group is read-only.';
+      const message = row.read_only_message || (currentGroup() && currentGroup().read_only_message) || 'This group is read-only.';
       $('mgFields').insertAdjacentHTML('afterbegin', `<div class="col-12"><div class="alert alert-info py-1 px-2 mb-0 small" id="mgReadOnlyNote">${esc(message)}</div></div>`);
     }
     clearErrors();
@@ -1041,6 +1066,7 @@
         idPrefix: 'mgImage', label: 'Item Image', previewSize: 120, fit: 'contain',
       });
       imageUploader.reset(row && row.image_url, !!(row && row.image_path));
+      if (row && row.read_only) $('mgImageUploader').querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
       loadMdDetails(row);
     }
     if (modal) modal.show();
@@ -1061,24 +1087,27 @@
   function renderMdDetails() {
     const body = $('mgDetailBody');
     if (!state.details.length) {
-      body.innerHTML = `<tr><td colspan="${8 + (featureOn('color') ? 1 : 0) + (featureOn('modifier') ? 1 : 0)}" class="text-center text-muted">${state.editing ? 'No details found.' : 'Save the MD Master before adding details.'}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${7 + (detailCostOn() ? 1 : 0) + (featureOn('color') ? 1 : 0) + (featureOn('modifier') ? 1 : 0)}" class="text-center text-muted">${state.editing ? 'No details found.' : 'Save the MD Master before adding details.'}</td></tr>`;
       return;
     }
+    const readOnly = !!(state.editing && state.editing.read_only);
     body.innerHTML = state.details.map((detail) => `<tr>
       <td>${detail.is_default ? '<span class="badge text-bg-primary">Default</span>' : ''}</td>
       <td>${esc(detail.barcode || '')}</td>${featureOn('color') ? `<td>${colorCell(detail.color_code_id)}</td>` : ''}<td>${esc(detail.unit || '')}</td><td>${esc(detail.pk_size || '')}</td>
-      <td>${esc(detail.size || '')}</td><td>${money(detail.cost)}</td><td>${money(detail.price)}</td>${featureOn('modifier') ? `<td>${esc(detail.modifier || '')}</td>` : ''}
-      <td class="text-end text-nowrap">
+      <td>${esc(detail.size || '')}</td>${detailCostOn() ? `<td>${money(detail.cost)}</td>` : ''}<td>${money(detail.price)}</td>${featureOn('modifier') ? `<td>${esc(detail.modifier || '')}</td>` : ''}
+      <td class="text-end text-nowrap">${readOnly ? '' : `
         <button type="button" class="btn btn-sm btn-outline-primary" data-detail-act="edit" data-id="${detail.id}">Edit</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" data-detail-act="delete" data-id="${detail.id}" ${detail.is_default ? 'disabled title="The Default Detail cannot be deleted."' : ''}>Delete</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-detail-act="delete" data-id="${detail.id}" ${detail.is_default ? 'disabled title="The Default Detail cannot be deleted."' : ''}>Delete</button>`}
       </td></tr>`).join('');
   }
+  // MD Detail Cost column: hidden for a Store login (options.detail_cost; the server never sends it there).
+  function detailCostOn() { return !(state.options && state.options.detail_cost === false); }
 
   async function loadMdDetails(row) {
     const token = ++detailLoadToken;
     state.details = [];
     state.mdLocations = null; // links of the previously opened MD must not show
-    $('mgDetailAdd').disabled = !row;
+    $('mgDetailAdd').disabled = !row || !!row.read_only;
     $('mgDetailEditor').classList.add('d-none');
     clearDetailMessage();
     renderMdDetails();
@@ -1441,6 +1470,10 @@
           syncMdActions();
         }
       } else if (act === 'delete') {
+        if (entity === 'common_code' && deleteBlockedReason(row)) {
+          showMessage(deleteBlockedReason(row), 'warning');
+          return;
+        }
         if (row.system) {
           showMessage(`${row.code} is a System Code and cannot be deleted. Deactivate it instead.`, 'warning');
           return;
@@ -1449,10 +1482,13 @@
           showMessage(`${row.code} is in use and cannot be deleted. Deactivate it instead.`, 'warning');
           return;
         }
-        if (entity === 'location') { // Common Confirm (other Master Group screens keep the browser confirm for now)
+        if (entity === 'location' || entity === 'common_code') { // Common Confirm (other screens keep the browser confirm for now)
           const result = await AwsumConfirm.show({
-            title: 'Delete Location', message: `Delete ${row.code}? This cannot be undone.`, variant: 'danger',
-            details: [['Location', row.code], ['Name', row.name || ''], ['Area', row.location_area_name || '']],
+            title: entity === 'location' ? 'Delete Location' : 'Delete Code',
+            message: `Delete ${row.code}? This cannot be undone.`, variant: 'danger',
+            details: entity === 'location'
+              ? [['Location', row.code], ['Name', row.name || ''], ['Area', row.location_area_name || '']]
+              : [['Group', state.group || ''], ['Code', row.code], ['Name', row.name || '']],
             okText: 'Delete',
           });
           if (!result.confirmed) return;
@@ -1642,6 +1678,10 @@
     $('mgBody').addEventListener('click', selectMdRow);
     $('mgBody').addEventListener('keydown', selectMdRow);
     try { await loadOptions(); } catch (err) { showMessage(err.message, 'danger'); }
+    if (viewOnly() && !groupScoped) { // Common Maintenance keeps its group rule (setupGroupSelect)
+      $('mgAddBtn').disabled = true;
+      $('mgAddBtn').title = 'Managed by your Merchant. Store logins can view it only.';
+    }
     if (storeScoped) setupStoreSelect();
     if (groupScoped) setupGroupSelect();
     await load();
@@ -1717,8 +1757,19 @@
     }
     syncStoreActions();
   }
+  // Inactive Store of a Merchant login (server flag read_only): view only. Platform Admin manages every Store.
+  const currentStore = () => ((state.options && state.options.stores) || []).find((store) => store.id === state.storeId);
+  const storeReadOnly = () => !!(currentStore() && currentStore().read_only);
   function syncStoreActions() {
-    $('mgAddBtn').disabled = !state.storeId;
+    const store = currentStore();
+    $('mgAddBtn').disabled = !state.storeId || storeReadOnly();
+    if ($('mgGuideAdd')) $('mgGuideAdd').disabled = storeReadOnly(); // empty-Store guide: same Add action
+    const note = $('mgStoreNote');
+    if (note) {
+      note.innerHTML = store && store.read_only
+        ? `<span class="mg-store-badge">Inactive</span><span>${esc(store.read_only_message || 'This Store is Inactive: view only.')}</span>` : '';
+      note.classList.toggle('d-none', !(store && store.read_only));
+    }
     if (!state.storeId) showMessage('Select a Store to manage its Locations.', 'info');
   }
 

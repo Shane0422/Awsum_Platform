@@ -31,6 +31,7 @@ from backend.models_admin.agency_type import AgencyType
 from backend.config.templates import templates, get_brand_context
 from backend.config.settings import APP_NAME
 from backend.routers.auth import get_platform_admin_session, _log_platform_forbidden
+from backend.services.merchant_features import business_option_defs
 
 # Platform admin store ID (fixed)
 ADMIN_STORE_ID = 1000001
@@ -296,6 +297,8 @@ def master_management(request: Request, module: str, db: Session = Depends(get_d
         "agencies": agencies,
         "agency_types": agency_types,
         "stores": stores,
+        # Merchant > BUSINESS OPTIONS rows (labels / order / Coming soon from the Common Feature Registry).
+        "business_option_defs": business_option_defs(),
         "pricing_plans": pricing_plans,
         "device_categories": device_categories,
         "device_types": device_types,

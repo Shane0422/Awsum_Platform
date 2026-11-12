@@ -20,17 +20,19 @@ from sqlalchemy.orm import Session
 
 from backend.models_admin.store import Store
 from backend.models_admin.store_location import LOCATION_AREAS, StoreLocation
+from backend.services.features import feature_enabled
 
 LOOKUP_MAX_SIZE = 100
 LOOKUP_STATUSES = ("active", "inactive", "")
 
 
-def location_management_enabled(store) -> bool:
+def location_management_enabled(store, entitlements=None) -> bool:
     """Store Options > Business Options > Use Location Management (independent of Inventory Management).
 
     Stored in tb_store.b_opt_use_shelf_location (kept from the earlier Shelf Location option); NULL = OFF.
+    Effective status from the Common Feature Registry (services.features); entitlements=None = LEGACY (all entitled).
     """
-    return bool(store is not None and store.b_opt_use_shelf_location)
+    return store is not None and feature_enabled("location_management", store, entitlements)
 
 
 def store_location_lookup(db: Session, store_id: int) -> list[dict]:

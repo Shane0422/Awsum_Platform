@@ -35,7 +35,8 @@ from backend.routers import system_settings
 from backend.routers import master_group
 from backend.routers import agency_portal
 from backend.services.reporting import GlobalReportMiddleware
-from backend.services.web_session_http import enforce_web_session, session_error_response
+from backend.services.web_session_http import (enforce_web_session, platform_context_changed_response,
+                                               platform_session_changed, session_error_response)
 from backend.routers import images as image_routes
 from backend.services.images import ImagePath
 from backend.services.builtin_assets import BUILTIN_ROOT, BUILTIN_URL_PREFIX, FAVICON_ICO, builtin_asset_file
@@ -84,6 +85,8 @@ async def protect_platform_admin_routes(request: Request, call_next):
         return session_error_response(request, "Your session has ended or expired. Please sign in again.")
 
     if session_status != "authorized" or not user:
+        if platform_session_changed(request):  # the Platform login of this browser was replaced (still refused)
+            return platform_context_changed_response(request)
         if accepts_html:
             return HTMLResponse("Forbidden", status_code=403)
         return JSONResponse({"detail": "Forbidden"}, status_code=403)

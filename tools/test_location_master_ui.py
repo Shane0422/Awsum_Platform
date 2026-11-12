@@ -80,12 +80,16 @@ const rows={1:[],2:[loc(31,'A03','SALES_FLOOR',{in_use:true}),loc(32,'B01','SALE
      loc(51,'W01-B02-C01','WAREHOUSE'),loc(52,'COLD-ROOM-FREEZER-RACK-LEVEL-9','WAREHOUSE')]};
 let nextId=90;
 rows[4]=[];const initialized=new Set(['1']); // Store 1: initialized earlier, every Location deleted since
+// Store 5: Inactive Store of a Merchant login: the server marks the Store and its rows read_only (view only).
+const RO={read_only:true,read_only_message:'This Store is Inactive: view only. Platform Admin can edit and activate it.'};
+rows[5]=[loc(61,'S01-B01-C01','SALES_FLOOR',RO),loc(62,'W01-R01-C01','WAREHOUSE',RO)];
 window.fetch=async(path,options={})=>{
   const url=new URL(path,'http://127.0.0.1'),method=options.method||'GET';
   const payload=options.body?JSON.parse(options.body):null;
   requests.push({path:url.pathname,method,payload,store:url.searchParams.get('store_id'),q:url.searchParams.get('q'),area:url.searchParams.get('location_area'),size:url.searchParams.get('size')});
   if(url.pathname.endsWith('/options'))return new Response(JSON.stringify({
-    stores:[{id:1,code:'S1',name:'Empty Store',active:true,location_management:true},{id:2,code:'S2',name:'Daone',active:true,location_management:true},{id:3,code:'S3',name:'Columns',active:true,location_management:true},{id:4,code:'S4',name:'Fresh',active:true,location_management:true}],
+    stores:[{id:1,code:'S1',name:'Empty Store',active:true,location_management:true},{id:2,code:'S2',name:'Daone',active:true,location_management:true},{id:3,code:'S3',name:'Columns',active:true,location_management:true},{id:4,code:'S4',name:'Fresh',active:true,location_management:true},
+      {id:5,code:'S5',name:'Closed',active:false,location_management:true,...RO}],
     store_fixed:null,location_management:true,item_features:{},
     location_areas:[{code:'SALES_FLOOR',name:'Sales Floor'},{code:'WAREHOUSE',name:'Warehouse'}]}));
   // Writes behave like the server: an empty Location Name is saved as the Location Code.
@@ -313,6 +317,31 @@ const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await t
   await wait(()=>cells().length===10,'Store 4 again');
   assert(inits('4')===1&&inits('2')===1&&cells().length===10,'no second initialization');
   assert(win.requests.filter(r=>r.method==='GET'&&r.path.endsWith('/location')&&r.store==='2').length>=2&&!win.requests.some(r=>r.store==='2'&&r.method==='POST'&&!r.path.endsWith('/initialize')),'Store 2 untouched');
+""")
+
+    def test_inactive_store_of_a_merchant_is_view_only(self):
+        self.run_page(1400, r"""
+  const store=find('mgStore');
+  await wait(()=>store.options.length===5,'stores');
+  assert([...store.options].map(o=>o.textContent).includes('S5 · Closed [Inactive]'),'Inactive Store listed');
+  assert(!visible('mgStoreNote')&&!find('mgAddBtn').disabled,'active Store: no note, Add enabled');
+  store.value='5';store.dispatchEvent(new win.Event('change'));
+  await wait(()=>find('mgBody').querySelector('[data-row-select="61"]'),'Inactive Store rows');
+  // Inactive badge + view-only note; Add disabled; no default-Location initialization (a write) for it.
+  assert(visible('mgStoreNote')&&find('mgStoreNote').querySelector('.mg-store-badge').textContent==='Inactive'
+    &&find('mgStoreNote').textContent.includes('This Store is Inactive: view only. Platform Admin can edit and activate it.'),'badge and note: '+find('mgStoreNote').textContent);
+  assert(find('mgAddBtn').disabled&&find('mgGuideAdd').disabled,'Add (and the guide Add) disabled');
+  assert(!win.requests.some(r=>r.store==='5'&&r.method!=='GET'),'no write request for the Inactive Store');
+  // A row opens view only (existing read-only mode): fields and Save disabled, no Deactivate, the note.
+  find('mgBody').querySelector('[data-row-select="61"]').click();
+  await wait(()=>f('name')&&find('mgReadOnlyNote'),'view-only form');
+  assert([...find('mgFields').querySelectorAll('input,select,textarea')].every(el=>el.disabled)&&find('mgSave').disabled,'fields and Save disabled');
+  assert(find('mgReadOnlyNote').textContent==='This Store is Inactive: view only. Platform Admin can edit and activate it.'&&find('mgMdToggle').classList.contains('d-none'),'note, no Deactivate');
+  assert(!win.requests.some(r=>r.store==='5'&&r.method!=='GET'),'still no write');
+  // Back to an active Store: normal.
+  store.value='2';store.dispatchEvent(new win.Event('change'));
+  await wait(()=>find('mgBody').querySelector('[data-row-select="31"]'),'Store 2');
+  assert(!visible('mgStoreNote')&&!find('mgAddBtn').disabled,'active Store again: Add enabled');
 """)
 
     def test_two_independent_area_columns_paging_search_and_selection(self):
