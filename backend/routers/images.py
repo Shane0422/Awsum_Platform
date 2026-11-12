@@ -69,6 +69,9 @@ def _deliver(request: Request, db: Session, image: images.ImagePath):
             raise HTTPException(404, "User photo not found.")
     elif image.context_type == "MERCHANT" and image.image_category == "master":
         images.authorize_merchant_master_read(request, db, image.owner_code)  # + its Stores' logins (view only)
+    elif image.context_type == "MERCHANT" and image.image_category == "employee":
+        # Employee photos: authorized Platform users + the Merchant's own Merchant login (Employee Master scope).
+        images.authorize_merchant_master_read(request, db, image.owner_code, contexts=("MERCHANT",))
     elif not public:
         images.authorize_images(request, db, image.context_type, image.owner_code, merchant_code=image.merchant_code)
     if image.image_category == "users" and not agency_user_photo:
@@ -175,6 +178,9 @@ def _protect_md_image(db: Session, image: images.ImagePath) -> None:
     """MD item images (Platform and Merchant master images) change only through MD Master Save / Delete."""
     if image.image_category == "users":
         raise HTTPException(409, "Manage profile photos through the authorized User Save workflow.")
+    if image.context_type == "MERCHANT" and image.image_category == "employee":
+        # Employee Master photos (Merchant path) change only through Employee Save; Store-level paths are unchanged.
+        raise HTTPException(409, "Manage employee photos through Employee Save.")
     if image.context_type not in ("PLATFORM", "MERCHANT") or image.image_category != "master":
         return
     from backend.services.master_group import _lock_md_images

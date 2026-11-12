@@ -39,10 +39,10 @@ Representative permanent paths:
 /agency/AG000001/images/logo/logo.webp
 /agency/AG000001/data/master/
 /merchant/MC000001/images/logo/logo.webp
+/merchant/MC000001/images/employee/EMP00007.webp
 /merchant/MC000001/data/master/
 /merchant/MC000001/store/ST000001/images/logo/logo.webp
 /merchant/MC000001/store/ST000001/images/master/item/IT000025.webp
-/merchant/MC000001/store/ST000001/images/employee/EMP000007.webp
 /merchant/MC000001/store/ST000001/data/master/
 /merchant/MC000001/store/ST000001/data/sales/
 /merchant/MC000001/store/ST000001/data/transaction/
@@ -72,6 +72,10 @@ Data:
 Directory names are lowercase and singular, except the reserved `users` category
 for application-user profiles. Use `employee`, never `employees`,
 `employee_photo`, `emp`, or `staff`. Codes keep their established case.
+Employee photos use the Merchant path (`/merchant/{MERCHANT_CODE}/images/employee/{EMPLOYEE_CODE}.webp`):
+the Employee Master is Merchant-wide (one Employee, several Stores), so the photo is never stored per Store. The
+file name is the immutable Employee Code (`EMP00001`, per Merchant). Only Employee Save changes it; it is read by
+authorized Platform users and the Merchant's own Merchant login (Employee Management STEP 1A).
 Logical/API/URL paths always use `/`, never Windows separators.
 Registration/bootstrap initializes only the basic `images/` and `data/` roots.
 Category directories are created lazily when writing/provisioning, never by

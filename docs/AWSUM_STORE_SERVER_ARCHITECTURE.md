@@ -151,14 +151,19 @@ License Offline Grace  ≠  Store Business Offline Operation
 
 License, Subscription, Plan, Module / Entitlement, Tax, Category, MD Master,
 System Configuration, Store Configuration, Price / Pricing Configuration,
-User Permission, Device Configuration.
+User Permission, Device Configuration,
+Employee (Merchant Employee Master, Store assignment, POS Role, POS PIN hash — 해당 Store에 active로 배정된 직원만).
+
+Employee / PIN 변경(퇴사, 배정 종료, PIN 재설정)은 Central에서만 일어나고 `i_row_version` / `i_pin_version`이
+증가한다. Store Server는 증분 동기화로 반영하며, PIN 원문은 어디에도 저장하지 않는다.
 
 Store는 이 데이터를 Local Cache로 보유하며 Central 값을 기준으로 갱신한다.
 
 ### Store → Central (Store가 생성, Central로 전송)
 
 Sales, Payment, Refund, Void, Discount Transaction, Cash Movement,
-Time & Attendance, Inventory Movement, Local Operational Event.
+Time & Attendance, Inventory Movement, Local Operational Event,
+POS PIN 인증 성공·실패 및 잠금 Event.
 
 ### Bidirectional — Conflict Policy Required
 

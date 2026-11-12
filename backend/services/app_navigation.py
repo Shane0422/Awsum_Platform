@@ -21,8 +21,9 @@ MASTER_SLUGS = (("common-maintenance", "Common Maintenance", True), ("tax", "Tax
                 ("location-master", "Location Master", True))
 # Business > Organizations (Platform: Agencies, Merchants, Stores). Merchant Store Management: the Merchant login
 # manages its own Stores (routers.merchant_store). A Store login never has Store Management (no Business menu).
-BUSINESS_SLUGS = (("stores", "Stores", True),)
-BUSINESS_URLS = {"stores": "/merchant/business/stores"}
+# Employees (Employee Management STEP 1A): the Merchant-wide Employee Master (routers.master_group, entity employee).
+BUSINESS_SLUGS = (("stores", "Stores", True), ("employees", "Employees", True))
+BUSINESS_URLS = {"stores": "/merchant/business/stores", "employees": "/merchant/business/employees"}
 TENANT_ROLES = {
     "MERCHANT": {MERCHANT_ADMIN_ROLE_NAME},
     "STORE": {"Admin", "CustomerAdmin", "StoreAdmin"},

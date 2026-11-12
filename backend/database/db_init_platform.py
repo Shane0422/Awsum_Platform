@@ -732,6 +732,10 @@ def init_platform_db(*, allow_destructive: bool = False) -> None:
     # STEP 2-1 MD owner (Platform / Merchant) + per-owner barcode index: one transaction, before the generic step.
     from backend.database.md_owner_scope_migration import migrate_md_owner_scope
     migrate_md_owner_scope(platform_engine)
+    # Employee Management STEP 1A: tb_store (i_store_id, i_merchant_id) index + the 5 Employee tables (additive),
+    # before the generic step so the composite FK target exists first.
+    from backend.database.employee_migration import migrate_employee_schema
+    migrate_employee_schema(platform_engine)
     safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
     # Merchant Feature Entitlement: initial rows from current Store usage, only in the run that creates the table.
     seed_new_merchant_feature_table(platform_engine, merchant_feature_existed)

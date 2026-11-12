@@ -321,12 +321,16 @@ def authorize_images(request: Request, db: Session, context_type: str, owner_cod
     return authorize_resource(request, db, owner)
 
 
-def authorize_merchant_master_read(request: Request, db: Session, merchant_code: str):
+def authorize_merchant_master_read(request: Request, db: Session, merchant_code: str,
+                                   contexts: tuple[str, ...] = ("MERCHANT", "STORE")):
     """Reading a Merchant's Master (MD item) image: everyone authorize_images allows, plus exactly the logins the
     Merchant / Store MD Master API admits for that Merchant (services.app_navigation TENANT_ROLES: its Merchant
     Admin, and its active Stores' admins, who view the Merchant's MD read-only). Membership comes from the server
     session, never from the path. Read only: image writes keep authorize_images, and MD images change only through
-    MD Master Save / Delete."""
+    MD Master Save / Delete.
+
+    contexts: the tenant logins admitted. Employee photos (Employee Master, Merchant Portal only in STEP 1A) pass
+    ("MERCHANT",): the Merchant's own permitted Merchant login, never a Store login or another Merchant."""
     try:
         return authorize_images(request, db, "MERCHANT", merchant_code)
     except HTTPException as exc:
@@ -340,7 +344,7 @@ def authorize_merchant_master_read(request: Request, db: Session, merchant_code:
     user = authenticate(request, db)
     session = db.query(SessionTbl).filter_by(c_session_key=request.state.web_session_key).one()
     merchant = db.query(Merchant).filter(Merchant.c_merchant_code == merchant_code).first()
-    if session.c_login_context not in ("MERCHANT", "STORE") or merchant is None:
+    if session.c_login_context not in contexts or merchant is None:
         raise refused
     scope = resolve_app_scope(request, db, user)  # active Merchant (and Store), permitted role, from the session
     if scope.context != session.c_login_context or not scope.permitted or scope.merchant_id != merchant.i_merchant_id:

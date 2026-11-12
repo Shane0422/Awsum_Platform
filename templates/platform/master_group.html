@@ -5,7 +5,7 @@
 
 {% block content %}
 {# Master-Detail entities (left Tree + right form) share the MD Master layout; keep in sync with TREE_LEVELS in master_group.js. #}
-{% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind', 'location', 'common_code'] %}
+{% set mg_split = mg_entity in ['tax', 'category1', 'category2', 'category3', 'md', 'item_kind', 'location', 'common_code', 'employee'] %}
 <link rel="stylesheet" href="/static/css/awsum-list.css?v=8">
 <link rel="stylesheet" href="/static/css/awsum-confirm-modal.css?v=1">
 {% if mg_entity in ('category3', 'md') %}<link rel="stylesheet" href="/static/css/awsum-lookup.css?v=2">{% endif %}
@@ -202,6 +202,19 @@
         <div class="form-text d-none" id="mgGroupNote"></div>
       </div>
       {% endif %}
+      {% if mg_entity == 'employee' %}
+      {# Employee Master filters: Store (this Merchant's Stores) and POS Role; filled from /options. #}
+      <div class="row g-2 flex-nowrap mg-md-filter" id="mgEmpFilters">
+        <div class="col-6">
+          <label for="mgEmpStoreFilter" class="awsum-list-filter-label">Store</label>
+          <select id="mgEmpStoreFilter" class="form-select" aria-label="Store filter"><option value="">All Stores</option></select>
+        </div>
+        <div class="col-6">
+          <label for="mgEmpRoleFilter" class="awsum-list-filter-label">POS Role</label>
+          <select id="mgEmpRoleFilter" class="form-select" aria-label="POS Role filter"><option value="">All POS Roles</option></select>
+        </div>
+      </div>
+      {% endif %}
       <div class="row g-2 flex-nowrap mg-md-filter">
         <div class="col-7">
           <label for="mgSearch" class="awsum-list-filter-label">Search</label>
@@ -213,6 +226,7 @@
             <option value="">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+            {% if mg_entity == 'employee' %}<option value="terminated">Terminated</option>{% endif %}
           </select>
         </div>
       </div>
@@ -240,7 +254,7 @@
     {% call surface('table', '', 'mg-md-form-panel') %}
       <form id="mgForm" class="mg-md-form" novalidate>
         <div class="mg-md-form-header d-flex justify-content-between align-items-center">
-          <div class="mg-md-form-title">{{ 'MD' if mg_entity == 'md' else mg_title | upper }} INFORMATION</div>
+          <div class="mg-md-form-title">{{ 'MD' if mg_entity == 'md' else (mg_record_title if mg_entity == 'employee' else mg_title) | upper }} INFORMATION</div>
           <div class="visually-hidden">
             <h2 class="h5 mb-1" id="mgModalTitle">Select {{ 'an' if mg_entity == 'md' else 'a' }} {{ mg_record_title | default(mg_title, true) }}</h2>
             <div class="text-muted small mg-md-description" id="mgModalSub">Select a record from the list or add a new {{ mg_record_title | default(mg_title, true) }}.</div>
@@ -337,5 +351,5 @@
 <script src="/static/js/confirm-modal.js?v=1"></script>
 {% if mg_entity in ('category3', 'md') %}<script src="/static/js/lookup-modal.js?v=1"></script>{% endif %}
 <script src="/static/js/page-actions.js?v=1"></script>
-<script src="/static/js/master_group.js?v=83"></script>
+<script src="/static/js/master_group.js?v=84"></script>
 {% endblock %}

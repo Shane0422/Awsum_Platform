@@ -18,6 +18,7 @@ from backend.models_admin.common_code import COMMON_VALUE_TYPES, CommonCode, Com
 from backend.models_admin.invoice import InvoiceLine
 from backend.models_admin.master_group import (Category1, Category2, Category3, ItemKind, MdDetail,
                                                MdMaster, Tax, md_owner_key)
+from backend.models_admin.employee import Employee
 from backend.database.item_kind_migration import SYSTEM_ITEM_KIND_CODES
 from backend.models_admin.store_location import DEFAULT_LOCATION_AREA, LOCATION_AREAS, StoreLocation, StoreMdLocation
 from backend.services import images
@@ -95,6 +96,11 @@ ENTITIES = {
     # Code issue mode comes from the group (MANUAL typed / AUTO prefix + number).
     "common_code": dict(model=CommonCode, pk="i_common_code_id", code="c_code", name="c_name", prefix=None,
                         group_scoped=True, manual_code=True, search=("c_description",)),
+    # Employee Master (Employee Management STEP 1A): Merchant Portal only. The common router / screen flow is reused;
+    # its rules (per-Merchant numbering, status, termination, Store assignments) live in services.employees, which
+    # the router calls for this entity (custom) instead of the generic CRUD below.
+    "employee": dict(model=Employee, pk="i_employee_id", code="c_employee_code", name="c_last_name", prefix="EMP",
+                     merchant_only=True, custom=True),
 }
 PLATFORM_ONLY_MODELS = (ItemKind,)  # Item Kind: one global System Master (Merchant MD selects from it)
 # MD Master fields used only by the Platform (agency supply price levels, billing, license). A Merchant MD never

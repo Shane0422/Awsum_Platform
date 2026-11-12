@@ -44,6 +44,7 @@
     item_kind: 'Super Admin System Master. Codes (IKC00001) are issued automatically; System Codes are fixed program logic keys.',
     location: 'Sales Floor and Warehouse Location Codes of the selected Store.',
     common_code: 'Common codes of this scope by group (Platform and each Merchant keep their own). Select a group to manage its codes.',
+    employee: 'Employees of this Merchant. Assign each one to Stores with a POS Role; Terminate keeps every record.',
   };
 
   const taxLabel = (tax) => tax ? `${tax.name} (${Number(tax.rate)}%)` : '';
@@ -53,7 +54,7 @@
   // Master-Detail (left Tree + right form) entities and the parent Category levels grouped in their tree
   // (Tax, Category I and Item Kind have no parent, so their tree is a flat list). An entity not listed here
   // would use the full-width list with the modal form.
-  const TREE_LEVELS = { tax: [], category1: [], category2: [1], category3: [1, 2], md: [1, 2, 3], item_kind: [], color: [], location: [], common_code: [] };
+  const TREE_LEVELS = { tax: [], category1: [], category2: [1], category3: [1, 2], md: [1, 2, 3], item_kind: [], color: [], location: [], common_code: [], employee: [] };
   const split = Object.prototype.hasOwnProperty.call(TREE_LEVELS, entity);
   const nameColumn = (text) => [['name', text, (r) => esc(r.name), true]];
   const TREE_NAME_COLUMN = nameColumn('Category / Name');
@@ -74,7 +75,12 @@
       ['value', 'Value', (r) => commonValueCell(r), false, 'value'],
       ['active', 'Status', (r) => badge(r.active), true],
     ],
+    // Employee Master: photo, name, Employee Code / POS # / primary Store; a non-active status is shown as a badge.
+    employee: [['name', 'Employee', (r) => `<div class="d-flex align-items-center gap-2">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" width="28" height="28" class="rounded-circle mg-emp-photo" loading="lazy">` : ''}<div class="text-truncate"><div class="fw-semibold text-truncate">${esc(r.name || r.display_name || r.code)}</div><div class="small text-muted"><span class="mg-code">${esc(r.code)}</span> \u00b7 POS ${esc(r.pos_number)}${r.primary_store ? ` \u00b7 ${esc(r.primary_store.name)}` : ''}</div></div>${r.status !== 'active' ? `<span class="ms-auto">${statusBadge(r.status)}</span>` : ''}</div>`, true]],
   };
+  // Employee / Store assignment status badges (Active, Inactive, Terminated, Ended).
+  const STATUS_BADGE = { active: 'text-bg-success', inactive: 'text-bg-secondary', terminated: 'text-bg-danger', ended: 'text-bg-light border' };
+  const statusBadge = (s) => `<span class="badge ${STATUS_BADGE[s] || 'text-bg-secondary'}">${esc(s ? s[0].toUpperCase() + s.slice(1) : '')}</span>`;
 
   const state = { q: '', active: '', sort: '', direction: 'asc', page: 1, size: 20, items: [], options: null, editing: null, details: [], editingDetailId: null, collapsed: new Set(), lastData: null, storeId: null, group: null };
   // Store-scoped master (Location Master): every request names the selected Store; the server re-checks it.
@@ -253,6 +259,7 @@
     const params = new URLSearchParams({
       q: state.q, active: state.active, sort: state.sort, direction: state.direction, page: state.page, size: state.size,
     });
+    employeeFilterParams(params);
     if ((storeScoped && !state.storeId) || (groupScoped && !state.group)) {
       state.items = [];
       renderHead();
@@ -570,6 +577,8 @@
             { col: 'col-md-6', feature: 'location', help: 'Default for MD Masters in all Stores. Clear = Not set. Stock is not affected.' })).join('')
           + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
           + activeField() + notes;
+      case 'employee':
+        return employeeFormHtml();
       default:
         return mdFormHtml();
     }
@@ -715,6 +724,235 @@
           </div>
         </div>`;
   }
+  // ---- Employee Master (Employee Management STEP 1A): form, Store assignments, Terminate / Reactivate ----
+  // The common form (fields, photo uploader, save, read-only mode) is reused; the server applies every rule
+  // (field allow-list, per-Merchant numbering, Store of this Merchant, Inactive Store view only, date checks).
+  const empFilter = { store: '', role: '' };
+  function employeeFilterParams(params) {
+    if (entity !== 'employee') return;
+    if (empFilter.store) params.set('store_id', empFilter.store);
+    if (empFilter.role) params.set('pos_role', empFilter.role);
+  }
+  const empStores = () => (state.options && state.options.stores) || [];
+  const posRoles = () => (state.options && state.options.pos_roles) || [];
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+  const usDate = (iso) => (iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : '');
+  let assignments = [];
+  let editingAssignmentId = null;
+  let assignmentToken = 0;
+
+  function employeeFormHtml() {
+    const row = state.editing;
+    const section = (heading, body, hint, attrs) => `<section class="col-12 pm-section"${attrs ? ` ${attrs}` : ''}>
+      ${heading ? `<div class="pm-section-head"><h3>${heading}</h3>${hint ? `<span>${hint}</span>` : ''}</div>` : ''}
+      <div class="row g-3">${body}</div></section>`;
+    const ids = row
+      ? `<div class="col-12 mg-record-code"><span class="text-muted small">Employee Code</span> <span class="mg-code fw-semibold" id="mgEmpCode">${esc(row.code)}</span> <span class="text-muted small ms-3">POS #</span> <span class="mg-code fw-semibold" id="mgEmpPos">${esc(row.pos_number)}</span> <span class="text-muted small">(issued automatically, not editable)</span></div>`
+      : '<div class="col-12 text-muted small" id="mgEmpCodeNote">Employee Code and POS # are issued automatically when the employee is created.</div>';
+    const info = field('first_name', 'First Name', input('first_name', 'text', 'maxlength="100" autocomplete="off"'))
+      + field('last_name', 'Last Name', input('last_name', 'text', 'maxlength="100" autocomplete="off"'), { help: 'Enter a First Name or a Last Name.' })
+      + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.' })
+      + field('status', 'Status', select('status'))
+      + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
+      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. Not a login.' })
+      + field('hire_date', 'Hire Date', input('hire_date', 'date'));
+    const asg = `<section class="col-12 pm-section" id="mgAsgSection">
+        <div class="pm-section-head d-flex justify-content-between align-items-center">
+          <h3>Store Assignments</h3>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="mgAsgAdd" disabled>Assign Store</button>
+        </div>
+        <div class="alert alert-danger py-2 d-none" id="mgAsgMessage" role="alert"></div>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-2" id="mgAsgTable">
+          <thead><tr><th>Store</th><th>POS Access</th><th>POS Role</th><th>Primary</th><th>Status</th><th>Start</th><th>End</th><th></th></tr></thead>
+          <tbody id="mgAsgBody"></tbody></table></div>
+        <div class="border rounded p-3 d-none" id="mgAsgEditor">
+          <div class="row g-2">
+            <div class="col-md-4"><label class="form-label" for="mgAsgStore">Store</label><select id="mgAsgStore" class="form-select"></select></div>
+            <div class="col-md-3"><label class="form-label" for="mgAsgRole">POS Role</label><select id="mgAsgRole" class="form-select"></select></div>
+            <div class="col-md-3"><label class="form-label" for="mgAsgStart">Start Date</label><input id="mgAsgStart" class="form-control" type="date"></div>
+            <div class="col-md-2 d-none" id="mgAsgStatusWrap"><label class="form-label" for="mgAsgStatus">Status</label><select id="mgAsgStatus" class="form-select"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+            <div class="col-12 d-flex gap-4">
+              <label class="form-check mb-0"><input class="form-check-input" id="mgAsgPos" type="checkbox"> POS Access</label>
+              <label class="form-check mb-0"><input class="form-check-input" id="mgAsgPrimary" type="checkbox"> Primary Store</label>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="mgAsgCancel">Cancel</button>
+            <button type="button" class="btn btn-sm btn-primary" id="mgAsgSave">Save Assignment</button>
+          </div>
+        </div>
+      </section>`;
+    const termination = !row ? '' : row.status === 'terminated'
+      ? section('Termination', `<div class="col-12 small" id="mgEmpTerminated">Terminated on <strong>${esc(usDate(row.termination_date))}</strong>${row.termination_reason ? ` \u00b7 ${esc(row.termination_reason)}` : ''}. Store assignments ended; every record is kept. Reactivate to rehire (assignments are not restored).</div>`)
+      : section('Termination', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Termination Date</label><input class="form-control" id="mgEmpTermDate" type="date"></div>
+          <div class="col-md-8"><label class="form-label" for="mgEmpTermReason">Reason</label><input class="form-control" id="mgEmpTermReason" type="text" maxlength="200"></div>
+          <div class="col-12 form-text">Terminate (top right) ends every Store assignment, Inactive Stores included, and removes POS access. Records are kept.</div>`);
+    return `<div class="col-12 mg-md-top">
+          <div class="mg-md-fields">${ids}${section('', info)}</div>
+          <div id="mgImageUploader" class="mg-image-panel"></div>
+        </div>${asg}${termination}`;
+  }
+
+  function fillEmployeeForm(row) {
+    ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date'].forEach((key) => { f(key).value = (row && row[key]) || ''; });
+    const statuses = row && row.status === 'terminated' ? [['terminated', 'Terminated']] : [['active', 'Active'], ['inactive', 'Inactive']];
+    setOptions('status', statuses, row ? row.status : 'active');
+    if ($('mgEmpTermDate')) $('mgEmpTermDate').value = today();
+  }
+
+  function assignmentMessage(text) {
+    const box = $('mgAsgMessage');
+    if (!box) return;
+    box.textContent = text || '';
+    box.classList.toggle('d-none', !text);
+  }
+  function renderAssignments() {
+    const body = $('mgAsgBody');
+    if (!body) return;
+    const row = state.editing;
+    $('mgAsgAdd').disabled = !row || row.status === 'terminated';
+    if (!row || !assignments.length) {
+      body.innerHTML = `<tr><td colspan="8" class="text-center text-muted">${row ? 'No Store assignments.' : 'Save the employee before assigning Stores.'}</td></tr>`;
+      return;
+    }
+    body.innerHTML = assignments.map((a) => `<tr data-asg="${a.id}"${a.status === 'ended' ? ' class="text-muted"' : ''}>
+        <td>${esc(a.store_name)}${a.store_active ? '' : ' <span class="badge text-bg-secondary">Inactive Store</span>'}</td>
+        <td>${a.pos_access ? 'Yes' : 'No'}</td><td>${esc(a.pos_role_name || '')}</td><td>${a.primary ? 'Primary' : ''}</td>
+        <td>${statusBadge(a.status)}</td><td>${esc(usDate(a.start_date))}</td><td>${esc(usDate(a.end_date))}</td>
+        <td class="text-end text-nowrap">${a.read_only ? '' : `<button type="button" class="btn btn-sm btn-outline-primary" data-asg-act="edit" data-id="${a.id}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-asg-act="end" data-id="${a.id}">End</button>`}</td></tr>`).join('');
+  }
+  function hideAssignmentEditor() {
+    if ($('mgAsgEditor')) $('mgAsgEditor').classList.add('d-none');
+    editingAssignmentId = null;
+  }
+  async function loadAssignments(row) {
+    const token = ++assignmentToken;
+    assignments = [];
+    hideAssignmentEditor();
+    assignmentMessage('');
+    renderAssignments();
+    if (!row) return;
+    try {
+      const data = await api('GET', `${BASE}/employee/${row.id}/assignments`);
+      if (token !== assignmentToken) return;
+      assignments = data.items;
+      renderAssignments();
+    } catch (err) {
+      assignmentMessage(err.message);
+    }
+  }
+  function showAssignmentEditor(a) {
+    editingAssignmentId = a ? a.id : null;
+    const taken = new Set(assignments.filter((x) => x.status !== 'ended' && (!a || x.id !== a.id)).map((x) => x.store_id));
+    const stores = empStores();
+    $('mgAsgStore').innerHTML = stores.map((s) => {
+      const blocked = !(a && a.store_id === s.id) && (!s.active || taken.has(s.id));
+      return `<option value="${s.id}"${blocked ? ' disabled' : ''}>${esc(s.name)}${s.active ? '' : ' (Inactive)'}${taken.has(s.id) ? ' (assigned)' : ''}</option>`;
+    }).join('');
+    $('mgAsgStore').disabled = !!a; // the Store of an existing assignment never changes
+    const first = stores.find((s) => s.active && !taken.has(s.id));
+    if (!a && !first) { // every active Store is already assigned (Inactive Stores are view only)
+      $('mgAsgStore').insertAdjacentHTML('afterbegin', '<option value="" selected>No Store available to assign</option>');
+    }
+    $('mgAsgStore').value = a ? a.store_id : (first ? first.id : '');
+    $('mgAsgSave').disabled = !a && !first;
+    $('mgAsgRole').innerHTML = '<option value="">None</option>' + posRoles().map((r) => `<option value="${esc(r.code)}">${esc(r.name)}</option>`).join('');
+    $('mgAsgRole').value = (a && a.pos_role) || '';
+    $('mgAsgPos').checked = !!(a && a.pos_access);
+    $('mgAsgPrimary').checked = !!(a && a.primary);
+    $('mgAsgStatusWrap').classList.toggle('d-none', !a);
+    $('mgAsgStatus').value = a ? a.status : 'active';
+    $('mgAsgStart').value = a ? a.start_date : today();
+    assignmentMessage('');
+    $('mgAsgEditor').classList.remove('d-none');
+  }
+  async function saveAssignment() {
+    const row = state.editing;
+    if (!row) return;
+    const body = { pos_access: $('mgAsgPos').checked, pos_role: $('mgAsgRole').value, primary: $('mgAsgPrimary').checked,
+      start_date: $('mgAsgStart').value };
+    if (editingAssignmentId) body.status = $('mgAsgStatus').value;
+    else body.store_id = Number($('mgAsgStore').value);
+    try {
+      if (editingAssignmentId) await api('PUT', `${BASE}/employee/${row.id}/assignments/${editingAssignmentId}`, body);
+      else await api('POST', `${BASE}/employee/${row.id}/assignments`, body);
+      showMessage(`${row.code}: Store assignment saved.`, 'success');
+      await loadAssignments(row);
+      await load();
+    } catch (err) {
+      assignmentMessage(Object.values(err.errors || {})[0] || err.message);
+    }
+  }
+  async function endAssignment(id) {
+    const row = state.editing;
+    const a = assignments.find((x) => x.id === id);
+    if (!row || !a) return;
+    const result = await AwsumConfirm.show({
+      title: 'End Store Assignment', variant: 'warning', okText: 'End Assignment',
+      message: 'The assignment is kept as history and its POS access ends.',
+      details: [['Employee', `${row.code} ${row.name}`], ['Store', a.store_name], ['End Date', usDate(today())]],
+    });
+    if (!result.confirmed) return;
+    try {
+      await api('POST', `${BASE}/employee/${row.id}/assignments/${id}/end`, { end_date: today() });
+      showMessage(`${row.code}: assignment at ${a.store_name} ended.`, 'success');
+      await loadAssignments(row);
+      await load();
+    } catch (err) {
+      assignmentMessage(Object.values(err.errors || {})[0] || err.message);
+    }
+  }
+  function bindAssignmentEvents() {
+    $('mgAsgAdd').addEventListener('click', () => showAssignmentEditor(null));
+    $('mgAsgCancel').addEventListener('click', hideAssignmentEditor);
+    $('mgAsgSave').addEventListener('click', saveAssignment);
+    $('mgAsgBody').addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-asg-act]');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      if (btn.dataset.asgAct === 'end') endAssignment(id);
+      else showAssignmentEditor(assignments.find((x) => x.id === id));
+    });
+  }
+  // Header actions: Deactivate / Activate (PUT status), Terminate (date + reason from the form), Reactivate.
+  async function employeeAction(act, row) {
+    if (act === 'toggle') {
+      const data = await api('PUT', `${BASE}/employee/${row.id}`, { status: row.status === 'active' ? 'inactive' : 'active' });
+      showMessage(AwsumToast.message(row.status === 'active' ? 'deactivated' : 'activated', row.code), 'success');
+      return data.item;
+    }
+    if (act === 'terminate') {
+      const date = $('mgEmpTermDate') ? $('mgEmpTermDate').value : '';
+      if (!date) {
+        showMessage('Enter the Termination Date in the Termination section.', 'warning');
+        if ($('mgEmpTermDate')) $('mgEmpTermDate').focus();
+        return null;
+      }
+      const open = assignments.filter((a) => a.status !== 'ended').length;
+      const result = await AwsumConfirm.show({
+        title: 'Terminate Employee', variant: 'danger', okText: 'Terminate',
+        message: 'Every Store assignment ends (Inactive Stores included) and POS access is removed. Records are kept; Reactivate does not restore assignments.',
+        details: [['Employee', `${row.code} ${row.name}`], ['Termination Date', usDate(date)], ['Open Store assignments', String(open)]],
+      });
+      if (!result.confirmed) return null;
+      const data = await api('POST', `${BASE}/employee/${row.id}/terminate`,
+        { termination_date: date, termination_reason: $('mgEmpTermReason').value.trim() });
+      showMessage(`${row.code} terminated. ${open} Store assignment(s) ended.`, 'success');
+      return data.item;
+    }
+    const result = await AwsumConfirm.show({
+      title: 'Reactivate Employee', variant: 'info', okText: 'Reactivate',
+      message: 'The employee becomes Active again. Earlier Store assignments stay ended; assign Stores again as needed.',
+      details: [['Employee', `${row.code} ${row.name}`]],
+    });
+    if (!result.confirmed) return null;
+    const data = await api('POST', `${BASE}/employee/${row.id}/reactivate`, {});
+    showMessage(AwsumToast.message('activated', row.code), 'success');
+    return data.item;
+  }
+
   const f = (name) => $('mgf_' + name);
   const setOptions = (name, opts, selected, blank) => fillSelect(f(name), opts, selected, blank);
   function fillSelect(el, opts, selected, blank) {
@@ -950,6 +1188,7 @@
       f('default_tax_id').value = val('default_tax_id', '');
       refreshLicenseFields();
     }
+    if (entity === 'employee') fillEmployeeForm(row);
   }
 
   function clearErrors() {
@@ -980,6 +1219,17 @@
   function syncMdActions() {
     if (!split) return;
     const row = state.editing;
+    if (entity === 'employee') { // Deactivate / Activate or Reactivate; Delete becomes Terminate (no delete)
+      const terminated = !!row && row.status === 'terminated';
+      $('mgMdToggle').classList.toggle('d-none', !row);
+      $('mgMdToggle').dataset.mdAct = terminated ? 'reactivate' : 'toggle';
+      if (row) $('mgMdToggle').textContent = terminated ? 'Reactivate' : (row.status === 'active' ? 'Deactivate' : 'Activate');
+      $('mgMdDelete').classList.toggle('d-none', !row || terminated);
+      $('mgMdDelete').dataset.mdAct = 'terminate';
+      $('mgMdDelete').textContent = 'Terminate';
+      if (pageActions) pageActions.setMode(row ? 'edit' : (formOpen ? 'create' : 'none'));
+      return;
+    }
     $('mgMdToggle').classList.toggle('d-none', !row || !!row.read_only || (!!row.active_locked && row.active));
     // Common Maintenance: Delete stays visible for a selected code; a protected (EA) or in-use code shows it disabled
     // with the reason (the server refuses both with 409 anyway). Other screens keep hiding it for System rows.
@@ -1038,7 +1288,7 @@
     $('mgFields').innerHTML = formHtml();
     if (entity === 'md') {
       f('record_code').value = row ? row.code : '';
-    } else if (row && entity !== 'location') { // a Location Code is an editable field, not a generated code
+    } else if (row && entity !== 'location' && entity !== 'employee') { // Location Code: editable; Employee: own Code / POS # line
       const codeNote = groupScoped ? (currentGroup() && currentGroup().code_mode === 'AUTO' ? 'auto-generated, not editable' : 'cannot be changed')
         : (row.system && !row.system_code ? 'System Code: logic key, not editable' : 'auto-generated, not editable');
       // Item Kind: the program logic key is shown next to the Code when it differs (required System Codes).
@@ -1068,6 +1318,15 @@
       imageUploader.reset(row && row.image_url, !!(row && row.image_path));
       if (row && row.read_only) $('mgImageUploader').querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
       loadMdDetails(row);
+    }
+    if (entity === 'employee') {
+      imageUploader = AwsumImages.createUploader($('mgImageUploader'), {
+        idPrefix: 'mgImage', label: 'Photo', previewSize: 120, fit: 'cover',
+      });
+      imageUploader.reset(row && row.image_url, !!(row && row.image_path));
+      if (row && row.read_only) $('mgImageUploader').querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
+      bindAssignmentEvents();
+      loadAssignments(row);
     }
     if (modal) modal.show();
   }
@@ -1384,7 +1643,7 @@
         }
       }
       let path = scoped(`${BASE}/${entity}${editing ? '/' + editing.id : ''}`);
-      if (entity === 'md') {
+      if (entity === 'md' || entity === 'employee') { // photo / item image through the common uploader
         body = imageUploader.formData(body);
         path += '/with-image';
       }
@@ -1401,7 +1660,7 @@
         $('mgSave').textContent = saveLabel();
         syncMdActions();
         // Common Maintenance / Location: reopen the created record (its code is now fixed; Location Name may be defaulted).
-        if ((groupScoped || entity === 'location') && !editing) reopen = data.item;
+        if ((groupScoped || entity === 'location' || entity === 'employee') && !editing) reopen = data.item;
       }
       if (entity.startsWith('category') || entity === 'tax') await loadOptions();
       const resetNote = data.item.md_inventory_reset != null ? ` ${data.item.md_inventory_reset} MD item override(s) now inherit this Category III.` : '';
@@ -1458,6 +1717,17 @@
     if (!row) return;
     clearMessage();
     if (act === 'edit') { openForm(row); return; }
+    if (entity === 'employee') {
+      try {
+        const item = await employeeAction(act, row);
+        if (!item) return;
+        await load();
+        if (split && state.editing && state.editing.id === id) openForm(state.items.find((r) => r.id === id) || item);
+      } catch (err) {
+        showMessage(Object.values(err.errors || {})[0] || err.message, 'danger');
+      }
+      return;
+    }
     try {
       if (act === 'toggle') {
         if (row.active && !(await confirmInUseDeactivate(row))) return;
@@ -1529,6 +1799,7 @@
   async function exportList(format) {
     clearMessage();
     const params = new URLSearchParams({ format, q: state.q, active: state.active, sort: state.sort, direction: state.direction });
+    employeeFilterParams(params);
     const url = scoped(`${BASE}/${entity}/export?${params}`);
     if (format === 'pdf') {
       if (!window.open(url, '_blank')) showMessage('Please allow pop-ups to export PDF.', 'warning');
@@ -1684,7 +1955,19 @@
     }
     if (storeScoped) setupStoreSelect();
     if (groupScoped) setupGroupSelect();
+    if (entity === 'employee') setupEmployeeFilters();
     await load();
+  }
+
+  // Employee list filters: Store (this Merchant's Stores) and POS Role (registry); the server re-checks both.
+  function setupEmployeeFilters() {
+    $('mgSearch').placeholder = 'Search name, code, POS # or phone';
+    const storeSelect = $('mgEmpStoreFilter');
+    const roleSelect = $('mgEmpRoleFilter');
+    storeSelect.insertAdjacentHTML('beforeend', empStores().map((s) => `<option value="${s.id}">${esc(s.name)}${s.active ? '' : ' (Inactive)'}</option>`).join(''));
+    roleSelect.insertAdjacentHTML('beforeend', posRoles().map((r) => `<option value="${esc(r.code)}">${esc(r.name)}</option>`).join(''));
+    storeSelect.addEventListener('change', () => { empFilter.store = storeSelect.value; state.page = 1; load(); });
+    roleSelect.addEventListener('change', () => { empFilter.role = roleSelect.value; state.page = 1; load(); });
   }
 
   // ---- Common Maintenance group selector (same pattern as the Store selector) ----

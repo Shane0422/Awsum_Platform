@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Text, Index
 from sqlalchemy.orm import synonym
 from backend.database.pg_platform import PlatformBase
 from backend.models_common.audit_mixin import AuditMixin
@@ -7,6 +7,9 @@ from backend.models_common.address_mixin import AddressMixin
 
 class Store(PlatformBase, ContactMixin, AddressMixin, AuditMixin):
     __tablename__ = "tb_store"
+    # Target of the Employee Management composite FKs (Store and Employee of the same Merchant). i_store_id is the
+    # PK, so this index never rejects a row; created on existing databases by employee_migration.
+    __table_args__ = (Index("uq_tb_store_id_merchant", "i_store_id", "i_merchant_id", unique=True),)
 
     i_store_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     i_store_seq = Column(Integer, nullable=True, unique=True, index=True)  # 업체 스토어 코드 생성용 시퀀스

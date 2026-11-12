@@ -18,6 +18,8 @@ from backend.routers.platform_store import (
 )
 from backend.routers.system_settings import _validate_origin
 from backend.services import master_group as svc
+from backend.services import employees as emp
+from backend.services.pos_roles import pos_role_options
 from backend.services import store_locations
 from backend.services.images import image_mutation_form
 from backend.services.reporting import table_report_html
@@ -42,15 +44,19 @@ PAGES = {
     "item-kind": ("item_kind", "Item Kind"),
     "location-master": ("location", "Location Master"),
     "common-maintenance": ("common_code", "Common Maintenance"),
+    "employees": ("employee", "Employees"),
 }
 # Name of one record where it differs from the page title (Add button, form titles); default = page title.
-RECORD_TITLES = {"location": "Location", "common_code": "Code"}
+RECORD_TITLES = {"location": "Location", "common_code": "Code", "employee": "Employee"}
 # Earlier page slugs -> current slug (old links and bookmarks keep working).
 # The Color screen was merged into Common Maintenance (COLOR step 5-2; tb_color removed in step 6): its old URL
 # keeps redirecting so bookmarks still work.
 PAGE_REDIRECTS = {"shelf-location": "location-master", "color": "common-maintenance?group=COLOR"}
 ENTITY_TO_SLUG = {entity: slug for slug, (entity, _title) in PAGES.items()}
 PLATFORM_ONLY_ENTITIES = {"item_kind": "Item Kind"}
+# Managed by a Merchant login only (Employee Master, STEP 1A): Platform and Store scopes are refused on every route.
+MERCHANT_ONLY_ENTITIES = {"employee": "Employees"}
+EMPLOYEE_DELETE_MESSAGE = "Employees are never deleted. Use Terminate to end employment (history is kept)."
 # Merchant Master Data that a Store login inherits and views only (the Merchant manages it). Server enforced:
 # every write (MD Detail, MD image and barcode writes included) is refused with 403.
 STORE_VIEW_ONLY_ENTITIES = {"common_code": "Common Maintenance", "md": "MD Master"}
@@ -235,6 +241,8 @@ def _entity(entity: str, request: Request | None = None, db: Session | None = No
     if request is not None and getattr(request.state, "master_merchant_id", None) is not None and entity in PLATFORM_ONLY_ENTITIES:
         raise HTTPException(403, f"{PLATFORM_ONLY_ENTITIES[entity]} is Platform-only.")
     scope = getattr(request.state, "app_scope", None) if request is not None else None
+    if entity in MERCHANT_ONLY_ENTITIES and (scope is None or scope.context != "MERCHANT"):
+        raise HTTPException(403, f"{MERCHANT_ONLY_ENTITIES[entity]} are managed in the Merchant Portal.")
     if (scope is not None and scope.context == "STORE" and entity in STORE_VIEW_ONLY_ENTITIES
             and str(getattr(request, "method", "GET")).upper() not in READ_METHODS):
         raise HTTPException(403, f"{STORE_VIEW_ONLY_ENTITIES[entity]}: {STORE_VIEW_ONLY_MESSAGE}")
@@ -244,6 +252,12 @@ def _entity(entity: str, request: Request | None = None, db: Session | None = No
     if entity in SUPER_ADMIN_ENTITIES and not (db is not None and user is not None and _is_super_admin(db, user)):
         raise HTTPException(403, f"{SUPER_ADMIN_ENTITIES[entity]} is managed by Platform Super Admin only.")
     return entity
+
+
+@router.get("/merchant/business/employees", response_class=HTMLResponse)
+def merchant_employee_page(request: Request, db: Session = Depends(get_db)):
+    """Business > People > Employees (Merchant login): the common Master Group screen for the Employee entity."""
+    return master_group_page("employees", request, db)
 
 
 @router.get("/platform/master-group/{slug}", response_class=HTMLResponse)
@@ -314,6 +328,8 @@ def master_group_options(request: Request, db: Session = Depends(get_db)):
         # Store login: inherited Merchant masters it can only view (the server refuses their writes); and MD Detail
         # Cost is not shown to it.
         "view_only_entities": sorted(STORE_VIEW_ONLY_ENTITIES) if scope is not None and scope.context == "STORE" else [],
+        # Employee Master (Merchant login): the POS Role Registry for Store assignments.
+        "pos_roles": pos_role_options() if scope is not None and scope.context == "MERCHANT" else [],
         "detail_cost": not (scope is not None and scope.context == "STORE")}))
 
 
@@ -327,6 +343,14 @@ def master_group_list(
 ):
     user = _admin(request, db)
     _entity(entity, request, db, user)
+    if entity == "employee":  # Employee Master: the Merchant's employees (store_id / pos_role are list filters)
+        try:
+            data = emp.list_employees(db, request.state.master_merchant_id, q=q, status=active, store_id=store_id,
+                                      pos_role=request.query_params.get("pos_role"), sort=sort, direction=direction,
+                                      page=page, size=size)
+        except svc.FieldErrors as exc:
+            return _fail(exc)
+        return _set_no_cache_headers(JSONResponse(data))
     scoped_store = _store_scope(entity, request, db, user, store_id)
     group = _group_scope(entity, db, group)
     scope = getattr(request.state, "app_scope", None)
@@ -381,9 +405,14 @@ def master_group_export(
     if fmt not in ("csv", "excel", "pdf"):
         raise HTTPException(status_code=400, detail="Unsupported export format.")
     can_cost = _can_view_cost(request, db, user)  # Cost column is omitted entirely without permission
-    headers, rows = svc.export_table(db, entity, q=q, active=active, sort=sort, direction=direction,
-                                    can_cost=can_cost, merchant_id=request.state.master_merchant_id,
-                                    store_id=scoped_store, group=group)
+    if entity == "employee":  # no PIN or login data
+        headers, rows = emp.export_employees(db, request.state.master_merchant_id, q=q, status=active,
+                                             store_id=store_id, pos_role=request.query_params.get("pos_role"),
+                                             sort=sort, direction=direction)
+    else:
+        headers, rows = svc.export_table(db, entity, q=q, active=active, sort=sort, direction=direction,
+                                        can_cost=can_cost, merchant_id=request.state.master_merchant_id,
+                                        store_id=scoped_store, group=group)
     title = PAGES[ENTITY_TO_SLUG[entity]][1]
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     base = f"master-{ENTITY_TO_SLUG[entity]}-{stamp}"
@@ -425,6 +454,9 @@ def master_group_create(entity: str, payload: dict, request: Request, db: Sessio
     user = _admin(request, db)
     _validate_origin(request)
     _entity(entity, request, db, user)
+    if entity == "employee":
+        return _employee_command(db, lambda: emp.create_employee(
+            db, request.state.master_merchant_id, payload, user.i_platform_user_id), created=True)
     scoped_store = _store_scope(entity, request, db, user, store_id)
     try:
         item = svc.create_item(db, entity, _md_payload(entity, payload, request, db, user), user.i_platform_user_id,
@@ -434,6 +466,90 @@ def master_group_create(entity: str, payload: dict, request: Request, db: Sessio
         db.rollback()
         return _fail(exc)
     return JSONResponse({"item": item, "message": "Saved."}, status_code=201)
+
+
+def _employee_command(db: Session, command, *, created: bool = False) -> JSONResponse:
+    """Run one Employee Master command (services.employees) with the common Master Group error responses."""
+    try:
+        item = command()
+    except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({"item": item, "message": "Saved."}, status_code=201 if created else 200)
+
+
+def _employee_scope(request: Request, db: Session):
+    """Merchant login with Master Group access (Employee Master is Merchant-only); checks Origin for writes."""
+    user = _admin(request, db)
+    if request.method not in READ_METHODS:
+        _validate_origin(request)
+    _entity("employee", request, db, user)
+    return user, request.state.master_merchant_id
+
+
+@router.post("/merchant/api/master-group/employee/with-image")
+def employee_create_with_image(request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
+                               remove_image: bool = Form(False), db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    values, data = image_mutation_form(payload, remove_image, image)
+    return _employee_command(db, lambda: emp.create_employee(db, merchant_id, values, user.i_platform_user_id,
+                                                             image_data=data), created=True)
+
+
+@router.put("/merchant/api/master-group/employee/{item_id}/with-image")
+def employee_update_with_image(item_id: int, request: Request, payload: str = Form(...),
+                               image: UploadFile | None = File(None), remove_image: bool = Form(False),
+                               db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    values, data = image_mutation_form(payload, remove_image, image)
+    return _employee_command(db, lambda: emp.update_employee(db, merchant_id, item_id, values, user.i_platform_user_id,
+                                                             image_data=data, remove_image=remove_image))
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/terminate")
+def employee_terminate(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.terminate_employee(db, merchant_id, item_id, payload,
+                                                                user.i_platform_user_id))
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/reactivate")
+def employee_reactivate(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.reactivate_employee(db, merchant_id, item_id, payload,
+                                                                 user.i_platform_user_id))
+
+
+@router.get("/merchant/api/master-group/employee/{item_id}/assignments")
+def employee_assignment_list(item_id: int, request: Request, db: Session = Depends(get_db)):
+    _user, merchant_id = _employee_scope(request, db)
+    try:
+        return _set_no_cache_headers(JSONResponse(emp.list_assignments(db, merchant_id, item_id)))
+    except svc.NotFound as exc:
+        return _fail(exc)
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/assignments")
+def employee_assignment_create(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.create_assignment(db, merchant_id, item_id, payload,
+                                                               user.i_platform_user_id), created=True)
+
+
+@router.put("/merchant/api/master-group/employee/{item_id}/assignments/{assignment_id}")
+def employee_assignment_update(item_id: int, assignment_id: int, payload: dict, request: Request,
+                               db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.update_assignment(db, merchant_id, item_id, assignment_id, payload,
+                                                               user.i_platform_user_id))
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/assignments/{assignment_id}/end")
+def employee_assignment_end(item_id: int, assignment_id: int, payload: dict, request: Request,
+                            db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.end_assignment(db, merchant_id, item_id, assignment_id, payload,
+                                                            user.i_platform_user_id))
 
 
 @router.post("/platform/api/master-group/md/with-image")
@@ -667,6 +783,9 @@ def master_group_update(entity: str, item_id: int, payload: dict, request: Reque
     user = _admin(request, db)
     _validate_origin(request)
     _entity(entity, request, db, user)
+    if entity == "employee":
+        return _employee_command(db, lambda: emp.update_employee(
+            db, request.state.master_merchant_id, item_id, payload, user.i_platform_user_id))
     scoped_store = _store_scope(entity, request, db, user, store_id)
     if payload.get("apply_inventory_to_md") and request.state.master_merchant_id is not None:
         # Category III "Apply to all MD Master" stays Platform-only (STEP 2): a Merchant / Store scope never bulk-changes MD.
@@ -689,6 +808,8 @@ def master_group_delete(entity: str, item_id: int, request: Request, db: Session
     user = _admin(request, db)
     _validate_origin(request)
     _entity(entity, request, db, user)
+    if entity == "employee":
+        return JSONResponse({"detail": EMPLOYEE_DELETE_MESSAGE}, status_code=409)
     scoped_store = _store_scope(entity, request, db, user, store_id)
     try:
         warning = svc.delete_item(db, entity, item_id, merchant_id=request.state.master_merchant_id,
