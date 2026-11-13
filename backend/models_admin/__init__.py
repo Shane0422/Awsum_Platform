@@ -29,3 +29,5 @@ from .platform_user import PlatformUser
 from .merchant import Merchant
 from .portal_role import PortalRole, PortalRolePermission
 from .employee import Employee, EmployeeStore, EmployeePolicy
+from .employee_records import (EmployeeCertification, EmployeeEducation, EmployeeExperience, EmployeeHistory,
+                               EmployeeSkill)

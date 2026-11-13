@@ -16,6 +16,20 @@
   .mg-md-form .mg-md-pageframe .tab-content { display: grid; }
   .mg-md-form .mg-md-pageframe .tab-content > .tab-pane { display: block; grid-area: 1 / 1; visibility: hidden; }
   .mg-md-form .mg-md-pageframe .tab-content > .tab-pane.active { visibility: visible; }
+  /* Fill pane (lists that grow: Employee HISTORY / BACKGROUND): it never sets the PageFrame height; it takes the height
+     the other tabs give the frame and scrolls inside it, so every tab keeps the same frame and Save position. */
+  .mg-md-form .mg-md-pageframe .tab-content > .tab-pane.mg-pane-fill { height: 0; min-height: 100%; overflow-y: auto; overflow-x: hidden; }
+  /* Common Child Grid (child record lists inside a form): compact rows, click a row to expand its details. */
+  .mg-md-form .mg-cg-table { font-size: 12px; }
+  .mg-md-form .mg-cg-table > :not(caption) > * > * { padding: .25rem .35rem; }
+  .mg-md-form .mg-cg-table thead th { font-size: 11px; font-weight: 600; color: var(--list-muted, #647895); white-space: nowrap; }
+  .mg-md-form .mg-cg .btn-sm { padding: .1rem .45rem; font-size: 11px; }
+  .mg-md-form .mg-cg-expandable { cursor: pointer; }
+  .mg-md-form .mg-cg-expandable:hover > td, .mg-md-form .mg-cg-expandable.is-open > td { background: #f5f8ff; }
+  .mg-md-form .mg-cg-detail > td { background: #f9fbfe; font-size: 12px; white-space: normal; }
+  .mg-md-form .mg-cg-text { white-space: pre-wrap; margin-bottom: .25rem; }
+  .mg-md-form .mg-cg-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--list-muted, #647895); }
+  .mg-md-form .mg-cg-meta { font-size: 11px; color: var(--list-muted, #647895); }
   .mg-md-form-header h2 { font-size: 1rem; margin-bottom: 0 !important; }
   .mg-md-form-header .mg-md-description { font-size: 11px; }
   .mg-md-form #mgFields { --bs-gutter-y: .35rem; --bs-gutter-x: .6rem; }
@@ -227,10 +241,15 @@
         <div class="col-5">
           <label for="mgActiveFilter" class="awsum-list-filter-label">Status</label>
           <select id="mgActiveFilter" class="form-select" aria-label="Status filter">
+            {% if mg_entity == 'employee' %}{# Employed (Active + Inactive) by default; the list adds the counts #}
+            <option value="current" data-count-key="current" data-label="Active" selected>Active</option>
+            <option value="terminated" data-count-key="terminated" data-label="Terminated">Terminated</option>
+            <option value="all" data-count-key="all" data-label="All">All</option>
+            {% else %}
             <option value="">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-            {% if mg_entity == 'employee' %}<option value="terminated">Terminated</option>{% endif %}
+            {% endif %}
           </select>
         </div>
       </div>
@@ -356,5 +375,5 @@
 {% if mg_entity in ('category3', 'md') %}<script src="/static/js/lookup-modal.js?v=1"></script>{% endif %}
 <script src="/static/js/page-actions.js?v=1"></script>
 {% if mg_entity == 'employee' %}<script src="/static/js/awsum-address.js?v=1"></script>{% endif %}
-<script src="/static/js/master_group.js?v=91"></script>
+<script src="/static/js/master_group.js?v=92"></script>
 {% endblock %}

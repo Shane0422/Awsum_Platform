@@ -19,6 +19,7 @@ from backend.routers.platform_store import (
 from backend.routers.system_settings import _validate_origin
 from backend.services import master_group as svc
 from backend.services import employees as emp
+from backend.services import employee_records as emp_records
 from backend.services.pos_roles import pos_role_options
 from backend.services import store_locations
 from backend.services.images import image_mutation_form
@@ -334,6 +335,9 @@ def master_group_options(request: Request, db: Session = Depends(get_db)):
         "pos_roles": pos_role_options() if scope is not None and scope.context == "MERCHANT" else [],
         # Employee Master Personal Information: the Gender list (fixed in code; Merchant login only).
         "genders": emp.gender_options() if scope is not None and scope.context == "MERCHANT" else [],
+        # Employee BACKGROUND > Job Skills: the Proficiency Level list (fixed in code; Merchant login only).
+        "skill_proficiencies": (emp_records.proficiency_options()
+                                if scope is not None and scope.context == "MERCHANT" else []),
         "detail_cost": not (scope is not None and scope.context == "STORE")}))
 
 
@@ -537,6 +541,44 @@ def employee_portal_access(item_id: int, payload: dict, request: Request, db: Se
     user, merchant_id = _employee_scope(request, db)
     return _employee_command(db, lambda: emp.set_portal_access(db, merchant_id, item_id, payload,
                                                                user.i_platform_user_id))
+
+
+# ---- Employee HISTORY / BACKGROUND records (services.employee_records; kinds: history, education, experience,
+# certification, skill). Same guard as every Employee Master API (Merchant login, Origin check for writes). ----
+@router.get("/merchant/api/master-group/employee/{item_id}/records/{kind}")
+def employee_record_list(item_id: int, kind: str, request: Request, db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    try:
+        return _set_no_cache_headers(JSONResponse(emp_records.list_records(db, merchant_id, item_id, kind,
+                                                                           user.i_platform_user_id)))
+    except svc.NotFound as exc:
+        return _fail(exc)
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/records/{kind}")
+def employee_record_create(item_id: int, kind: str, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp_records.create_record(db, merchant_id, item_id, kind, payload,
+                                                                   user.i_platform_user_id), created=True)
+
+
+@router.put("/merchant/api/master-group/employee/{item_id}/records/{kind}/{record_id}")
+def employee_record_update(item_id: int, kind: str, record_id: int, payload: dict, request: Request,
+                           db: Session = Depends(get_db)):
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp_records.update_record(db, merchant_id, item_id, kind, record_id, payload,
+                                                                   user.i_platform_user_id))
+
+
+@router.delete("/merchant/api/master-group/employee/{item_id}/records/{kind}/{record_id}")
+def employee_record_delete(item_id: int, kind: str, record_id: int, request: Request, db: Session = Depends(get_db)):
+    _user, merchant_id = _employee_scope(request, db)
+    try:
+        emp_records.delete_record(db, merchant_id, item_id, kind, record_id)
+    except (svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({"message": "Deleted."})
 
 
 @router.get("/merchant/api/master-group/employee/{item_id}/assignments")

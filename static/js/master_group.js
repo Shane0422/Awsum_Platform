@@ -235,6 +235,13 @@
       ? (twoAreaList ? locationColumnsHtml(data.columns || {}) : split ? treeHtml(data.items, columns) : data.items.map((r) => rowHtml(r, columns)).join(''))
       : `<tr><td colspan="${twoAreaList ? 2 : columns.length + (split ? 0 : 1)}" class="text-center text-muted py-4">No records found.</td></tr>`;
     $('mgSummary').textContent = `${data.total} record(s)`;
+    // Status filter counts (a list that returns status_counts, e.g. Employee): "Active (12)" from the real query.
+    if (data.status_counts) {
+      $('mgActiveFilter').querySelectorAll('option[data-count-key]').forEach((o) => {
+        const n = data.status_counts[o.dataset.countKey];
+        o.textContent = n == null ? o.dataset.label : `${o.dataset.label} (${n})`;
+      });
+    }
     // No location at all in the selected Store (not just no search hits): show the registration guide.
     storeHasNoLocations = storeScoped && !!state.storeId && data.total === 0 && !state.q.trim() && !state.active;
     syncLocationGuide();
@@ -340,7 +347,7 @@
   function field(name, text, control, opts) {
     const col = (opts && opts.col) || 'col-md-6';
     return `<div class="${col}" data-field-wrap="${name}"${opts && opts.feature ? ` data-item-feature="${opts.feature}"` : ''}>
-      ${opts && opts.labelAction ? '<div class="mg-label-row">' : ''}<label class="form-label" for="mgf_${name}">${labelIcon(name)}${text}${opts && opts.required ? ' <span class="pm-req" aria-hidden="true">*</span>' : ''}</label>${opts && opts.labelAction ? `${opts.labelAction}</div>` : ''}
+      ${opts && opts.labelAction ? '<div class="mg-label-row">' : ''}<label class="form-label" for="${(opts && opts.forId) || `mgf_${name}`}">${labelIcon(name)}${text}${opts && opts.required ? ' <span class="pm-req" aria-hidden="true">*</span>' : ''}</label>${opts && opts.labelAction ? `${opts.labelAction}</div>` : ''}
       ${control}
       <div class="invalid-feedback" data-error-for="${name}"></div>
       ${opts && opts.help ? `<div class="form-text">${opts.help}</div>` : ''}
@@ -745,6 +752,236 @@
   const usDateTime = (iso) => AwsumDateInput.formatDateTime(iso, EMPTY_VALUE);
   // A common date input (bound by AwsumDateInput.bindAll when the form is filled); rules come from data-date-*.
   const dateInput = (name, label, extra) => input(name, 'text', `data-awsum-date data-date-label="${label}" ${extra || ''}`);
+  // ---- Common Child Grid: the one implementation for a form's child record lists (Employee HISTORY and the four
+  // BACKGROUND lists). Compact table, row expand, one inline Add / Edit editor (common field markup + Common Date
+  // inputs), Delete through AwsumConfirm, its own API (records/{kind}); errors in the editor's feedback slots
+  // (accessErrors). Its controls have no name attribute, so the main Save never collects them. The server decides
+  // every permission (can_add / can_edit / can_delete); the grid only follows it. ----
+  const childGrids = {};
+  function childGrid(cfg) {
+    const ctl = (fld) => `mgCg_${cfg.kind}_${fld.name}`;
+    const control = (fld) => {
+      const attrs = `id="${ctl(fld)}" data-cg-field="${fld.name}"`;
+      if (fld.type === 'textarea') return `<textarea class="form-control" ${attrs} rows="${fld.rows || 2}" maxlength="${fld.max || 4000}"></textarea>`;
+      if (fld.type === 'select') return `<select class="form-select" ${attrs}></select>`;
+      if (fld.type === 'date') return `<input class="form-control" ${attrs} type="text" data-awsum-date data-date-label="${esc(fld.label)}"${fld.required ? ' data-date-required="true"' : ''}>`;
+      if (fld.type === 'year') return `<input class="form-control" ${attrs} type="text" inputmode="numeric" maxlength="4" placeholder="YYYY">`;
+      return `<input class="form-control" ${attrs} type="text" maxlength="${fld.max || 200}">`;
+    };
+    const cols = cfg.columns.length + 1;
+    const html = `<section class="col-12 pm-section mg-cg" id="mgCg${cfg.kind}" data-cg="${cfg.kind}">
+        <div class="pm-section-head d-flex justify-content-between align-items-center">
+          <h3>${cfg.title}</h3>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-cg-act="add" disabled>${cfg.addLabel}</button>
+        </div>
+        <div class="alert py-1 px-2 mb-2 small d-none" data-cg-message role="alert"></div>
+        <div class="border rounded p-2 mb-2 d-none mg-cg-editor" data-cg-editor>
+          <div class="row g-2">${cfg.fields.map((fld) => field(fld.name, fld.label, control(fld), { col: fld.col || 'col-md-6', required: fld.required, help: fld.help, forId: ctl(fld) })).join('')}</div>
+          <div class="d-flex justify-content-end gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-cg-act="cancel">Cancel</button>
+            <button type="button" class="btn btn-sm btn-primary" data-cg-act="save">Save</button>
+          </div>
+        </div>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0 mg-cg-table">
+          <thead><tr>${cfg.columns.map(([label]) => `<th>${label}</th>`).join('')}<th></th></tr></thead>
+          <tbody data-cg-body></tbody></table></div>
+      </section>`;
+    const grid = { kind: cfg.kind, html, items: [], editingId: null, token: 0, row: null, root: null };
+    const $in = (sel) => grid.root.querySelector(sel);
+    const el = (name) => grid.root.querySelector(`[data-cg-field="${name}"]`);
+    const url = (id) => `${BASE}/employee/${grid.row.id}/records/${cfg.kind}${id ? `/${id}` : ''}`;
+    function message(text, kind = 'danger') {
+      const box = $in('[data-cg-message]');
+      box.textContent = text || '';
+      box.className = `alert alert-${kind} py-1 px-2 mb-2 small${text ? '' : ' d-none'}`;
+    }
+    function render(data) {
+      grid.items = data ? data.items : [];
+      $in('[data-cg-act="add"]').disabled = !(data && data.can_add);
+      if (data && data.read_only_message) message(data.read_only_message, 'secondary');
+      const body = $in('[data-cg-body]');
+      if (!grid.items.length) {
+        body.innerHTML = `<tr><td colspan="${cols}" class="text-center text-muted small">${grid.row ? cfg.empty : 'Save the employee first.'}</td></tr>`;
+        return;
+      }
+      body.innerHTML = grid.items.map((item) => {
+        const detail = cfg.detail ? cfg.detail(item) : '';
+        const actions = `${item.can_edit ? `<button type="button" class="btn btn-sm btn-outline-primary" data-cg-act="edit" data-id="${item.id}">Edit</button>` : ''}
+          ${item.can_delete ? `<button type="button" class="btn btn-sm btn-outline-danger" data-cg-act="delete" data-id="${item.id}">Delete</button>` : ''}`;
+        return `<tr data-cg-row="${item.id}"${detail ? ' class="mg-cg-expandable" tabindex="0" aria-expanded="false"' : ''}>
+            ${cfg.columns.map(([, cell]) => `<td>${cell(item)}</td>`).join('')}
+            <td class="text-end text-nowrap">${actions}</td></tr>${detail ? `<tr class="mg-cg-detail" data-cg-detail="${item.id}" hidden><td colspan="${cols}">${detail}</td></tr>` : ''}`;
+      }).join('');
+    }
+    async function load() {
+      const token = ++grid.token;
+      closeEditor();
+      message('');
+      render(null);
+      if (!grid.row) return;
+      try {
+        const data = await api('GET', url());
+        if (token === grid.token) render(data);
+      } catch (err) {
+        if (token === grid.token) message(err.message);
+      }
+    }
+    function closeEditor() {
+      grid.editingId = null;
+      const editor = $in('[data-cg-editor]');
+      editor.classList.add('d-none');
+      accessErrors(editor, {});
+    }
+    function openEditor(item) {
+      grid.editingId = item ? item.id : null;
+      const editor = $in('[data-cg-editor]');
+      AwsumDateInput.bindAll(editor);
+      cfg.fields.forEach((fld) => {
+        const input = el(fld.name);
+        input.disabled = false; // a read-only form pass may have disabled it; the server decides what may be saved
+        const value = item ? item[fld.name] : (fld.default ? fld.default() : '');
+        if (fld.type === 'select') fillSelect(input, fld.options(item ? value : null), value == null ? '' : value, fld.blank);
+        else if (fld.type === 'date') AwsumDateInput.setValue(input, value || '');
+        else input.value = value == null ? '' : value;
+      });
+      cfg.fields.filter((fld) => fld.minFrom).forEach((fld) => syncMin(fld));
+      editor.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      accessErrors(editor, {});
+      message(item || !cfg.hint || cfg.hint() === '' ? '' : cfg.hint(), 'secondary');
+      editor.classList.remove('d-none');
+      const first = el(cfg.fields[0].name);
+      if (first) first.focus();
+    }
+    // A date that must not be before another one (e.g. End Date >= Start Date): the common date rule follows it.
+    function syncMin(fld) {
+      const start = AwsumDateInput.getValue(el(fld.minFrom));
+      const startLabel = cfg.fields.find((f2) => f2.name === fld.minFrom).label;
+      AwsumDateInput.setRules(el(fld.name), /^\d{4}-\d{2}-\d{2}$/.test(start)
+        ? { min: start, minMessage: `${fld.label} must be on or after the ${startLabel} (${usDate(start)}).` } : { min: '', minMessage: '' });
+    }
+    async function save() {
+      const editor = $in('[data-cg-editor]');
+      const dates = cfg.fields.filter((fld) => fld.type === 'date');
+      if (!dates.every((fld) => AwsumDateInput.check(el(fld.name)))) return;
+      const body = {};
+      cfg.fields.forEach((fld) => {
+        const input = el(fld.name);
+        body[fld.name] = fld.type === 'date' ? AwsumDateInput.getValue(input) : input.value.trim();
+      });
+      const button = $in('[data-cg-act="save"]');
+      button.disabled = true;
+      try {
+        if (grid.editingId) await api('PUT', url(grid.editingId), body);
+        else await api('POST', url(), body);
+        showMessage(`${cfg.label} saved.`, 'success');
+        await load();
+      } catch (err) {
+        accessErrors(editor, err.errors);
+        if (!Object.keys(err.errors || {}).length) message(err.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function remove(id) {
+      const item = grid.items.find((x) => x.id === id);
+      const result = await AwsumConfirm.show({
+        title: `Delete ${cfg.label}`, variant: 'danger', okText: 'Delete',
+        message: 'This entry is removed from the employee. This cannot be undone.',
+        details: [[cfg.columns[0][0], cfg.columns[0][1](item).replace(/<[^>]*>/g, '')]],
+      });
+      if (!result.confirmed) return;
+      try {
+        await api('DELETE', url(id));
+        showMessage(`${cfg.label} deleted.`, 'success');
+        await load();
+      } catch (err) {
+        message(err.message);
+      }
+    }
+    function toggle(id) {
+      const rowEl = $in(`[data-cg-row="${id}"]`);
+      const detail = $in(`[data-cg-detail="${id}"]`);
+      if (!detail) return;
+      detail.hidden = !detail.hidden;
+      rowEl.setAttribute('aria-expanded', String(!detail.hidden));
+      rowEl.classList.toggle('is-open', !detail.hidden);
+    }
+    grid.mount = (row) => {
+      grid.row = row;
+      grid.root = document.getElementById(`mgCg${cfg.kind}`);
+      if (!grid.root) return;
+      grid.root.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-cg-act]');
+        if (button) {
+          const act = button.dataset.cgAct;
+          const id = Number(button.dataset.id);
+          if (act === 'add') openEditor(null);
+          else if (act === 'edit') openEditor(grid.items.find((x) => x.id === id));
+          else if (act === 'delete') remove(id);
+          else if (act === 'cancel') { closeEditor(); message(''); }
+          else if (act === 'save') save();
+          return;
+        }
+        const rowEl = event.target.closest('[data-cg-row]');
+        if (rowEl && rowEl.classList.contains('mg-cg-expandable')) toggle(Number(rowEl.dataset.cgRow));
+      });
+      grid.root.addEventListener('keydown', (event) => {
+        const rowEl = event.target.closest('.mg-cg-expandable');
+        if (rowEl && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); toggle(Number(rowEl.dataset.cgRow)); }
+      });
+      cfg.fields.filter((fld) => fld.minFrom).forEach((fld) => {
+        el(fld.minFrom).addEventListener('blur', () => syncMin(fld));
+      });
+      load();
+    };
+    childGrids[cfg.kind] = grid;
+    return grid;
+  }
+  const textCell = (value) => (value == null || value === '' ? '<span class="text-muted">—</span>' : esc(value));
+  const multiline = (label, value) => (value ? `<div class="mg-cg-text"><span class="mg-cg-label">${label}</span>${esc(value)}</div>` : '');
+  const proficiencyOpts = () => ((state.options && state.options.skill_proficiencies) || []).map((p) => [p.code, p.name]);
+  // Employee HISTORY (manager records) and BACKGROUND lists: configuration only; behaviour is the Common Child Grid.
+  const EMPLOYEE_GRIDS = [
+    { kind: 'history', title: 'History', addLabel: 'Add Record', label: 'History record', empty: 'No history records yet.',
+      columns: [['Date', (i) => esc(usDate(i.record_date))], ['Subject', (i) => esc(i.subject)],
+        ['Created By', (i) => textCell(i.created_by)], ['Edited By', (i) => textCell(i.updated_by)]],
+      detail: (i) => `${multiline('Description', i.description)}<div class="mg-cg-meta">Created ${esc(usDateTime(i.created_at))}${i.created_by ? ` by ${esc(i.created_by)}` : ''}${i.edited ? ` · Edited ${esc(usDateTime(i.updated_at))}${i.updated_by ? ` by ${esc(i.updated_by)}` : ''}` : ''}</div>`,
+      fields: [{ name: 'record_date', label: 'Record Date', type: 'date', required: true, col: 'col-md-4', default: () => today() },
+        { name: 'subject', label: 'Subject', required: true, max: 200, col: 'col-md-8' },
+        { name: 'description', label: 'Description', type: 'textarea', rows: 4, required: true, col: 'col-12' }] },
+    { kind: 'education', title: 'Education', addLabel: 'Add', label: 'Education', empty: 'No education added.',
+      columns: [['School', (i) => esc(i.school)], ['Degree', (i) => textCell(i.degree)], ['Major', (i) => textCell(i.major)],
+        ['Year', (i) => textCell(i.graduation_year)]],
+      detail: (i) => multiline('Remark', i.remark),
+      fields: [{ name: 'school', label: 'School', required: true, max: 200 }, { name: 'degree', label: 'Degree', max: 100, col: 'col-md-3' },
+        { name: 'graduation_year', label: 'Graduation Year', type: 'year', col: 'col-md-3' }, { name: 'major', label: 'Major', max: 100 },
+        { name: 'remark', label: 'Remark', type: 'textarea', col: 'col-12' }] },
+    { kind: 'experience', title: 'Work Experience', addLabel: 'Add', label: 'Work Experience', empty: 'No work experience added.',
+      columns: [['Company', (i) => esc(i.company)], ['Position', (i) => textCell(i.position)],
+        ['Period', (i) => esc(`${i.start_date ? usDate(i.start_date) : '—'} – ${i.end_date ? usDate(i.end_date) : 'Present'}`)]],
+      detail: (i) => multiline('Description', i.description) + multiline('Remark', i.remark),
+      fields: [{ name: 'company', label: 'Company', required: true, max: 200 }, { name: 'position', label: 'Position', max: 100 },
+        { name: 'start_date', label: 'Start Date', type: 'date', col: 'col-md-3' },
+        { name: 'end_date', label: 'End Date', type: 'date', col: 'col-md-3', minFrom: 'start_date', help: 'Empty = currently working there.' },
+        { name: 'description', label: 'Description', type: 'textarea', col: 'col-12' }, { name: 'remark', label: 'Remark', type: 'textarea', col: 'col-12' }] },
+    { kind: 'certification', title: 'Certifications &amp; Licenses', addLabel: 'Add', label: 'Certification', empty: 'No certifications or licenses added.',
+      columns: [['Certificate', (i) => esc(i.name)], ['Issued By', (i) => textCell(i.issuer)], ['Issued', (i) => textCell(usDate(i.issued_date))],
+        ['Expires', (i) => (i.expiration_date ? esc(usDate(i.expiration_date)) : '<span class="text-muted">No expiration</span>')]],
+      detail: (i) => multiline('Remark', i.remark),
+      fields: [{ name: 'name', label: 'Certificate Name', required: true, max: 200 }, { name: 'issuer', label: 'Issuing Organization', max: 200 },
+        { name: 'issued_date', label: 'Issued Date', type: 'date', col: 'col-md-3' },
+        { name: 'expiration_date', label: 'Expiration Date', type: 'date', col: 'col-md-3', minFrom: 'issued_date', help: 'Empty = no expiration.' },
+        { name: 'remark', label: 'Remark', type: 'textarea', col: 'col-12' }] },
+    { kind: 'skill', title: 'Job Skills', addLabel: 'Add', label: 'Job Skill', empty: 'No job skills added.',
+      columns: [['Skill', (i) => esc(i.skill ? `${i.skill.name}${i.skill.active ? '' : ' (Inactive)'}` : '')], ['Level', (i) => textCell(i.proficiency_name)]],
+      detail: (i) => multiline('Remark', i.remark),
+      hint: () => (commonCodeOpts('job_skill_codes').length ? '' : 'No Job Skills yet: add them in Master Group > Common Maintenance (Job Skill).'),
+      fields: [{ name: 'skill_code_id', label: 'Skill Name', type: 'select', required: true, blank: 'Select a skill', options: (keep) => commonCodeOpts('job_skill_codes', keep) },
+        { name: 'proficiency', label: 'Proficiency Level', type: 'select', blank: 'Not specified', options: () => proficiencyOpts(), col: 'col-md-3' },
+        { name: 'remark', label: 'Remark', type: 'textarea', col: 'col-12' }] },
+  ];
+  const employeeGrids = EMPLOYEE_GRIDS.map(childGrid);
+  const gridHtml = (kind) => employeeGrids.find((g) => g.kind === kind).html;
   let assignments = [];
   let editingAssignmentId = null;
   let assignmentToken = 0;
@@ -843,6 +1080,9 @@
     // Tabs: the common Bootstrap Tab markup and styles of the MD form (.mg-md-pageframe: every pane keeps the
     // height of the tallest, so the frame and Save never move); one Save for every tab. A tab without a body is
     // not built yet: shown with the common "Soon" badge, disabled, no pane.
+    // BACKGROUND overall remark: one per Employee, saved with the Employee (not a list entry).
+    const background = section('Remark', field('background_remark', 'Remark', `<textarea class="form-control" id="mgf_background_remark" name="background_remark" rows="3" maxlength="4000"></textarea>`, { col: 'col-12' }),
+      'Overall background notes (separate from each entry\'s remark).', 'id="mgEmpBackgroundRemark"');
     const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
@@ -850,7 +1090,8 @@
       ['Address', 'ADDRESS', address],
       ['Terminal', 'STORE TERMINAL ACCESS', `${posAccess}${asg}`],
       ['Portal', 'PORTAL ACCESS', portalAccess],
-      ['Skills', 'SKILLS', null], ['Compensation', 'COMPENSATION', null], ['History', 'HISTORY', null]];
+      ['Background', 'BACKGROUND', `${gridHtml('education')}${gridHtml('experience')}${gridHtml('certification')}${gridHtml('skill')}${background}`, true],
+      ['Compensation', 'COMPENSATION', null], ['History', 'HISTORY', gridHtml('history'), true]];
     const tabButton = ([key, label, body], i) => (body === null
       ? `<button class="nav-link disabled" id="mgEmpTab${key}" type="button" role="tab" disabled aria-disabled="true" title="Coming soon">${label}<span class="platform-menu-soon ms-1">Soon</span></button>`
       : `<button class="nav-link${i ? '' : ' active'}" id="mgEmpTab${key}" data-bs-toggle="tab" data-bs-target="#mgEmpPane${key}" type="button" role="tab" aria-controls="mgEmpPane${key}" aria-selected="${i ? 'false' : 'true'}">${label}</button>`);
@@ -858,8 +1099,8 @@
           <ul class="nav nav-tabs" id="mgEmpTabs" role="tablist">${tabs.map((tab, i) => `
             <li class="nav-item" role="presentation">${tabButton(tab, i)}</li>`).join('')}
           </ul>
-          <div class="tab-content">${tabs.filter(([, , body]) => body !== null).map(([key, , body], i) => `
-            <div class="tab-pane fade${i ? '' : ' show active'}" id="mgEmpPane${key}" role="tabpanel" aria-labelledby="mgEmpTab${key}" tabindex="0">
+          <div class="tab-content">${tabs.filter(([, , body]) => body !== null).map(([key, , body, fill], i) => `
+            <div class="tab-pane fade${i ? '' : ' show active'}${fill ? ' mg-pane-fill' : ''}" id="mgEmpPane${key}" role="tabpanel" aria-labelledby="mgEmpTab${key}" tabindex="0">
               <div class="row g-3">${body}</div>
             </div>`).join('')}
           </div>
@@ -867,7 +1108,7 @@
   }
 
   const EMPLOYEE_DATE_FIELDS = ['hire_date', 'birth_date']; // common date inputs (MM-DD-YYYY on screen, ISO in the API)
-  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email',
+  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'background_remark',
     'zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'pos_login_id'];
   const POS_STATUS_LABELS = { disabled: 'Disabled', pin_not_set: 'Enabled \u00b7 PIN not set', locked: 'Locked', active: 'Active' };
   function fillEmployeeForm(row) {
@@ -1550,6 +1791,7 @@
       bindAssignmentEvents();
       bindLoginAccessEvents();
       loadAssignments(row);
+      employeeGrids.forEach((grid) => grid.mount(row));
     }
     if (modal) modal.show();
   }
@@ -2108,7 +2350,14 @@
     });
     $('mgForm').addEventListener('submit', save);
     $('mgSearch').addEventListener('input', debounce((e) => { state.q = e.target.value; state.page = 1; load(); }, 250));
-    $('mgActiveFilter').addEventListener('change', (e) => { state.active = e.target.value; state.page = 1; load(); });
+    state.active = $('mgActiveFilter').value; // the screen's default status filter (Employee: Active)
+    $('mgActiveFilter').addEventListener('change', async (e) => {
+      state.active = e.target.value;
+      state.page = 1;
+      await load();
+      // The detail panel never keeps a record the new filter no longer lists (e.g. a terminated one under Active).
+      if (split && state.editing && !state.items.some((r) => r.id === state.editing.id)) resetMdForm();
+    });
     $('mgPageSize').addEventListener('change', (e) => { state.size = Number(e.target.value); state.page = 1; load(); });
     $('mgPrev').addEventListener('click', () => { state.page -= 1; load(); });
     $('mgNext').addEventListener('click', () => { state.page += 1; load(); });

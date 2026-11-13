@@ -416,6 +416,7 @@ window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  requests.push({path:url.pathname,search:url.search,method:options.method||'GET',body:options.body});
  if(url.pathname.endsWith('/options'))return J(__options);
  if(url.pathname.endsWith('/assignments'))return J(__asg);
+ if(/\/records\//.test(url.pathname))return J({items:[],can_add:true,read_only_message:null}); // HISTORY / BACKGROUND lists
  if(url.pathname==='/merchant/api/master-group/employee')return J(__list);
  if(window.__fail&&options.method==='PUT'){const body=__fail;window.__fail=null;
    return new Response(JSON.stringify(body),{status:422,headers:{'Content-Type':'application/json'}});}
@@ -438,12 +439,12 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  await wait(()=>doc.querySelectorAll('#mgAsgBody tr[data-asg]').length===2,'assignments loaded');
  // Tabs: the common Bootstrap Tab of the MD form; GENERAL first, one pane shown at a time.
  const tabs=[...$('mgEmpTabs').querySelectorAll('[role="tab"]')];
- assert(tabs.map(t=>t.textContent.trim()).join('|')==='GENERAL|ADDRESS|STORE TERMINAL ACCESS|PORTAL ACCESS|SKILLSSoon|COMPENSATIONSoon|HISTORYSoon','seven tabs in order: '+tabs.map(t=>t.textContent.trim()));
+ assert(tabs.map(t=>t.textContent.trim()).join('|')==='GENERAL|ADDRESS|STORE TERMINAL ACCESS|PORTAL ACCESS|BACKGROUND|COMPENSATIONSoon|HISTORY','seven tabs in order: '+tabs.map(t=>t.textContent.trim()));
  assert($('mgEmpTabs').closest('.mg-md-pageframe')&&$('mgEmpTabs').classList.contains('nav-tabs'),'common tab markup');
  // Soon tabs: the common Soon badge, disabled, no pane; clicking does nothing.
- const soon=['Skills','Compensation','History'].map(k=>$('mgEmpTab'+k));
+ const soon=['Compensation'].map(k=>$('mgEmpTab'+k));
  assert(soon.every(t=>t.disabled&&t.classList.contains('disabled')&&!t.dataset.bsToggle&&t.querySelector('.platform-menu-soon')),'Soon tabs disabled');
- assert(doc.querySelectorAll('#mgFields .tab-pane').length===4,'panes only for built tabs');
+ assert(doc.querySelectorAll('#mgFields .tab-pane').length===6,'panes only for built tabs');
  soon[0].click();await pause(250);
  // One tab row: scrolls sideways (this screen only) instead of wrapping.
  assert(tabs.every(t=>Math.abs(t.getBoundingClientRect().top-tabs[0].getBoundingClientRect().top)<2),'tabs on one row');
@@ -561,7 +562,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const put=win.requests.find(r=>r.method==='PUT');
  assert(put.path==='/merchant/api/master-group/employee/'+__ID__+'/with-image','photo-aware save route');
  const keys=Object.keys(JSON.parse(put.body.get('payload'))).sort().join(',');
- assert(keys==='address_line1,address_line2,birth_date,city,country,display_name,email,first_name,gender,hire_date,job_grade_code_id,job_title_code_id,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
+ assert(keys==='address_line1,address_line2,background_remark,birth_date,city,country,display_name,email,first_name,gender,hire_date,job_grade_code_id,job_title_code_id,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
  assert(JSON.parse(put.body.get('payload')).job_title_code_id===String(win.__list.items[0].job_title_code_id),'saved inactive Title sent back unchanged');
  assert(JSON.parse(put.body.get('payload')).pos_login_enabled===true,'Enable POS Login sent');
  const sent=JSON.parse(put.body.get('payload'));
@@ -585,7 +586,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  doc.querySelector('#mgBody [data-row-select]').click();await pause(100);
  assert($('mgf_first_name').disabled&&$('mgPinOpen').disabled&&$('mgAsgAdd').disabled,'read-only fields and actions');
  assert([...$('mgEmpTabs').querySelectorAll('[data-bs-toggle="tab"]')].every(t=>!t.disabled),'built tabs usable');
- assert(['Skills','Compensation','History'].every(k=>$('mgEmpTab'+k).disabled),'Soon tabs stay disabled');
+ assert(['Compensation'].every(k=>$('mgEmpTab'+k).disabled),'Soon tab stays disabled');
  $('mgEmpTabPortal').click();await pause(250);
  assert(shown().join()==='mgEmpPanePortal'&&$('mgPortalOpen').disabled,'read-only tab switch');
  // A registered password: fixed mask + Password Set, the password inputs stay empty (nothing is sent to the screen).
@@ -928,7 +929,7 @@ class EmployeeJobGradeTitleTests(unittest.TestCase):
             self.assertEqual(sorted(r.c_group_code for r in db.query(MerchantCommonInit).filter(
                 MerchantCommonInit.i_merchant_id == 11)), ["COLOR", "UNIT"])
             result = mg_svc.initialize_merchant_common_codes(db, 11, 1)  # the next Merchant visit
-            self.assertEqual(sorted(result), ["JOB_GRADE", "JOB_TITLE"])
+            self.assertEqual(sorted(result), ["JOB_GRADE", "JOB_SKILL", "JOB_TITLE"])  # JOB_SKILL: empty group
             after = snapshot()
             self.assertEqual([r for r in after if not r[1].startswith(("GRD", "JOB"))], before)
             self.assertTrue(any(r[1:] == ("CLR00001", "Jet Black", True) for r in after))

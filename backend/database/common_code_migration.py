@@ -1,4 +1,4 @@
-"""Common Maintenance seed: COLOR, UNIT, JOB_GRADE and JOB_TITLE groups in tb_common_group / tb_common_code.
+"""Common Maintenance seed: COLOR, UNIT, JOB_GRADE, JOB_TITLE and JOB_SKILL groups in tb_common_group / tb_common_code.
 
 Additive and rerun-safe; nothing existing is ever updated or deleted:
 - Groups are inserted only when their c_group_code is missing (an existing group is never overwritten).
@@ -9,6 +9,8 @@ Additive and rerun-safe; nothing existing is ever updated or deleted:
 - JOB_GRADE / JOB_TITLE (Employee Master): the approved default lists (AUTO codes GRD00001... / JOB00001...) are
   inserted only into an empty group. Merchants receive them through the copy-once initialization
   (services.master_group.initialize_merchant_common_codes); groups a Merchant already initialized are untouched.
+- JOB_SKILL (Employee BACKGROUND > Job Skills, AUTO SKL00001...): the group only, no default codes (each Merchant adds
+  its own skills).
 So codes an admin later renames, deactivates or deletes are never brought back or overwritten.
 SIZE and ITEM_KIND are not Common Maintenance groups.
 """
@@ -22,6 +24,7 @@ COMMON_GROUPS = (
     ("UNIT", "Unit", "MANUAL", None, 30, None, None, 20),
     ("JOB_GRADE", "Job Grade", "AUTO", "GRD", 20, None, None, 30),
     ("JOB_TITLE", "Job Title", "AUTO", "JOB", 20, None, None, 40),
+    ("JOB_SKILL", "Job Skill", "AUTO", "SKL", 20, None, None, 50),
 )
 DEFAULT_COLORS = (
     ("Black", "#000000"),

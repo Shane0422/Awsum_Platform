@@ -64,7 +64,7 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
         with self.factory() as db:
             self.assertIsNone(db.get(CommonCode, created.json()["item"]["id"]).i_merchant_id)
         options = self.client.get("/platform/api/master-group/options").json()
-        self.assertEqual([g["code"] for g in options["common_groups"]], ["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE"])
+        self.assertEqual([g["code"] for g in options["common_groups"]], ["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE", "JOB_SKILL"])
         self.assertEqual(len(options["units"]), 15)
         self.assertEqual(len(options["color_codes"]), 13)
         export = self.client.get(self.url("platform", format="csv").replace("common_code?", "common_code/export?"))
@@ -99,7 +99,7 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
         self.assertEqual(color.status_code, 201, color.text)
         self.assertEqual((color.json()["item"]["code"], color.json()["item"]["value"]), ("CLR00014", "#008080"))  # own sequence
         options = self.client.get("/merchant/api/master-group/options").json()
-        self.assertEqual([g["code"] for g in options["common_groups"]], ["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE"])
+        self.assertEqual([g["code"] for g in options["common_groups"]], ["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE", "JOB_SKILL"])
         self.assertFalse(any(g["read_only"] for g in options["common_groups"]))
         self.assertEqual([u["code"] for u in options["units"]], PLATFORM_UNITS)
         self.assertEqual(len(options["color_codes"]), 14)
@@ -126,7 +126,7 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
             ea_id = ea.i_common_code_id
         self.login("MERCHANT")
         self.assertEqual(len(self.items(self.client.get(self.url(size=100)))), 14)
-        self.assertEqual(self.init_rows(), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_TITLE", 10, 0), ("UNIT", 13, 1)])
+        self.assertEqual(self.init_rows(), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_SKILL", 0, 0), ("JOB_TITLE", 10, 0), ("UNIT", 13, 1)])
         with self.factory() as db:
             kept = db.get(CommonCode, ea_id)
             self.assertEqual((kept.c_code, kept.c_name, kept.c_description, kept.i_merchant_id), ("EA", "Each", "kept", 10))
@@ -152,7 +152,7 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
         self.assertNotIn("PLT", self.codes(10))
         self.assertNotIn("CLR00001", self.codes(10, "COLOR"))
         self.assertEqual(len(self.codes(10)), 13)
-        self.assertEqual(self.init_rows(), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_TITLE", 10, 0), ("UNIT", 14, 0)])
+        self.assertEqual(self.init_rows(), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_SKILL", 0, 0), ("JOB_TITLE", 10, 0), ("UNIT", 14, 0)])
         with self.factory() as db:
             self.assertEqual(svc.initialize_merchant_common_codes(db, 10, 1), {})  # the init rows decide
 
@@ -188,7 +188,7 @@ class MerchantCommonMaintenanceTests(unittest.TestCase):
         merchant_id = response.json()["id"]
         self.assertEqual(self.codes(merchant_id), sorted(PLATFORM_UNITS))
         self.assertEqual(len(self.codes(merchant_id, "COLOR")), 13)
-        self.assertEqual(self.init_rows(merchant_id), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_TITLE", 10, 0), ("UNIT", 14, 0)])
+        self.assertEqual(self.init_rows(merchant_id), [("COLOR", 13, 0), ("JOB_GRADE", 8, 0), ("JOB_SKILL", 0, 0), ("JOB_TITLE", 10, 0), ("UNIT", 14, 0)])
         self.assertEqual(len(self.codes(None)), 14)
         # The copy is part of the Merchant registration: when it fails, the Merchant is not created either.
         with patch("backend.routers.platform_store.initialize_merchant_common_codes",

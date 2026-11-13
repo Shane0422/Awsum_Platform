@@ -6,6 +6,12 @@
   formatter. Never create screen-specific money inputs/masks/formatters.
   Presentation is `#,##0.00`; DB/API values stay comma-free numeric/decimal.
   Percentages, quantities, IDs, codes and display order are not money.
+- Before adding or changing any date input, date display, date export or date
+  message, read [AWSUM DATE INPUT STANDARD](docs/AWSUM_DATE_INPUT_STANDARD.md).
+  Screens use `MM-DD-YYYY` (date-time `MM-DD-YYYY hh:mm AM/PM`) through
+  `AwsumDateInput` (`static/js/date.js`) and `backend/services/dates.py`;
+  API stays ISO `YYYY-MM-DD`, DB stays DATE. Never create native date inputs,
+  screen-specific date masks, pickers or formatters.
 - Before path, storage, filesystem, images, uploads, owner-path, project folder,
   `frontend`/`static`/`templates`/`shared` placement, installation, migration or
   backup/restore changes, read all three:

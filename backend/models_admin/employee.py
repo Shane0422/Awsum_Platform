@@ -20,7 +20,7 @@ Merchant ownership is enforced by the database: an assignment's Employee and Sto
 (composite FKs on (id, i_merchant_id)), and Portal Roles are referenced with their scope (MERCHANT / STORE).
 """
 from sqlalchemy import (Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Index,
-                        Integer, String, UniqueConstraint, text)
+                        Integer, String, Text, UniqueConstraint, text)
 
 from backend.database.pg_platform import PlatformBase
 from backend.models_admin import common_code  # noqa: F401  (registers tb_common_code for the Job Grade / Title FKs)
@@ -74,6 +74,7 @@ class Employee(PlatformBase, AddressMixin, AuditMixin):
     d_hire_date = Column(Date, nullable=True)
     d_birth_date = Column(Date, nullable=True)              # Personal Information (optional, never in the future)
     c_gender = Column(String(20), nullable=True)            # EMPLOYEE_GENDERS code (optional)
+    c_background_remark = Column(Text, nullable=True)       # BACKGROUND overall remark (STEP 1A-4, one per Employee)
     i_job_grade_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id", ondelete="RESTRICT",
                                                      name="fk_tb_employee_job_grade_code"), nullable=True, index=True)
     i_job_title_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id", ondelete="RESTRICT",

@@ -41,7 +41,7 @@ class CommonDateTests(unittest.TestCase):
         self.assertEqual(base.count('href="/static/css/awsum-date.css'), 1)
         js = (ROOT / "static" / "js" / "master_group.js").read_text(encoding="utf-8")
         self.assertNotIn('type="date"', js)  # Employee dates use the common component, never the native input
-        self.assertNotIn("'date')", js)
+        self.assertNotRegex(js, r"input\('[a-z_]+', 'date'")  # no input(name, 'date') native control helper call
 
 
 if __name__ == "__main__":

@@ -11,8 +11,8 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
 from backend.database.employee_migration import (EMPLOYEE_LOGIN_COLUMNS, EMPLOYEE_TABLES, JOB_COLUMNS, PERSONAL_COLUMNS,
-                                                 POS_LOGIN_INDEX, STORE_INDEX, gender_check_codes,
-                                                 migrate_employee_schema, pending_employee_schema)
+                                                 POS_LOGIN_INDEX, RECORD_TABLES, REMARK_COLUMN, STORE_INDEX,
+                                                 gender_check_codes, migrate_employee_schema, pending_employee_schema)
 from backend.database.pg_platform import PlatformBase
 import backend.models_admin  # noqa: F401
 
@@ -42,12 +42,14 @@ class EmployeeMigrationTests(unittest.TestCase):
                                                                 "employee_columns": [], "pos_login_index": False,
                                                                 "job_columns": [], "job_fks": [], "job_indexes": [],
                                                                 "personal_columns": [], "gender_check": False,
-                                                                "gender_check_replace": False})
+                                                                "gender_check_replace": False,
+                                                                "record_tables": [], "remark_column": False})
         result = migrate_employee_schema(self.engine)
         self.assertEqual(result, {"created_tables": list(EMPLOYEE_TABLES), "store_index_created": True,
                                   "added_employee_columns": [], "pos_login_index_created": False, "added_job_columns": [], "added_job_fks": [], "created_job_indexes": [],
                                   "added_personal_columns": [], "gender_check_created": False,
-                                  "gender_check_replaced": False})
+                                  "gender_check_replaced": False,
+                                  "created_record_tables": [], "background_remark_added": False})
         inspector = inspect(self.engine)
         self.assertTrue(set(EMPLOYEE_TABLES) <= set(inspector.get_table_names()))
         self.assertIn(STORE_INDEX, {ix["name"] for ix in inspector.get_indexes("tb_store")})
@@ -57,12 +59,14 @@ class EmployeeMigrationTests(unittest.TestCase):
                                                                 "employee_columns": [], "pos_login_index": False,
                                                                 "job_columns": [], "job_fks": [], "job_indexes": [],
                                                                 "personal_columns": [], "gender_check": False,
-                                                                "gender_check_replace": False})
+                                                                "gender_check_replace": False,
+                                                                "record_tables": [], "remark_column": False})
         self.assertEqual(migrate_employee_schema(self.engine), {"created_tables": [], "store_index_created": False,
                                                                 "added_employee_columns": [],
                                                                 "pos_login_index_created": False, "added_job_columns": [], "added_job_fks": [], "created_job_indexes": [],
                                   "added_personal_columns": [], "gender_check_created": False,
-                                  "gender_check_replaced": False})
+                                  "gender_check_replaced": False,
+                                  "created_record_tables": [], "background_remark_added": False})
         job_fks = {fk["constrained_columns"][0]: fk["referred_table"] for fk in inspector.get_foreign_keys("tb_employee")}
         self.assertEqual({name: job_fks.get(name) for name in JOB_COLUMNS},
                          {name: "tb_common_code" for name in JOB_COLUMNS})  # new table: built from the model
@@ -83,7 +87,8 @@ class EmployeeLoginMigrationTests(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         PlatformBase.metadata.create_all(self.engine)
         old = [c for c in Employee.__table__.columns
-               if c.name not in EMPLOYEE_LOGIN_COLUMNS and c.name not in JOB_COLUMNS and c.name not in PERSONAL_COLUMNS]
+               if c.name not in EMPLOYEE_LOGIN_COLUMNS and c.name not in JOB_COLUMNS and c.name not in PERSONAL_COLUMNS
+               and c.name != REMARK_COLUMN[0]]
         ddl = ", ".join(f"{c.name} {c.type.compile(self.engine.dialect)}" + (" PRIMARY KEY" if c.primary_key else "")
                         for c in old)
         with self.engine.begin() as conn:
@@ -187,6 +192,46 @@ class EmployeeJobMigrationTests(unittest.TestCase):
         with self.engine.begin() as conn:
             conn.execute(text("UPDATE tb_employee SET i_job_grade_code_id = 7"))  # a stored reference
             self.assertEqual(conn.execute(text("SELECT i_job_grade_code_id FROM tb_employee")).scalar(), 7)
+
+
+class EmployeeRecordsMigrationTests(unittest.TestCase):
+    """STEP 1A-4 on a database migrated up to STEP 1A-3: the HISTORY / BACKGROUND tables and c_background_remark."""
+
+    def setUp(self):
+        EmployeeLoginMigrationTests.setUp(self)
+        migrate_employee_schema(self.engine)  # bring tb_employee up to STEP 1A-3 (and create 1A-4 once)
+        with self.engine.begin() as conn:  # simulate the database before STEP 1A-4
+            for name in RECORD_TABLES:
+                conn.execute(text(f"DROP TABLE {name}"))
+            conn.execute(text(f"ALTER TABLE tb_employee DROP COLUMN {REMARK_COLUMN[0]}"))
+            conn.execute(text("UPDATE tb_employee SET c_city = 'Plano', d_birth_date = '1961-04-22', c_gender = 'MALE'"))
+
+    employee = EmployeeLoginMigrationTests.employee
+
+    def test_creates_the_record_tables_and_the_remark_column_once(self):
+        before = self.employee()
+        pending = pending_employee_schema(self.engine)
+        self.assertEqual((pending["record_tables"], pending["remark_column"]), (list(RECORD_TABLES), True))
+        result = migrate_employee_schema(self.engine)
+        self.assertEqual((result["created_record_tables"], result["background_remark_added"]), (list(RECORD_TABLES), True))
+        after = self.employee()
+        self.assertEqual({k: after[k] for k in before}, before)  # every saved value kept
+        self.assertIsNone(after[REMARK_COLUMN[0]])
+        inspector = inspect(self.engine)
+        self.assertTrue(set(RECORD_TABLES) <= set(inspector.get_table_names()))
+        for name in RECORD_TABLES:
+            owner = [fk for fk in inspector.get_foreign_keys(name) if fk["referred_table"] == "tb_employee"]
+            self.assertEqual([(fk["constrained_columns"], fk["referred_columns"]) for fk in owner],
+                             [(["i_employee_id", "i_merchant_id"], ["i_employee_id", "i_merchant_id"])], name)
+            with self.engine.connect() as conn:
+                self.assertEqual(conn.execute(text(f"SELECT count(*) FROM {name}")).scalar(), 0)  # nothing seeded
+        skill_fk = {fk["referred_table"] for fk in inspector.get_foreign_keys("tb_employee_skill")}
+        self.assertIn("tb_common_code", skill_fk)
+        again = pending_employee_schema(self.engine)
+        self.assertEqual((again["record_tables"], again["remark_column"]), ([], False))
+        second = migrate_employee_schema(self.engine)
+        self.assertEqual((second["created_record_tables"], second["background_remark_added"]), ([], False))
+        self.assertEqual(self.employee(), after)
 
 
 class GenderCheckTests(unittest.TestCase):

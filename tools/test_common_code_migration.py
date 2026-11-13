@@ -60,14 +60,16 @@ class CommonCodeMigrationTests(unittest.TestCase):
     def test_new_database_seeds_default_colors_and_units_directly(self):
         result, _ = self.migrate()
         self.assertEqual((result["groups"], result["colors"], result["units"], result["job_grades"], result["job_titles"]),
-                         (["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE"], 13, 14, 8, 10))
+                         (["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE", "JOB_SKILL"], 13, 14, 8, 10))
         self.assertFalse(inspect(self.engine).has_table("tb_color"))
         groups = self.rows("SELECT c_group_code, c_code_mode, c_code_prefix, i_code_max_length, c_value_type, "
                            "c_value_label, b_merchant_extendable, b_active FROM tb_common_group ORDER BY i_display_order")
         self.assertEqual(groups, [("COLOR", "AUTO", "CLR", 20, "COLOR", "Swatch HEX", 0, 1),
                                   ("UNIT", "MANUAL", None, 30, None, None, 0, 1),
                                   ("JOB_GRADE", "AUTO", "GRD", 20, None, None, 0, 1),
-                                  ("JOB_TITLE", "AUTO", "JOB", 20, None, None, 0, 1)])
+                                  ("JOB_TITLE", "AUTO", "JOB", 20, None, None, 0, 1),
+                                  ("JOB_SKILL", "AUTO", "SKL", 20, None, None, 0, 1)])
+        self.assertEqual(self.codes("JOB_SKILL"), [])  # an empty group: each Merchant adds its own skills
         self.assertEqual(self.codes("COLOR"), [(f"CLR{n:05d}", name, hex_, None, n * 10, 1, None, None)
                                                for n, (name, hex_) in enumerate(DEFAULT_COLORS, start=1)])
         self.assertEqual([(c[0], c[1], c[4]) for c in self.codes("UNIT")],
@@ -114,10 +116,11 @@ class CommonCodeMigrationTests(unittest.TestCase):
         old_groups = self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id")
         result, out = self.migrate()
         self.assertEqual((result["groups"], result["colors"], result["units"], result["job_grades"], result["job_titles"]),
-                         (["JOB_GRADE", "JOB_TITLE"], 0, 0, 8, 10))
+                         (["JOB_GRADE", "JOB_TITLE", "JOB_SKILL"], 0, 0, 8, 10))
         self.assertEqual(self.rows("SELECT * FROM tb_common_code ORDER BY i_common_code_id")[:len(old_codes)], old_codes)
         self.assertEqual(self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id")[:len(old_groups)], old_groups)
         self.assertEqual(len(self.codes("JOB_GRADE")) + len(self.codes("JOB_TITLE")), 18)
+        self.assertEqual(self.codes("JOB_SKILL"), [])
         self.assertIn("JOB_GRADE seeded: 8; JOB_TITLE seeded: 10", out)
 
     # ---- database created before COLOR step 6: tb_color is copied, defaults are not seeded ----

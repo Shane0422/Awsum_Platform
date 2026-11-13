@@ -115,7 +115,8 @@ MERCHANT_MD_FIXED_VALUES = {
 MERCHANT_DEFAULT_UNITS = (("EA", "Each"),)
 # Common Maintenance groups shown now. SIZE and ITEM_KIND are never Common Maintenance groups.
 # JOB_GRADE / JOB_TITLE: Employee Master Job Grade / Job Title (tb_employee i_job_grade_code_id / i_job_title_code_id).
-COMMON_MAINTENANCE_GROUPS = ("COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE")
+# JOB_SKILL: Employee BACKGROUND > Job Skills (tb_employee_skill.i_skill_code_id).
+COMMON_MAINTENANCE_GROUPS = ("COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE", "JOB_SKILL")
 # Employee column per Employee-referenced group (in-use check: any Employee status, terminated included).
 EMPLOYEE_COMMON_GROUPS = {"JOB_GRADE": "i_job_grade_code_id", "JOB_TITLE": "i_job_title_code_id"}
 # View-only Common Groups (none since COLOR step 5-2: COLOR is managed here; the mechanism stays for later groups).
@@ -680,6 +681,9 @@ def common_code_in_use(db: Session, group_code: str, row: CommonCode) -> bool:
     if group_code in EMPLOYEE_COMMON_GROUPS:  # Employee Job Grade / Job Title, terminated Employees included
         column = getattr(Employee, EMPLOYEE_COMMON_GROUPS[group_code])
         return bool(db.query(Employee.i_employee_id).filter(column == row.i_common_code_id).first())
+    if group_code == "JOB_SKILL":  # Employee BACKGROUND Job Skills (any Employee status)
+        from backend.models_admin.employee_records import EmployeeSkill
+        return bool(db.query(EmployeeSkill.i_skill_id).filter(EmployeeSkill.i_skill_code_id == row.i_common_code_id).first())
     return False
 
 
@@ -1990,6 +1994,7 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         # Employee Master Job Grade / Job Title selectors (Common Maintenance JOB_GRADE / JOB_TITLE).
         "job_grade_codes": common_code_options(db, "JOB_GRADE", merchant_id),
         "job_title_codes": common_code_options(db, "JOB_TITLE", merchant_id),
+        "job_skill_codes": common_code_options(db, "JOB_SKILL", merchant_id),  # Employee BACKGROUND > Job Skills
         "billing_cycles": list(BILLING_CYCLES),
         # Behavior flags come from the Common definition so the UI never re-derives them from numbers.
         "inventory_types": [b.as_dict() for b in inventory.inventory_types()],

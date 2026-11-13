@@ -49,7 +49,7 @@ import re
 from datetime import date, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import exists, func, or_
+from sqlalchemy import case, exists, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -84,7 +84,8 @@ JOB_FIELDS = {"job_grade_code_id": ("i_job_grade_code_id", "JOB_GRADE", "Job Gra
               "job_title_code_id": ("i_job_title_code_id", "JOB_TITLE", "Job Title")}
 GENDER_LABELS = dict(EMPLOYEE_GENDERS)
 EDITABLE = frozenset({"first_name", "last_name", "display_name", "phone", "email", "hire_date", "status",
-                      "pos_login_enabled", "pos_login_id", *ADDRESS_FIELDS, *JOB_FIELDS, "birth_date", "gender"})
+                      "pos_login_enabled", "pos_login_id", *ADDRESS_FIELDS, *JOB_FIELDS, "birth_date", "gender",
+                      "background_remark"})
 POS_LOGIN_ID = re.compile(r"^\d{4,10}$")
 POS_PIN = re.compile(r"^\d{4,8}$")  # interim until the STEP 2 PIN policy
 PORTAL_FIELDS = frozenset({"enabled", "email", "password", "confirm_password"})
@@ -301,6 +302,7 @@ def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformU
         "job_grade_code_id": row.i_job_grade_code_id, "job_grade": jobs.get(row.i_job_grade_code_id),
         "job_title_code_id": row.i_job_title_code_id, "job_title": jobs.get(row.i_job_title_code_id),
         "birth_date": _iso(row.d_birth_date), "gender": row.c_gender, "gender_name": GENDER_LABELS.get(row.c_gender or ""),
+        "background_remark": row.c_background_remark,
         "image_path": row.c_image_path, "image_url": image_url(row.c_image_path) if row.c_image_path else None,
         "primary_store": summary["primary_store"], "store_count": summary["store_count"],
         "stores": summary["stores"], "pos_access": summary["pos_access"],
@@ -340,6 +342,11 @@ def serialize_assignment(assignment: EmployeeStore, store: Store, employee: Empl
 
 
 # ---------- list / export ----------
+# Employee list status filter (the common Master Group status select): current = employed (Active and Inactive, i.e.
+# not terminated, the default), terminated, all (terminated last). Single statuses stay accepted (earlier clients).
+STATUS_FILTERS = ("current", "terminated", "all")
+
+
 def _query(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos_role=None):
     query = db.query(Employee).filter(Employee.i_merchant_id == merchant_id)
     term = str(q or "").strip()
@@ -352,7 +359,9 @@ def _query(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos
             conditions.append(Employee.i_pos_number == int(term))
             conditions.append(Employee.c_pos_login_id == term)
         query = query.filter(or_(*conditions))
-    if status in ("active", "inactive", "terminated"):
+    if status == "current":
+        query = query.filter(Employee.c_status != "terminated")
+    elif status in ("active", "inactive", "terminated"):
         query = query.filter(Employee.c_status == status)
     if store_id not in (None, ""):
         try:
@@ -374,9 +383,19 @@ def _query(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos
 
 
 def _ordered(query, sort: str, direction: str):
+    """Terminated Employees always after the employed ones (All); the chosen sort applies inside each group."""
     key = sort if sort in SORTS else "code"
     columns = [column.desc() if direction == "desc" else column.asc() for column in SORTS[key]]
-    return query.order_by(*columns, Employee.i_employee_id.asc()), key
+    terminated_last = case((Employee.c_status == "terminated", 1), else_=0)
+    return query.order_by(terminated_last, *columns, Employee.i_employee_id.asc()), key
+
+
+def status_counts(db: Session, merchant_id: int, *, q="", store_id=None, pos_role=None) -> dict:
+    """Rows per status filter for the same search / Store / POS Role filters (the counts shown on the filter)."""
+    base = _query(db, merchant_id, q=q, store_id=store_id, pos_role=pos_role).order_by(None)
+    terminated = base.filter(Employee.c_status == "terminated").count()
+    total = base.count()
+    return {"current": total - terminated, "terminated": terminated, "all": total}
 
 
 def list_employees(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos_role=None, sort="",
@@ -394,7 +413,8 @@ def list_employees(db: Session, merchant_id: int, *, q="", status="", store_id=N
     jobs = _job_codes(db, rows)
     return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id), actors, jobs)
                       for row in rows], "total": total, "page": page,
-            "pages": pages, "size": size, "sort": key, "direction": "desc" if direction == "desc" else "asc"}
+            "pages": pages, "size": size, "sort": key, "direction": "desc" if direction == "desc" else "asc",
+            "status_counts": status_counts(db, merchant_id, q=q, store_id=store_id, pos_role=pos_role)}
 
 
 def export_employees(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos_role=None, sort="",
@@ -476,6 +496,8 @@ def _validated(db: Session, payload: dict, current: Employee | None, merchant_id
         if birth and birth > date.today():
             errors["birth_date"] = "Birthday cannot be in the future."
         values["d_birth_date"] = birth
+    if "background_remark" in payload or current is None:  # BACKGROUND overall remark (one per Employee)
+        values["c_background_remark"] = _text(payload, "background_remark", 4000, errors)
     if "gender" in payload or current is None:
         gender = str(payload.get("gender") or "").strip().upper() or None
         if gender is not None and gender not in GENDER_LABELS:
