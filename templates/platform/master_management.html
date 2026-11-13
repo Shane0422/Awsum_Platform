@@ -3101,6 +3101,7 @@
 </script>
 
 <script src="/static/js/store_devices_panel.js?v=6"></script>
+<script src="/static/js/awsum-address.js?v=1"></script>
 <script>
   const activeModuleRaw =  "{{ active_module }}";
   const activeModule = activeModuleRaw;
@@ -4414,109 +4415,41 @@
     });
   }
 
-  // Common Address helpers shared by Agency / Merchant / Store (and the legacy Merchant forms).
-  const US_COUNTRY_NAME = 'United States';
+  // Common Address (static/js/awsum-address.js), shared by Agency / Merchant / Store / Employee forms: this screen
+  // passes its field ids + API base; the Store tax rate / time zone defaults are its callbacks.
+  const US_COUNTRY_NAME = window.AwsumAddress.US_COUNTRY_NAME;
   function isUsCountry(value) {
-    return ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(String(value || '').trim().toUpperCase());
+    return window.AwsumAddress.isUsCountry(value);
   }
 
   async function lookupZipCode(zip) {
-    const rawZip = String(zip || '').trim();
-    if (!/^\d{5}(-\d{4})?$/.test(rawZip)) return { found: false, reason: 'invalid' };
-    const res = await fetch(`${apiBase}/zip-lookup/${encodeURIComponent(rawZip)}`, { credentials: 'same-origin' });
-    return res.ok ? res.json() : { found: false, reason: 'unavailable' };
+    return window.AwsumAddress.lookupZip(apiBase, zip);
+  }
+
+  function addressOptions(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId) {
+    const applyDefaults = () => applyAddressDerivedDefaults(stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
+    return {
+      apiBase, zip: zipId, city: cityId, state: stateId, country: countryId,
+      onAddressChange: applyDefaults,
+      onFilled: (data) => {
+        applyDefaults();
+        const timezoneInput = timezoneId ? document.getElementById(timezoneId) : null;
+        if (timezoneInput) timezoneInput.value = data.timezone || '';
+      },
+      afterFilled: () => {
+        const timezoneInput = timezoneId ? document.getElementById(timezoneId) : null;
+        if (timezoneInput) timezoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+        updateActionButtonsState();
+      },
+    };
   }
 
   function bindZipAutoFill(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId) {
-    const zipInput = document.getElementById(zipId);
-    if (!zipInput || zipInput.dataset.zipAutofillBound === '1') return;
-    zipInput.dataset.zipAutofillBound = '1';
-      const handleZipLookup = () => autoFillLocationFromZip(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
-      zipInput.addEventListener('focus', () => {
-        zipInput.dataset.zipOnFocus = String(zipInput.value || '').trim();
-        zipInput.dataset.lastLookupZip = '';
-      });
-      zipInput.addEventListener('blur', handleZipLookup);
-      zipInput.addEventListener('change', handleZipLookup);
-      zipInput.addEventListener('keydown', event => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        handleZipLookup();
-      });
-
-      const stateInput = document.getElementById(stateId);
-      const countryInput = document.getElementById(countryId);
-      const applyDefaults = () => applyAddressDerivedDefaults(stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
-      if (stateInput && stateInput.dataset.stateAutofillBound !== '1') {
-        stateInput.dataset.stateAutofillBound = '1';
-        stateInput.addEventListener('blur', applyDefaults);
-        stateInput.addEventListener('change', applyDefaults);
-      }
-      if (countryInput && countryInput.dataset.countryAutofillBound !== '1') {
-        countryInput.dataset.countryAutofillBound = '1';
-        countryInput.addEventListener('blur', applyDefaults);
-        countryInput.addEventListener('change', applyDefaults);
-      }
+    window.AwsumAddress.bindZipAutoFill(addressOptions(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId));
   }
 
   async function autoFillLocationFromZip(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId) {
-    const zipInput = document.getElementById(zipId);
-    const cityInput = document.getElementById(cityId);
-    const stateInput = document.getElementById(stateId);
-    const countryInput = document.getElementById(countryId);
-
-      if (!zipInput || !cityInput || !stateInput) return;
-
-    const rawZip = String(zipInput.value || '').trim();
-
-    let statusEl = zipInput.parentElement.querySelector('.zip-lookup-status');
-    if (!statusEl) {
-      statusEl = document.createElement('div');
-      statusEl.className = 'zip-lookup-status small mt-1';
-      statusEl.style.minHeight = '0';
-      zipInput.insertAdjacentElement('afterend', statusEl);
-    }
-    const setStatus = (text, cls) => {
-      statusEl.textContent = text;
-      statusEl.className = `zip-lookup-status small mt-1 ${cls || ''}`;
-    };
-    setStatus('');
-    // An unchanged ZIP is skipped only when City/State are already filled (legacy records may have a ZIP without City/State).
-    const locationFilled = String(cityInput.value || '').trim() && String(stateInput.value || '').trim();
-    if (!rawZip || rawZip === zipInput.dataset.lastLookupZip || (rawZip === zipInput.dataset.zipOnFocus && locationFilled)) return;
-
-    if (!/^\d{5}(-\d{4})?$/.test(rawZip)) {
-      setStatus('Enter a US ZIP code (12345 or 12345-6789), or fill the address manually.', 'text-muted');
-      return;
-    }
-
-    zipInput.dataset.lastLookupZip = rawZip;
-    setStatus('Looking up...', 'text-muted');
-
-    try {
-      const data = await lookupZipCode(rawZip);
-      if (String(zipInput.value || '').trim() !== rawZip) return;
-      if (!data.found) {
-        zipInput.dataset.lastLookupZip = '';
-        setStatus('ZIP code could not be found. Please enter the address manually.', 'text-warning');
-        return;
-      }
-
-      cityInput.value = data.city || '';
-      stateInput.value = String(data.state || '').toUpperCase();
-      if (countryInput) countryInput.value = data.country || US_COUNTRY_NAME;
-      applyAddressDerivedDefaults(stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId);
-      const timezoneInput = timezoneId ? document.getElementById(timezoneId) : null;
-      if (timezoneInput) timezoneInput.value = data.timezone || '';
-      setStatus('');
-      [cityInput, stateInput, countryInput, timezoneInput].forEach(el => {
-        if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      updateActionButtonsState();
-    } catch (err) {
-      zipInput.dataset.lastLookupZip = '';
-      setStatus('ZIP code could not be found. Please enter the address manually.', 'text-warning');
-    }
+    return window.AwsumAddress.autoFillFromZip(addressOptions(zipId, cityId, stateId, countryId, taxRateId, timezoneId, taxSourceId, hintId));
   }
 
   function cancelEdit() {

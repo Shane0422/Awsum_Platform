@@ -233,6 +233,16 @@ def _mark_session_terminated(row: SessionTbl, actor_id: int, now: datetime) -> N
     row.dt_updated = now
 
 
+def terminate_user_sessions(db: Session, user_id: int, actor_id: int) -> int:
+    """End every ACTIVE session of one user (login ID / password change, account disabled). The caller commits."""
+    now = utcnow()
+    rows = db.query(SessionTbl).filter(SessionTbl.i_platform_user_id == user_id,
+                                       SessionTbl.c_status == "ACTIVE").with_for_update().all()
+    for row in rows:
+        _mark_session_terminated(row, actor_id, now)
+    return len(rows)
+
+
 def terminate_session(db: Session, session_id: int, actor_id: int) -> None:
     expire_sessions(db)
     row = db.query(SessionTbl).filter(SessionTbl.i_session_id == session_id).with_for_update().first()

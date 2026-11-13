@@ -14,6 +14,20 @@ Rules:
 - Assignments: Store of the same Merchant (also enforced by the composite FKs); an Inactive Store is view only (403);
   one open assignment per Store; one active primary Store; start date on or after the Hire Date; the Termination Date
   must be on or after every open assignment start.
+
+STEP 1A-2 (login IDs, every uniqueness rule in the Merchant scope; the same value may exist in another Merchant):
+- Address: the common AddressMixin fields, optional, saved with the Employee (independent of Merchant / Store).
+- POS Login: enabled flag + POS Login ID (4-10 digits, unique per Merchant, shared by all its Stores). The screen
+  suggests the phone's last 4 digits; a saved ID never follows a phone change. Duplicates are refused (never
+  overwritten or renumbered); the database unique index is the final guard for concurrent saves.
+- POS PIN: set / reset only (digits, bcrypt hash in c_pin_hash; interim 4-8 digits until the STEP 2 policy); never
+  returned. Each change bumps i_pin_version for the Store Server sync.
+- Portal Login: a tb_platform_user account of this Merchant (role "Employee", linked by i_platform_user_id). Its email
+  is the Portal Login ID (unique per Merchant with every user of the Merchant, the Merchant Admin included:
+  uq_platform_user_merchant_email); the password is set / reset here (bcrypt, must change at next login) and kept
+  only on the account. Disabling, an email change or a reset ends the account's sessions. Portal sign-in rights
+  for the Employee role come with the Portal Role step (routers.auth admits organization admin roles only).
+- Termination also disables POS Login and the Portal account; Reactivate restores neither.
 """
 from __future__ import annotations
 
@@ -21,23 +35,38 @@ import re
 from datetime import date, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import exists, or_
+from sqlalchemy import exists, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.database.pg_platform import ADMIN_STORE_ID
 from backend.models_admin.employee import Employee, EmployeeStore
 from backend.models_admin.merchant import Merchant
+from backend.models_admin.platform_user import EMPLOYEE_ROLE_NAME, PlatformUser
+from backend.models_admin.role import Role
 from backend.models_admin.store import Store
 from backend.services.app_navigation import STORE_INACTIVE_READ_ONLY
+from backend.services.mail_common import validate_email_address
 from backend.services.master_group import Conflict, FieldErrors, NotFound, _stamp, _text
+from backend.services.organization_users import organization_user_query
 from backend.services.pos_roles import POS_ROLE_LABELS, normalize_pos_role
+from backend.services.web_sessions import terminate_user_sessions
+from backend.utils.passwords import MAX_BCRYPT_PASSWORD_BYTES, hash_secret, secret_too_long
 
 CODE_PREFIX = "EMP"
 CODE_DIGITS = 5
 POS_NUMBER_START = 1001
 OPEN = ("active", "inactive")  # assignment statuses that are not history
-EDITABLE = frozenset({"first_name", "last_name", "display_name", "phone", "email", "hire_date", "status"})
+# Address (common AddressMixin columns): payload key -> (attribute, max length).
+ADDRESS_FIELDS = {"address_line1": ("c_address_line1", 200), "address_line2": ("c_address_line2", 200),
+                  "city": ("c_city", 100), "state": ("c_state", 50), "zip": ("c_zip", 20),
+                  "country": ("c_country", 100)}
+DEFAULT_COUNTRY = "United States"  # the common address default (AddressMixin)
+EDITABLE = frozenset({"first_name", "last_name", "display_name", "phone", "email", "hire_date", "status",
+                      "pos_login_enabled", "pos_login_id", *ADDRESS_FIELDS})
+POS_LOGIN_ID = re.compile(r"^\d{4,10}$")
+POS_PIN = re.compile(r"^\d{4,8}$")  # interim until the STEP 2 PIN policy
+PORTAL_FIELDS = frozenset({"enabled", "email", "password", "confirm_password"})
 # payload key -> saved attribute; may be sent unchanged (the common form sends the whole record), 403 when changed.
 PROTECTED = {"id": "i_employee_id", "code": "c_employee_code", "pos_number": "i_pos_number",
              "merchant_id": "i_merchant_id", "termination_date": "d_termination_date",
@@ -167,7 +196,34 @@ def _store_summaries(db: Session, employee_ids: list[int]) -> dict[int, dict]:
     return summary
 
 
-def serialize(row: Employee, summary: dict | None = None) -> dict:
+def _portal_users(db: Session, rows: list[Employee]) -> dict[int, PlatformUser]:
+    ids = [row.i_platform_user_id for row in rows if row.i_platform_user_id]
+    if not ids:
+        return {}
+    return {user.i_platform_user_id: user
+            for user in db.query(PlatformUser).filter(PlatformUser.i_platform_user_id.in_(ids))}
+
+
+def _portal_view(user: PlatformUser | None) -> dict:
+    """Portal Login state (never the password)."""
+    if user is None:
+        return {"enabled": False, "email": None, "status": "not_created", "must_change_password": False}
+    active = (user.c_status or "").lower() == "active"
+    return {"enabled": active, "email": user.c_email, "status": "active" if active else "inactive",
+            "must_change_password": active and user.i_must_change_password == 1}
+
+
+def _pos_login_status(row: Employee) -> str:
+    if not row.b_pos_login_enabled or row.c_status == "terminated":
+        return "disabled"
+    if not row.c_pin_hash:
+        return "pin_not_set"
+    if row.dt_pin_locked_until and row.dt_pin_locked_until > datetime.now():
+        return "locked"
+    return "active"
+
+
+def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformUser | None = None) -> dict:
     from backend.services.images import image_url
     summary = summary or {"primary_store": None, "store_count": 0, "pos_access": False, "stores": []}
     names = [part for part in (row.c_last_name, row.c_first_name) if part]
@@ -182,6 +238,11 @@ def serialize(row: Employee, summary: dict | None = None) -> dict:
         "image_path": row.c_image_path, "image_url": image_url(row.c_image_path) if row.c_image_path else None,
         "primary_store": summary["primary_store"], "store_count": summary["store_count"],
         "stores": summary["stores"], "pos_access": summary["pos_access"],
+        **{key: getattr(row, attr) for key, (attr, _limit) in ADDRESS_FIELDS.items()},
+        "pos_login_enabled": bool(row.b_pos_login_enabled), "pos_login_id": row.c_pos_login_id,
+        "pos_pin_set": bool(row.c_pin_hash), "pos_login_status": _pos_login_status(row),
+        "pin_changed_at": _iso(row.dt_pin_changed),
+        "portal_login": _portal_view(portal_user),
         "read_only": terminated, "read_only_message": TERMINATED_MESSAGE if terminated else None,
         "row_version": row.i_row_version,
         "created_at": _iso(row.dt_created), "updated_at": _iso(row.dt_updated),
@@ -189,7 +250,8 @@ def serialize(row: Employee, summary: dict | None = None) -> dict:
 
 
 def _serialized(db: Session, row: Employee) -> dict:
-    return serialize(row, _store_summaries(db, [row.i_employee_id])[row.i_employee_id])
+    return serialize(row, _store_summaries(db, [row.i_employee_id])[row.i_employee_id],
+                     _portal_users(db, [row]).get(row.i_platform_user_id))
 
 
 def serialize_assignment(assignment: EmployeeStore, store: Store, employee: Employee) -> dict:
@@ -220,6 +282,7 @@ def _query(db: Session, merchant_id: int, *, q="", status="", store_id=None, pos
                       Employee.c_phone.ilike(like)]
         if term.isdigit():
             conditions.append(Employee.i_pos_number == int(term))
+            conditions.append(Employee.c_pos_login_id == term)
         query = query.filter(or_(*conditions))
     if status in ("active", "inactive", "terminated"):
         query = query.filter(Employee.c_status == status)
@@ -258,7 +321,9 @@ def list_employees(db: Session, merchant_id: int, *, q="", status="", store_id=N
     page = min(max(int(page or 1), 1), pages)
     rows = query.offset((page - 1) * size).limit(size).all()
     summaries = _store_summaries(db, [row.i_employee_id for row in rows])
-    return {"items": [serialize(row, summaries[row.i_employee_id]) for row in rows], "total": total, "page": page,
+    users = _portal_users(db, rows)
+    return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id))
+                      for row in rows], "total": total, "page": page,
             "pages": pages, "size": size, "sort": key, "direction": "desc" if direction == "desc" else "asc"}
 
 
@@ -270,7 +335,8 @@ def export_employees(db: Session, merchant_id: int, *, q="", status="", store_id
     rows = query.all()
     summaries = _store_summaries(db, [row.i_employee_id for row in rows])
     headers = ["Employee Code", "POS #", "Last Name", "First Name", "Display Name", "Phone", "Email", "Hire Date",
-               "Termination Date", "Status", "Primary Store", "Stores", "POS Access"]
+               "Termination Date", "Status", "Primary Store", "Stores", "POS Access", "Address Line 1",
+               "Address Line 2", "City", "State", "ZIP Code", "Country"]
     data = []
     for row in rows:
         info = summaries[row.i_employee_id]
@@ -278,12 +344,24 @@ def export_employees(db: Session, merchant_id: int, *, q="", status="", store_id
                      row.c_display_name or "", row.c_phone or "", row.c_email or "", _us(row.d_hire_date),
                      _us(row.d_termination_date), row.c_status.title(),
                      info["primary_store"]["name"] if info["primary_store"] else "", ", ".join(info["stores"]),
-                     "Yes" if info["pos_access"] else "No"])
+                     "Yes" if info["pos_access"] else "No",
+                     *[getattr(row, attr) or "" for attr, _limit in ADDRESS_FIELDS.values()]])
     return headers, data
 
 
 # ---------- Employee save ----------
-def _validated(db: Session, payload: dict, current: Employee | None) -> dict:
+def _pos_login_taken(db: Session, merchant_id: int, login_id: str, employee_id: int | None) -> bool:
+    query = db.query(Employee.i_employee_id).filter(Employee.i_merchant_id == merchant_id,
+                                                    Employee.c_pos_login_id == login_id)
+    if employee_id:
+        query = query.filter(Employee.i_employee_id != employee_id)
+    return query.first() is not None
+
+
+POS_LOGIN_DUPLICATE = "POS Login ID {} is already used by another employee of this Merchant. Enter a different ID."
+
+
+def _validated(db: Session, payload: dict, current: Employee | None, merchant_id: int) -> dict:
     _reject_unexpected(payload, EDITABLE | set(PROTECTED))
     changed = sorted(key for key, attr in PROTECTED.items()
                      if key in payload and (current is None or not _same(getattr(current, attr), payload[key])))
@@ -298,6 +376,27 @@ def _validated(db: Session, payload: dict, current: Employee | None) -> dict:
             values[attr] = _text(payload, key, limit, errors)
     if values.get("c_email") and not EMAIL.match(values["c_email"]):
         errors["email"] = "Please enter a valid email address."
+    for key, (attr, limit) in ADDRESS_FIELDS.items():
+        if key in payload or current is None:
+            values[attr] = _text(payload, key, limit, errors)
+    if values.get("c_state"):
+        values["c_state"] = values["c_state"].upper()
+    if current is None and not values.get("c_country"):
+        values["c_country"] = DEFAULT_COUNTRY
+    if "pos_login_id" in payload or current is None:
+        login_id = str(payload.get("pos_login_id") or "").strip()
+        if login_id and not POS_LOGIN_ID.match(login_id):
+            errors["pos_login_id"] = "POS Login ID must be 4 to 10 digits."
+        values["c_pos_login_id"] = login_id or None
+    if "pos_login_enabled" in payload or current is None:
+        values["b_pos_login_enabled"] = _flag(payload.get("pos_login_enabled"))
+    login_id = values.get("c_pos_login_id", current.c_pos_login_id if current else None)
+    enabled = values.get("b_pos_login_enabled", current.b_pos_login_enabled if current else False)
+    if enabled and not login_id and "pos_login_id" not in errors:
+        errors["pos_login_id"] = "Enter a POS Login ID to enable POS Login."
+    if (login_id and "pos_login_id" not in errors and (current is None or login_id != current.c_pos_login_id)
+            and _pos_login_taken(db, merchant_id, login_id, current.i_employee_id if current else None)):
+        errors["pos_login_id"] = POS_LOGIN_DUPLICATE.format(login_id)
     if "hire_date" in payload or current is None:
         values["d_hire_date"] = _date(payload, "hire_date", errors, label="Hire Date")
     if "status" in payload or current is None:
@@ -337,7 +436,7 @@ def _next_numbers(db: Session, merchant_id: int) -> tuple[str, int]:
 
 def create_employee(db: Session, merchant_id: int, payload: dict, user_id: int, *,
                     image_data: bytes | None = None) -> dict:
-    values = _validated(db, payload, None)
+    values = _validated(db, payload, None, merchant_id)
     for _attempt in range(5):
         # One Merchant at a time issues numbers (row lock); the unique constraints + retry are the final guard.
         db.query(Merchant).filter(Merchant.i_merchant_id == merchant_id).with_for_update().one()
@@ -349,6 +448,9 @@ def create_employee(db: Session, merchant_id: int, payload: dict, user_id: int, 
             db.flush()
         except IntegrityError:
             db.rollback()
+            login_id = values.get("c_pos_login_id")
+            if login_id and _pos_login_taken(db, merchant_id, login_id, None):  # saved concurrently: refuse
+                raise FieldErrors({"pos_login_id": POS_LOGIN_DUPLICATE.format(login_id)}) from None
             continue
         warning = _commit_image(db, row, image_data=image_data)
         db.refresh(row)
@@ -364,11 +466,17 @@ def update_employee(db: Session, merchant_id: int, employee_id: int, payload: di
     row = _employee(db, merchant_id, employee_id, lock=True)
     if row.c_status == "terminated":
         raise Conflict(TERMINATED_MESSAGE)
-    values = _validated(db, payload, row)
+    values = _validated(db, payload, row, merchant_id)
     for attr, value in values.items():
         setattr(row, attr, value)
     _bump(row)
     _stamp(row, user_id, created=False)
+    try:
+        db.flush()
+    except IntegrityError:  # the POS Login ID was saved concurrently by another employee of this Merchant
+        db.rollback()
+        raise FieldErrors({"pos_login_id": POS_LOGIN_DUPLICATE.format(values.get("c_pos_login_id") or "")}) \
+            from None
     warning = _commit_image(db, row, image_data=image_data, remove_image=remove_image)
     db.refresh(row)
     item = _serialized(db, row)
@@ -404,6 +512,8 @@ def terminate_employee(db: Session, merchant_id: int, employee_id: int, payload:
     row.c_status, row.d_termination_date, row.c_termination_reason = "terminated", end, reason
     row.c_pin_hash, row.i_pin_failed_count, row.dt_pin_locked_until = None, 0, None
     row.i_pin_version = (row.i_pin_version or 0) + 1  # Store Servers drop the PIN on their next sync (STEP 2)
+    row.b_pos_login_enabled = False  # the POS Login ID stays reserved for this employee (history)
+    _disable_portal(db, row, user_id)
     _bump(row)
     _stamp(row, user_id, created=False)
     db.commit()
@@ -567,3 +677,116 @@ def end_assignment(db: Session, merchant_id: int, employee_id: int, assignment_i
     db.commit()
     db.refresh(assignment)
     return serialize_assignment(assignment, store, employee)
+
+
+# ---------- POS PIN / Portal Login (STEP 1A-2) ----------
+def set_pos_pin(db: Session, merchant_id: int, employee_id: int, payload: dict, user_id: int) -> dict:
+    """Set or reset the POS PIN: hash only, never returned; bumps the PIN version and clears a lockout."""
+    _reject_unexpected(payload, {"pin", "confirm_pin"})
+    row = _employee(db, merchant_id, employee_id, lock=True)
+    if row.c_status == "terminated":
+        raise Conflict(TERMINATED_MESSAGE)
+    pin = str(payload.get("pin") or "").strip()
+    errors: dict[str, str] = {}
+    if not row.c_pos_login_id:
+        errors["pin"] = "Save a POS Login ID before setting the PIN."
+    elif not POS_PIN.match(pin):
+        errors["pin"] = "PIN must be 4 to 8 digits."
+    elif pin != str(payload.get("confirm_pin") or "").strip():
+        errors["confirm_pin"] = "PINs do not match."
+    if errors:
+        raise FieldErrors(errors)
+    row.c_pin_hash = hash_secret(pin)
+    row.i_pin_version = (row.i_pin_version or 0) + 1
+    row.dt_pin_changed, row.i_pin_changed_by = datetime.now(), user_id
+    row.i_pin_failed_count, row.dt_pin_locked_until = 0, None
+    _bump(row)
+    _stamp(row, user_id, created=False)
+    db.commit()
+    db.refresh(row)
+    return _serialized(db, row)
+
+
+def _portal_user(db: Session, row: Employee) -> PlatformUser | None:
+    if not row.i_platform_user_id:
+        return None
+    return db.query(PlatformUser).filter(PlatformUser.i_platform_user_id == row.i_platform_user_id,
+                                         PlatformUser.i_merchant_id == row.i_merchant_id).with_for_update().first()
+
+
+def _disable_portal(db: Session, row: Employee, user_id: int) -> None:
+    user = _portal_user(db, row)
+    if user is None:
+        return
+    if (user.c_status or "").lower() != "inactive":
+        user.c_status, user.dt_updated = "inactive", datetime.now()
+    terminate_user_sessions(db, user.i_platform_user_id, user_id)
+
+
+EMAIL_TAKEN = "This email is already a login of this Merchant. Enter a different email."
+
+
+def _portal_email(db: Session, merchant_id: int, payload: dict, user: PlatformUser | None, errors: dict) -> str | None:
+    try:
+        email = validate_email_address(payload.get("email")).lower()  # stored normalized (trim + lowercase)
+    except ValueError as exc:
+        errors["email"] = str(exc)
+        return None
+    query = organization_user_query(db, "MERCHANT", merchant_id).filter(
+        func.lower(func.trim(PlatformUser.c_email)) == email)
+    if user is not None:
+        query = query.filter(PlatformUser.i_platform_user_id != user.i_platform_user_id)
+    if query.first() is not None:
+        errors["email"] = EMAIL_TAKEN
+    return email
+
+
+def set_portal_access(db: Session, merchant_id: int, employee_id: int, payload: dict, user_id: int) -> dict:
+    """Enable (create / update the account, set or reset its password) or disable the Employee's Portal Login."""
+    _reject_unexpected(payload, PORTAL_FIELDS)
+    row = _employee(db, merchant_id, employee_id, lock=True)
+    if row.c_status == "terminated":
+        raise Conflict(TERMINATED_MESSAGE)
+    user = _portal_user(db, row)
+    if not _flag(payload.get("enabled")):
+        _disable_portal(db, row, user_id)
+    else:
+        errors: dict[str, str] = {}
+        email = _portal_email(db, merchant_id, payload, user, errors)
+        password = str(payload.get("password") or "")
+        if user is None and not password:
+            errors["password"] = "Set a password to create the Portal Login."
+        elif password and secret_too_long(password):
+            errors["password"] = f"Password is too long (max {MAX_BCRYPT_PASSWORD_BYTES} bytes)."
+        elif password and password != str(payload.get("confirm_password") or ""):
+            errors["confirm_password"] = "Passwords do not match."
+        if errors:
+            raise FieldErrors(errors)
+        role = db.query(Role).filter(Role.c_name == EMPLOYEE_ROLE_NAME).first()
+        if role is None or (role.c_status or "").lower() != "active":
+            raise Conflict("An active Employee Role is required. Apply the Employee Management migration.")
+        now = datetime.now()
+        if user is None:
+            user = PlatformUser(i_merchant_id=merchant_id, i_store_id=ADMIN_STORE_ID, i_role_id=role.i_role_id,
+                                c_email=email, c_first_name=row.c_first_name, c_last_name=row.c_last_name,
+                                c_phone=row.c_phone, c_password=hash_secret(password), c_status="active",
+                                i_must_change_password=1, dt_created=now, dt_updated=now)
+            db.add(user)
+        else:
+            ends_sessions = bool(password) or user.c_email != email or (user.c_status or "").lower() != "active"
+            user.c_email, user.c_status, user.dt_updated = email, "active", now
+            if password:
+                user.c_password, user.i_must_change_password = hash_secret(password), 1
+            if ends_sessions:
+                terminate_user_sessions(db, user.i_platform_user_id, user_id)
+        try:
+            db.flush()
+        except IntegrityError:  # the same email was saved concurrently in this Merchant
+            db.rollback()
+            raise FieldErrors({"email": EMAIL_TAKEN}) from None
+        row.i_platform_user_id = user.i_platform_user_id
+    _bump(row)
+    _stamp(row, user_id, created=False)
+    db.commit()
+    db.refresh(row)
+    return _serialized(db, row)

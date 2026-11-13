@@ -1,8 +1,13 @@
 """Employee Management (STEP 1A): the Merchant-wide Employee Master and its Store assignments.
 
-Employees are not Application Users (docs/AWSUM_GLOBAL_PATH_STANDARD.md): most use only POS. A web login account
-(tb_platform_user, at most one per Employee) is linked in STEP 1C; Portal access roles in STEP 1B; the POS PIN in
-STEP 2. Those columns exist now so later steps need no table change; STEP 1A never reads or writes them.
+Employees are not Application Users (docs/AWSUM_GLOBAL_PATH_STANDARD.md): most use only POS.
+STEP 1A-2 (login IDs, Merchant scope):
+- Portal Login: an optional tb_platform_user account of this Merchant (role "Employee"), linked by i_platform_user_id.
+  Its email is the Portal Login ID (unique per Merchant: tb_platform_user uq_platform_user_merchant_email) and its
+  bcrypt password lives only there. Portal Roles / login permissions come in a later step.
+- POS Login: c_pos_login_id (digits, unique per Merchant: uq_tb_employee_pos_login), shared by every Store of the
+  Merchant, and the PIN as a bcrypt hash only (c_pin_hash). PIN length / lockout / offline rules come in STEP 2.
+- Address: the common AddressMixin columns (independent of the Merchant / Store address).
 
 Rows are never deleted (FKs RESTRICT): termination ends every Store assignment and keeps all history.
 Merchant ownership is enforced by the database: an assignment's Employee and Store must belong to the same Merchant
@@ -12,19 +17,25 @@ from sqlalchemy import (Boolean, CheckConstraint, Column, Date, DateTime, Foreig
                         Integer, String, UniqueConstraint, text)
 
 from backend.database.pg_platform import PlatformBase
+from backend.models_common.address_mixin import AddressMixin
 from backend.models_common.audit_mixin import AuditMixin
 
 EMPLOYEE_STATUSES = ("active", "inactive", "terminated")
 ASSIGNMENT_STATUSES = ("active", "inactive", "ended")
 
 
-class Employee(PlatformBase, AuditMixin):
+class Employee(PlatformBase, AddressMixin, AuditMixin):
     __tablename__ = "tb_employee"
     __table_args__ = (
         UniqueConstraint("i_merchant_id", "c_employee_code", name="uq_tb_employee_code"),
         UniqueConstraint("i_merchant_id", "i_pos_number", name="uq_tb_employee_pos_number"),
         UniqueConstraint("i_employee_id", "i_merchant_id", name="uq_tb_employee_owner"),
         UniqueConstraint("i_platform_user_id", name="uq_tb_employee_user"),
+        # POS Login ID: unique per Merchant (NULL = not set; one ID for every Store of the Merchant).
+        Index("uq_tb_employee_pos_login", "i_merchant_id", "c_pos_login_id", unique=True),
+        CheckConstraint("c_pos_login_id IS NULL OR length(c_pos_login_id) BETWEEN 4 AND 10",
+                        name="ck_tb_employee_pos_login_id"),
+        CheckConstraint("NOT b_pos_login_enabled OR c_pos_login_id IS NOT NULL", name="ck_tb_employee_pos_login"),
         ForeignKeyConstraint(["i_merchant_portal_role_id", "i_merchant_id", "c_merchant_portal_scope"],
                              ["tb_portal_role.i_portal_role_id", "tb_portal_role.i_merchant_id",
                               "tb_portal_role.c_scope"], name="fk_tb_employee_merchant_portal_role"),
@@ -42,24 +53,27 @@ class Employee(PlatformBase, AuditMixin):
     i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id", ondelete="RESTRICT"), nullable=False,
                            index=True)
     c_employee_code = Column(String(32), nullable=False)   # EMP00001 per Merchant, immutable (photo file name)
-    i_pos_number = Column(Integer, nullable=False)          # POS keypad number per Merchant (1001...), immutable
+    i_pos_number = Column(Integer, nullable=False)          # internal number per Merchant (1001...), immutable
     c_first_name = Column(String(100), nullable=True)
     c_last_name = Column(String(100), nullable=True)
     c_display_name = Column(String(40), nullable=True)      # POS / receipt name
     c_phone = Column(String(40), nullable=True)
-    c_email = Column(String(254), nullable=True)            # contact only, never a login
+    c_email = Column(String(254), nullable=True)            # contact only (the Portal Login ID is the account email)
     c_image_path = Column(String(1000), nullable=True)      # /merchant/{M}/images/employee/{code}.webp
     d_hire_date = Column(Date, nullable=True)
     d_termination_date = Column(Date, nullable=True)
     c_termination_reason = Column(String(200), nullable=True)
     c_status = Column(String(12), nullable=False, default="active")
-    # STEP 1C: web login account (at most one per Employee; the Employee role row is added then).
+    # STEP 1A-2: POS Login (ID per Merchant, editable; suggested from the phone's last 4 digits on screen).
+    b_pos_login_enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    c_pos_login_id = Column(String(10), nullable=True)
+    # STEP 1A-2: Portal Login account (at most one per Employee; tb_platform_user, role "Employee").
     i_platform_user_id = Column(Integer, ForeignKey("tb_platform_user.i_platform_user_id", ondelete="RESTRICT"),
                                 nullable=True)
     # STEP 1B: Merchant Portal access (a MERCHANT Portal Role of this Merchant; the scope column pins it).
     i_merchant_portal_role_id = Column(Integer, nullable=True)
     c_merchant_portal_scope = Column(String(10), nullable=False, default="MERCHANT", server_default="MERCHANT")
-    # STEP 2: POS PIN (hash only) and the Store Server sync versions.
+    # POS PIN (bcrypt hash only; set / reset in STEP 1A-2, policy in STEP 2) and the Store Server sync versions.
     c_pin_hash = Column(String(100), nullable=True)
     i_pin_version = Column(Integer, nullable=False, default=0, server_default="0")
     dt_pin_changed = Column(DateTime, nullable=True)

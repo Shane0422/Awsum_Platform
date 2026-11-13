@@ -520,6 +520,21 @@ def employee_reactivate(item_id: int, payload: dict, request: Request, db: Sessi
                                                                  user.i_platform_user_id))
 
 
+@router.post("/merchant/api/master-group/employee/{item_id}/pos-pin")
+def employee_pos_pin(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    # Set / Reset the POS PIN (hash only; the response never carries the PIN or its hash).
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.set_pos_pin(db, merchant_id, item_id, payload, user.i_platform_user_id))
+
+
+@router.post("/merchant/api/master-group/employee/{item_id}/portal-access")
+def employee_portal_access(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    # Enable / disable the Portal Login account and Set / Reset its password (never returned).
+    user, merchant_id = _employee_scope(request, db)
+    return _employee_command(db, lambda: emp.set_portal_access(db, merchant_id, item_id, payload,
+                                                               user.i_platform_user_id))
+
+
 @router.get("/merchant/api/master-group/employee/{item_id}/assignments")
 def employee_assignment_list(item_id: int, request: Request, db: Session = Depends(get_db)):
     _user, merchant_id = _employee_scope(request, db)

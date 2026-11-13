@@ -8,6 +8,7 @@ from backend.database.pg_platform import ADMIN_STORE_ID
 AGENCY_ADMIN_ROLE_NAME = "Agency Admin"
 MERCHANT_ADMIN_ROLE_NAME = "Merchant Admin"
 STORE_ADMIN_ROLE_NAME = "Admin"
+EMPLOYEE_ROLE_NAME = "Employee"  # Employee Portal Login account (services.employees)
 
 
 class PlatformUser(PlatformBase):

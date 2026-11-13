@@ -76,7 +76,7 @@
       ['active', 'Status', (r) => badge(r.active), true],
     ],
     // Employee Master: photo, name, Employee Code / POS # / primary Store; a non-active status is shown as a badge.
-    employee: [['name', 'Employee', (r) => `<div class="d-flex align-items-center gap-2">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" width="28" height="28" class="rounded-circle mg-emp-photo" loading="lazy">` : ''}<div class="text-truncate"><div class="fw-semibold text-truncate">${esc(r.name || r.display_name || r.code)}</div><div class="small text-muted"><span class="mg-code">${esc(r.code)}</span> \u00b7 POS ${esc(r.pos_number)}${r.primary_store ? ` \u00b7 ${esc(r.primary_store.name)}` : ''}</div></div>${r.status !== 'active' ? `<span class="ms-auto">${statusBadge(r.status)}</span>` : ''}</div>`, true]],
+    employee: [['name', 'Employee', (r) => `<div class="d-flex align-items-center gap-2">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" width="28" height="28" class="rounded-circle mg-emp-photo" loading="lazy">` : ''}<div class="text-truncate"><div class="fw-semibold text-truncate">${esc(r.name || r.display_name || r.code)}</div><div class="small text-muted"><span class="mg-code">${esc(r.code)}</span>${r.pos_login_id ? ` \u00b7 POS ID ${esc(r.pos_login_id)}` : ''}${r.primary_store ? ` \u00b7 ${esc(r.primary_store.name)}` : ''}</div></div>${r.status !== 'active' ? `<span class="ms-auto">${statusBadge(r.status)}</span>` : ''}</div>`, true]],
   };
   // Employee / Store assignment status badges (Active, Inactive, Terminated, Ended).
   const STATUS_BADGE = { active: 'text-bg-success', inactive: 'text-bg-secondary', terminated: 'text-bg-danger', ended: 'text-bg-light border' };
@@ -748,15 +748,47 @@
       ${heading ? `<div class="pm-section-head"><h3>${heading}</h3>${hint ? `<span>${hint}</span>` : ''}</div>` : ''}
       <div class="row g-3">${body}</div></section>`;
     const ids = row
-      ? `<div class="col-12 mg-record-code"><span class="text-muted small">Employee Code</span> <span class="mg-code fw-semibold" id="mgEmpCode">${esc(row.code)}</span> <span class="text-muted small ms-3">POS #</span> <span class="mg-code fw-semibold" id="mgEmpPos">${esc(row.pos_number)}</span> <span class="text-muted small">(issued automatically, not editable)</span></div>`
-      : '<div class="col-12 text-muted small" id="mgEmpCodeNote">Employee Code and POS # are issued automatically when the employee is created.</div>';
+      ? `<div class="col-12 mg-record-code"><span class="text-muted small">Employee Code</span> <span class="mg-code fw-semibold" id="mgEmpCode">${esc(row.code)}</span> <span class="text-muted small">(issued automatically, not editable)</span></div>`
+      : '<div class="col-12 text-muted small" id="mgEmpCodeNote">The Employee Code is issued automatically when the employee is created.</div>';
     const info = field('first_name', 'First Name', input('first_name', 'text', 'maxlength="100" autocomplete="off"'))
       + field('last_name', 'Last Name', input('last_name', 'text', 'maxlength="100" autocomplete="off"'), { help: 'Enter a First Name or a Last Name.' })
       + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.' })
       + field('status', 'Status', select('status'))
       + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
-      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. Not a login.' })
+      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' })
       + field('hire_date', 'Hire Date', input('hire_date', 'date'));
+    // Address: the common address fields and ZIP autofill (static/js/awsum-address.js), same order as the Store form.
+    const address = section('Address', field('zip', 'ZIP Code', input('zip', 'text', 'maxlength="20" placeholder="12345 or 12345-6789" autocomplete="off"'))
+      + field('city', 'City', input('city', 'text', 'maxlength="100"'))
+      + field('state', 'State', input('state', 'text', 'maxlength="50"'))
+      + field('address_line1', 'Address Line 1', input('address_line1', 'text', 'maxlength="200" placeholder="Street address"'), { col: 'col-12' })
+      + field('address_line2', 'Address Line 2', input('address_line2', 'text', 'maxlength="200"'), { col: 'col-12' })
+      + field('country', 'Country', input('country', 'text', 'maxlength="100" placeholder="United States"')),
+      'Optional. Enter a US ZIP Code to fill City and State.', 'id="mgEmpAddress"');
+    // POS Access: one POS Login ID per Merchant (all its Stores); PIN set / reset only (never shown).
+    const posAccess = section('POS Access', `<div class="col-md-6" data-field-wrap="pos_login_enabled"><label class="form-check mt-md-4 mb-0"><input class="form-check-input" id="mgf_pos_login_enabled" type="checkbox"> Enable POS Login</label></div>`
+      + field('pos_login_id', 'POS Login ID', input('pos_login_id', 'text', 'maxlength="10" inputmode="numeric" autocomplete="off"'),
+        { help: 'Suggested from the last 4 digits of the Phone. Unique in this Merchant; used at every Store.' })
+      + `<div class="col-12 d-flex flex-wrap align-items-center gap-3"><span class="small text-muted">Account Status</span> <span class="fw-semibold small" id="mgPosStatus">-</span>
+          <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="mgPinOpen" disabled>Set PIN</button></div>
+        <div class="col-12 border rounded p-3 d-none" id="mgPinEditor"><div class="row g-2">
+          <div class="col-md-4"><label class="form-label" for="mgPin">New PIN</label><input id="mgPin" class="form-control" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"><div class="invalid-feedback" data-error-for="pin"></div></div>
+          <div class="col-md-4"><label class="form-label" for="mgPinConfirm">Confirm PIN</label><input id="mgPinConfirm" class="form-control" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"><div class="invalid-feedback" data-error-for="confirm_pin"></div></div>
+          <div class="col-md-4 d-flex align-items-end gap-2"><button type="button" class="btn btn-sm btn-outline-secondary" id="mgPinCancel">Cancel</button><button type="button" class="btn btn-sm btn-primary" id="mgPinSave">Save PIN</button></div>
+          <div class="col-12 form-text">4 to 8 digits. The current PIN is never shown.</div></div></div>`,
+      row ? 'Saved with the employee (Save).' : 'Save the employee first to set the PIN.', 'id="mgEmpPos"');
+    // Portal Access: the employee's own web login account of this Merchant (email + password, set / reset only).
+    const portalAccess = section('Portal Access', `<div class="col-12 d-flex flex-wrap align-items-center gap-3"><span class="small text-muted">Account Status</span> <span class="fw-semibold small" id="mgPortalStatus">Not created</span>
+          <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="mgPortalOpen" disabled>Set Up Portal Login</button></div>
+        <div class="col-12 border rounded p-3 d-none" id="mgPortalEditor"><div class="row g-2">
+          <div class="col-12"><label class="form-check mb-0"><input class="form-check-input" id="mgPortalEnabled" type="checkbox"> Enable Portal Login</label></div>
+          <div class="col-md-6"><label class="form-label" for="mgPortalEmail">Portal Login Email</label><input id="mgPortalEmail" class="form-control" type="email" maxlength="254" autocomplete="off"><div class="invalid-feedback" data-error-for="email"></div></div>
+          <div class="col-md-6 d-none d-md-block"></div>
+          <div class="col-md-6"><label class="form-label" for="mgPortalPassword" id="mgPortalPasswordLabel">Password</label><input id="mgPortalPassword" class="form-control" type="password" maxlength="72" autocomplete="new-password"><div class="invalid-feedback" data-error-for="password"></div></div>
+          <div class="col-md-6"><label class="form-label" for="mgPortalConfirm">Confirm Password</label><input id="mgPortalConfirm" class="form-control" type="password" maxlength="72" autocomplete="new-password"><div class="invalid-feedback" data-error-for="confirm_password"></div></div>
+          <div class="col-12 form-text" id="mgPortalHelp">Unique in this Merchant. The employee changes this temporary password at the first sign-in.</div>
+          <div class="col-12 d-flex justify-content-end gap-2"><button type="button" class="btn btn-sm btn-outline-secondary" id="mgPortalCancel">Cancel</button><button type="button" class="btn btn-sm btn-primary" id="mgPortalSave">Save Portal Access</button></div></div></div>`,
+      row ? 'Separate from the POS Login.' : 'Save the employee first to set up the Portal Login.', 'id="mgEmpPortal"');
     const asg = `<section class="col-12 pm-section" id="mgAsgSection">
         <div class="pm-section-head d-flex justify-content-between align-items-center">
           <h3>Store Assignments</h3>
@@ -791,14 +823,134 @@
     return `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>${asg}${termination}`;
+        </div>${address}${posAccess}${portalAccess}${asg}${termination}`;
   }
 
+  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date',
+    'zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'pos_login_id'];
+  const POS_STATUS_LABELS = { disabled: 'Disabled', pin_not_set: 'Enabled \u00b7 PIN not set', locked: 'Locked', active: 'Active' };
   function fillEmployeeForm(row) {
-    ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date'].forEach((key) => { f(key).value = (row && row[key]) || ''; });
+    EMPLOYEE_TEXT_FIELDS.forEach((key) => { f(key).value = (row && row[key]) || ''; });
+    if (!row) f('country').value = 'United States'; // the common address default
+    f('pos_login_enabled').checked = !!(row && row.pos_login_enabled);
     const statuses = row && row.status === 'terminated' ? [['terminated', 'Terminated']] : [['active', 'Active'], ['inactive', 'Inactive']];
     setOptions('status', statuses, row ? row.status : 'active');
     if ($('mgEmpTermDate')) $('mgEmpTermDate').value = today();
+    renderLoginAccess(row);
+  }
+
+  // POS Login ID suggestion: the Phone's last 4 digits while no ID is saved; a saved ID never follows the Phone.
+  function suggestPosLoginId() {
+    const row = state.editing;
+    const box = f('pos_login_id');
+    if (!box || (row && row.pos_login_id)) return;
+    const digits = String(f('phone').value || '').replace(/\D/g, '');
+    if (box.value && box.value !== box.dataset.suggested) return; // typed by the user
+    const next = digits.length >= 4 ? digits.slice(-4) : '';
+    box.value = next;
+    box.dataset.suggested = next;
+  }
+
+  function accessErrors(container, errors) {
+    container.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    container.querySelectorAll('[data-error-for]').forEach((el) => { el.textContent = ''; });
+    Object.entries(errors || {}).forEach(([key, text]) => {
+      const box = container.querySelector(`[data-error-for="${key}"]`);
+      if (!box) return;
+      box.textContent = text;
+      const control = box.previousElementSibling;
+      if (control) control.classList.add('is-invalid');
+    });
+  }
+
+  function renderLoginAccess(row) {
+    const editable = !!(row && !row.read_only);
+    $('mgPosStatus').textContent = row ? (POS_STATUS_LABELS[row.pos_login_status] || '-') : '-';
+    $('mgPinOpen').textContent = row && row.pos_pin_set ? 'Reset PIN' : 'Set PIN';
+    $('mgPinOpen').disabled = !editable || !row.pos_login_id;
+    $('mgPinOpen').title = row && !row.pos_login_id ? 'Save a POS Login ID first.' : '';
+    const portal = (row && row.portal_login) || { status: 'not_created' };
+    $('mgPortalStatus').textContent = portal.status === 'active'
+      ? `Active \u00b7 ${portal.email}${portal.must_change_password ? ' \u00b7 must change password' : ''}`
+      : (portal.status === 'inactive' ? `Disabled \u00b7 ${portal.email}` : 'Not created');
+    $('mgPortalOpen').textContent = portal.status === 'not_created' ? 'Set Up Portal Login' : 'Change / Reset Password';
+    $('mgPortalOpen').disabled = !editable;
+    $('mgPinEditor').classList.add('d-none');
+    $('mgPortalEditor').classList.add('d-none');
+  }
+
+  function bindLoginAccessEvents() {
+    const phone = f('phone');
+    if (phone && !phone.dataset.posSuggestBound) {
+      phone.dataset.posSuggestBound = '1';
+      phone.addEventListener('input', suggestPosLoginId);
+    }
+    if (window.AwsumAddress) {
+      AwsumAddress.bindZipAutoFill({ apiBase: '/merchant/api', zip: 'mgf_zip', city: 'mgf_city', state: 'mgf_state', country: 'mgf_country' });
+    }
+    $('mgPinOpen').onclick = () => {
+      $('mgPin').value = '';
+      $('mgPinConfirm').value = '';
+      accessErrors($('mgPinEditor'), {});
+      $('mgPinEditor').classList.remove('d-none');
+      $('mgPin').focus();
+    };
+    $('mgPinCancel').onclick = () => $('mgPinEditor').classList.add('d-none');
+    $('mgPinSave').onclick = async () => {
+      const row = state.editing;
+      if (!row) return;
+      $('mgPinSave').disabled = true;
+      try {
+        const data = await api('POST', `${BASE}/employee/${row.id}/pos-pin`, { pin: $('mgPin').value, confirm_pin: $('mgPinConfirm').value });
+        $('mgPin').value = '';
+        $('mgPinConfirm').value = '';
+        state.editing = data.item;
+        renderLoginAccess(data.item);
+        showMessage(`${data.item.code}: POS PIN saved.`);
+        await load();
+      } catch (err) {
+        accessErrors($('mgPinEditor'), err.errors);
+        if (!Object.keys(err.errors || {}).length) showMessage(err.message, 'danger');
+      } finally {
+        $('mgPinSave').disabled = false;
+      }
+    };
+    $('mgPortalOpen').onclick = () => {
+      const row = state.editing;
+      if (!row) return;
+      const portal = row.portal_login || {};
+      $('mgPortalEnabled').checked = portal.status !== 'inactive';
+      $('mgPortalEmail').value = portal.email || f('email').value || '';
+      $('mgPortalPassword').value = '';
+      $('mgPortalConfirm').value = '';
+      $('mgPortalPasswordLabel').textContent = portal.status === 'not_created' ? 'Password' : 'New Password (leave empty to keep)';
+      accessErrors($('mgPortalEditor'), {});
+      $('mgPortalEditor').classList.remove('d-none');
+      $('mgPortalEmail').focus();
+    };
+    $('mgPortalCancel').onclick = () => $('mgPortalEditor').classList.add('d-none');
+    $('mgPortalSave').onclick = async () => {
+      const row = state.editing;
+      if (!row) return;
+      $('mgPortalSave').disabled = true;
+      try {
+        const data = await api('POST', `${BASE}/employee/${row.id}/portal-access`, {
+          enabled: $('mgPortalEnabled').checked, email: $('mgPortalEmail').value,
+          password: $('mgPortalPassword').value, confirm_password: $('mgPortalConfirm').value,
+        });
+        $('mgPortalPassword').value = '';
+        $('mgPortalConfirm').value = '';
+        state.editing = data.item;
+        renderLoginAccess(data.item);
+        showMessage(`${data.item.code}: Portal Access saved.`);
+        await load();
+      } catch (err) {
+        accessErrors($('mgPortalEditor'), err.errors);
+        if (!Object.keys(err.errors || {}).length) showMessage(err.message, 'danger');
+      } finally {
+        $('mgPortalSave').disabled = false;
+      }
+    };
   }
 
   function assignmentMessage(text) {
@@ -1326,6 +1478,7 @@
       imageUploader.reset(row && row.image_url, !!(row && row.image_path));
       if (row && row.read_only) $('mgImageUploader').querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
       bindAssignmentEvents();
+      bindLoginAccessEvents();
       loadAssignments(row);
     }
     if (modal) modal.show();
@@ -1617,6 +1770,7 @@
     let reopen = null; // Common Maintenance: show the saved record (its Code is fixed) after a create
     try {
       let body = collect();
+      if (entity === 'employee') body.pos_login_enabled = f('pos_login_enabled').checked; // checkbox (collect skips it)
       const editing = state.editing;
       if (rangeMode()) { await saveLocationRange(body); return; } // Location Master: new codes from the range form
       const scope = await confirmCategory3InventoryScope(editing, body);

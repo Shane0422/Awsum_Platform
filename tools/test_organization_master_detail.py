@@ -58,7 +58,7 @@ const checkLayout=async(frame,doc,win,label)=>{
 SCRIPTS = (
     "static/js/awsum-toast.js", "static/js/money.js", "static/js/money-keypad.js", "static/js/master-detail.js", "static/js/barcode-input.js",
     "static/js/option-group.js", "static/bootstrap/js/bootstrap.bundle.min.js",
-    "static/components/image-uploader/image-uploader.js", "static/js/store_devices_panel.js",
+    "static/components/image-uploader/image-uploader.js", "static/js/store_devices_panel.js", "static/js/awsum-address.js",
 )
 STYLES = (
     "static/bootstrap/css/bootstrap.min.css", "static/css/brand.css", "static/css/platform-modal.css",

@@ -818,6 +818,8 @@ def init_platform_db(*, allow_destructive: bool = False) -> None:
             {"c_name": "Customer", "c_description": "End Customer"},
             {"c_name": "Agency Admin", "c_description": "Agency Administrator"},
             {"c_name": "Merchant Admin", "c_description": "Merchant Administrator"},
+            # Employee Management STEP 1A-2: an Employee's Portal Login account (tb_platform_user of its Merchant).
+            {"c_name": "Employee", "c_description": "Merchant Employee (Portal Login)"},
         ]
         for role_item in default_roles:
             if not db.query(Role).filter_by(c_name=role_item["c_name"]).first():

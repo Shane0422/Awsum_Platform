@@ -6,6 +6,8 @@ Covers the menu / page / scope, per-Merchant numbering (and its retry), the fiel
 assignments (same Merchant, Inactive Store view only, one open per Store, one primary, dates), termination (every
 assignment ends, Inactive Stores included, history kept), rehire, photo storage / read permission, export, the
 database constraints SQLite enforces, and the screen (headless Chrome).
+STEP 1A-2: address, POS Login ID (unique per Merchant), POS PIN set / reset (hash only), Portal Login account
+(tb_platform_user of the Merchant, email unique per Merchant), session end, termination, other-Merchant isolation.
 """
 import io
 import json
@@ -19,11 +21,16 @@ from PIL import Image
 from sqlalchemy.exc import IntegrityError
 
 from backend.models_admin.employee import Employee, EmployeeStore
+from backend.models_admin.merchant import Merchant
+from backend.models_admin.platform_user import PlatformUser
+from backend.models_admin.role import Role
+from backend.models_admin.session import SessionTbl
 from backend.models_admin.portal_role import PortalRole
 from backend.models_admin.store import Store
 from backend.routers import images as image_routes
 from backend.services import employees as emp
 from backend.services import images
+from backend.utils.passwords import verify_secret
 from tools import test_common_app_navigation
 from tools import test_image_components as browser
 from tools.test_merchant_store_management import inline_page
@@ -318,7 +325,8 @@ class EmployeeMasterTests(unittest.TestCase):
     @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
     def test_employee_screen(self):
         self.login("MERCHANT")
-        item = self.create(display_name="Minji K", hire_date="2026-11-01", phone="703-555-0101")
+        item = self.create(display_name="Minji K", hire_date="2026-11-01", phone="703-555-0101", pos_login_id="0101",
+                           zip="22031", city="Fairfax", state="VA")
         self.assign(item["id"], pos_access=True, pos_role="MANAGER", primary=True, start_date="2026-11-02")
         self.assign(item["id"], store_id=13, pos_access=True, pos_role="CASHIER", start_date="2026-11-02")
         self.create(first_name="Joon", last_name="Lee")
@@ -348,10 +356,18 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  await wait(()=>doc.querySelectorAll('#mgBody [data-row-select]').length===2,'two employees listed');
  assert([...$('mgEmpStoreFilter').options].length===4&&[...$('mgEmpRoleFilter').options].length===5,'Store / POS Role filters');
  assert([...$('mgActiveFilter').options].some(o=>o.value==='terminated'),'Terminated status filter');
- assert(/EMP00001/.test($('mgBody').textContent)&&/POS 1001/.test($('mgBody').textContent),'code and POS # in the list');
+ assert(/EMP00001/.test($('mgBody').textContent)&&/POS ID 0101/.test($('mgBody').textContent),'code and POS Login ID in the list');
  doc.querySelector('#mgBody [data-row-select]').click();
  await wait(()=>doc.querySelectorAll('#mgAsgBody tr[data-asg]').length===2,'assignments loaded');
- assert($('mgEmpCode').textContent==='EMP00001'&&$('mgEmpPos').textContent==='1001','read-only Employee Code / POS #');
+ assert($('mgEmpCode').textContent==='EMP00001'&&!$('mgEmpPosNumber'),'read-only Employee Code (no POS # shown)');
+ assert($('mgf_zip').value==='22031'&&$('mgf_state').value==='VA'&&$('mgf_country').value==='United States','address filled');
+ assert($('mgf_pos_login_id').value==='0101'&&!$('mgf_pos_login_enabled').checked,'POS Login filled');
+ assert($('mgPosStatus').textContent==='Disabled'&&$('mgPinOpen').textContent==='Set PIN'&&!$('mgPinOpen').disabled,'POS status / Set PIN');
+ assert($('mgPortalStatus').textContent==='Not created'&&!$('mgPortalOpen').disabled,'Portal status');
+ assert(typeof win.AwsumAddress==='object'&&$('mgf_zip').dataset.zipAutofillBound==='1','common address ZIP autofill bound');
+ $('mgPortalOpen').click();
+ assert(!$('mgPortalEditor').classList.contains('d-none')&&$('mgPortalEmail').value==='','Portal editor opens');
+ assert(!$('mgPortalEmail').name&&!$('mgPortalPassword').name&&!$('mgPin').name,'login secrets are never part of Save');
  assert($('mgf_first_name').value==='Minji'&&$('mgf_status').value==='active','form filled');
  assert(!!$('mgImageUploader').querySelector('input[type=file]'),'common photo uploader');
  assert($('mgMdDelete').textContent==='Terminate'&&$('mgMdToggle').textContent==='Deactivate','header actions');
@@ -360,17 +376,208 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(opts.find(o=>/Idle Store/.test(o.textContent)).disabled,'Inactive Store cannot be chosen');
  assert(opts.filter(o=>o.disabled).length===3,'assigned Stores and the Inactive Store are disabled');
  $('mgf_last_name').value='Park';
+ $('mgf_pos_login_enabled').checked=true;
  $('mgSave').click();
  await wait(()=>win.requests.some(r=>r.method==='PUT'),'save');
  const put=win.requests.find(r=>r.method==='PUT');
  assert(put.path==='/merchant/api/master-group/employee/'+__ID__+'/with-image','photo-aware save route');
  const keys=Object.keys(JSON.parse(put.body.get('payload'))).sort().join(',');
- assert(keys==='display_name,email,first_name,hire_date,last_name,phone,status','only the editable fields: '+keys);
+ assert(keys==='address_line1,address_line2,city,country,display_name,email,first_name,hire_date,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
+ assert(JSON.parse(put.body.get('payload')).pos_login_enabled===true,'Enable POS Login sent');
+ assert(win.__errors.length===0,'no script errors: '+win.__errors);
+ $('mgAddBtn').click();await pause(100);
+ assert($('mgf_pos_login_id').value===''&&$('mgf_country').value==='United States','new form defaults');
+ $('mgf_phone').value='(972) 555-1234';$('mgf_phone').dispatchEvent(new Event('input',{bubbles:true}));
+ assert($('mgf_pos_login_id').value==='1234','POS Login ID suggested from the phone');
+ $('mgf_phone').value='972-555-8899';$('mgf_phone').dispatchEvent(new Event('input',{bubbles:true}));
+ assert($('mgf_pos_login_id').value==='8899','suggestion follows the phone until edited');
+ $('mgf_pos_login_id').value='7777';
+ $('mgf_phone').value='972-555-0000';$('mgf_phone').dispatchEvent(new Event('input',{bubbles:true}));
+ assert($('mgf_pos_login_id').value==='7777','a typed ID is kept');
+ assert($('mgPinOpen').disabled&&$('mgPortalOpen').disabled,'PIN / Portal need a saved employee');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
 """.replace("__ID__", str(item["id"]))
         self.run_browser(script)
+
+
+class EmployeeLoginAccessTests(unittest.TestCase):
+    """STEP 1A-2: address, POS Login ID, POS PIN, Portal Login; every uniqueness rule in the Merchant scope."""
+
+    login, create, row = EmployeeMasterTests.login, EmployeeMasterTests.create, EmployeeMasterTests.row
+
+    def setUp(self):
+        EmployeeMasterTests.setUp(self)
+        with self.factory() as db:
+            db.add(Role(c_name="Employee", c_description="Merchant Employee (Portal Login)", c_status="active"))
+            db.commit()
+        self.login("MERCHANT")
+
+    def portal(self, employee_id, **values):
+        return self.client.post(f"{API}/{employee_id}/portal-access", json={"enabled": True, **values})
+
+    def test_address_is_saved_and_exported(self):
+        item = self.create(zip="22031", city="Fairfax", state="va", address_line1="1 Main St", address_line2="Suite 2")
+        self.assertEqual((item["zip"], item["city"], item["state"], item["country"]),
+                         ("22031", "Fairfax", "VA", "United States"))
+        updated = self.client.put(f"{API}/{item['id']}", json={"country": "Canada", "zip": "", "city": ""})
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual((updated.json()["item"]["country"], updated.json()["item"]["zip"]), ("Canada", None))
+        too_long = self.client.put(f"{API}/{item['id']}", json={"zip": "1" * 21})
+        self.assertEqual(too_long.status_code, 422)
+        csv = self.client.get(f"{API}/export", params={"format": "csv"}).content.decode("utf-8-sig")
+        self.assertIn("Address Line 1,Address Line 2,City,State,ZIP Code,Country", csv)
+        self.assertIn("1 Main St,Suite 2,,VA,,Canada", csv)
+        with self.factory() as db:  # independent of the Merchant / Store address
+            self.assertIsNone(db.get(Store, 10).c_address_line1)
+
+    def test_pos_login_id_is_unique_per_merchant_and_never_follows_the_phone(self):
+        first = self.create(phone="972-555-1234", pos_login_id="1234", pos_login_enabled=True)
+        self.assertEqual((first["pos_login_id"], first["pos_login_enabled"], first["pos_login_status"]),
+                         ("1234", True, "pin_not_set"))
+        duplicate = self.client.post(API, json={"first_name": "Joon", "pos_login_id": "1234"})
+        self.assertEqual(duplicate.status_code, 422, duplicate.text)
+        self.assertIn("already used", duplicate.json()["errors"]["pos_login_id"])
+        second = self.create(first_name="Joon", pos_login_id="5678")
+        taken = self.client.put(f"{API}/{second['id']}", json={"pos_login_id": "1234"})
+        self.assertEqual(taken.status_code, 422)
+        self.assertEqual(self.row(Employee, second["id"]).c_pos_login_id, "5678")   # never overwritten
+        self.assertEqual(self.row(Employee, first["id"]).c_pos_login_id, "1234")
+        for bad in ("123", "12345678901", "12a4"):
+            response = self.client.put(f"{API}/{second['id']}", json={"pos_login_id": bad})
+            self.assertEqual(response.status_code, 422, bad)
+        enable = self.client.put(f"{API}/{second['id']}", json={"pos_login_id": "", "pos_login_enabled": True})
+        self.assertEqual(enable.json()["errors"]["pos_login_id"], "Enter a POS Login ID to enable POS Login.")
+        phone = self.client.put(f"{API}/{first['id']}", json={"phone": "972-555-9999"})
+        self.assertEqual(phone.json()["item"]["pos_login_id"], "1234")                # a saved ID stays
+        with self.factory() as db:  # another Merchant may use the same ID; this Merchant's index refuses a copy
+            other = emp.create_employee(db, 11, {"first_name": "Other", "pos_login_id": "1234"}, 1)
+            self.assertEqual(other["pos_login_id"], "1234")
+            db.add(Employee(i_merchant_id=10, c_employee_code="EMP00900", i_pos_number=900, c_first_name="X",
+                            c_pos_login_id="1234"))
+            with self.assertRaises(IntegrityError):
+                db.commit()
+        found = self.client.get(API, params={"q": "1234"}).json()["items"]
+        self.assertEqual([r["id"] for r in found], [first["id"]])
+
+    def test_pos_pin_is_hashed_never_returned_and_cleared_by_termination(self):
+        item = self.create(pos_login_enabled=True, pos_login_id="4321", hire_date="2026-01-01")
+        no_id = self.create(first_name="NoId")
+        self.assertEqual(self.client.post(f"{API}/{no_id['id']}/pos-pin", json={"pin": "1111", "confirm_pin": "1111"})
+                         .json()["errors"]["pin"], "Save a POS Login ID before setting the PIN.")
+        for pin, confirm, key in (("12", "12", "pin"), ("12ab", "12ab", "pin"), ("1234", "9999", "confirm_pin")):
+            response = self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": pin, "confirm_pin": confirm})
+            self.assertEqual(response.status_code, 422)
+            self.assertIn(key, response.json()["errors"])
+        response = self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "246813", "confirm_pin": "246813"})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()["item"]
+        self.assertEqual((body["pos_pin_set"], body["pos_login_status"]), (True, "active"))
+        row = self.row(Employee, item["id"])
+        self.assertTrue(row.c_pin_hash.startswith("$2") and verify_secret("246813", row.c_pin_hash))
+        self.assertEqual(row.i_pin_version, 1)
+        for text in (response.text, self.client.get(API).text,
+                     self.client.get(f"{API}/export", params={"format": "csv"}).text):
+            self.assertNotIn("246813", text)
+            self.assertNotIn(row.c_pin_hash, text)
+            self.assertNotIn("pin_hash", text)
+        reset = self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "1357", "confirm_pin": "1357"})
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(self.row(Employee, item["id"]).i_pin_version, 2)
+        self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": "2026-11-10"})
+        row = self.row(Employee, item["id"])
+        self.assertEqual((row.c_pin_hash, row.b_pos_login_enabled, row.c_pos_login_id), (None, False, "4321"))
+        self.assertEqual(self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "1357", "confirm_pin": "1357"})
+                         .status_code, 409)
+
+    def test_portal_login_account_of_the_merchant(self):
+        item = self.create(email="minji@example.test", phone="703-555-0101")
+        missing = self.portal(item["id"], email="minji.portal@example.test")
+        self.assertEqual(missing.json()["errors"]["password"], "Set a password to create the Portal Login.")
+        mismatch = self.portal(item["id"], email="minji.portal@example.test", password="Temp#1234",
+                               confirm_password="Other")
+        self.assertIn("confirm_password", mismatch.json()["errors"])
+        admin = self.portal(item["id"], email=" PRIMARY@example.test ", password="Temp#1234",
+                            confirm_password="Temp#1234")               # the Merchant Admin's email (same Merchant)
+        self.assertEqual(admin.status_code, 422)
+        self.assertIn("already a login of this Merchant", admin.json()["errors"]["email"])
+        created = self.portal(item["id"], email=" Minji.Portal@Example.test ", password="Temp#1234",
+                              confirm_password="Temp#1234")
+        self.assertEqual(created.status_code, 200, created.text)
+        portal = created.json()["item"]["portal_login"]
+        self.assertEqual(portal, {"enabled": True, "email": "minji.portal@example.test", "status": "active",
+                                  "must_change_password": True})
+        self.assertNotIn("Temp#1234", created.text)
+        self.assertNotIn("$2", created.text)
+        row = self.row(Employee, item["id"])
+        user = self.row(PlatformUser, row.i_platform_user_id)
+        with self.factory() as db:
+            role = db.query(Role).filter(Role.c_name == "Employee").one()
+        self.assertEqual((user.i_merchant_id, user.i_store_id, user.i_agency_id, user.i_role_id, user.c_status),
+                         (10, emp.ADMIN_STORE_ID, None, role.i_role_id, "active"))
+        self.assertTrue(verify_secret("Temp#1234", user.c_password))
+        self.assertIsNone(getattr(row, "c_password", None))
+        # A second employee cannot take the same login email in this Merchant; another Merchant may.
+        other = self.create(first_name="Joon")
+        self.assertEqual(self.portal(other["id"], email="minji.portal@example.test", password="Temp#1234",
+                                     confirm_password="Temp#1234").status_code, 422)
+        with self.factory() as db:
+            db.query(Merchant).filter(Merchant.i_merchant_id == 11).one()
+            foreign = emp.set_portal_access(db, 11, self.foreign["id"], {"enabled": True, "email":
+                                            "minji.portal@example.test", "password": "Other#1",
+                                            "confirm_password": "Other#1"}, 1)
+            self.assertEqual(foreign["portal_login"]["status"], "active")
+        # Sessions end on an email change / password reset / disable. (The common login context refuses an
+        # Employee-role session today, so an ACTIVE row stands in for one opened after the Portal Role step.)
+        with self.factory() as db:
+            db.add(SessionTbl(i_platform_user_id=row.i_platform_user_id, c_status="ACTIVE", c_jwt_token="t"))
+            db.commit()
+
+        def active_sessions():
+            with self.factory() as db:
+                return db.query(SessionTbl).filter(SessionTbl.i_platform_user_id == row.i_platform_user_id,
+                                                   SessionTbl.c_status == "ACTIVE").count()
+        self.assertEqual(active_sessions(), 1)
+        keep = self.portal(item["id"], email="minji.portal@example.test")              # nothing changed
+        self.assertEqual((keep.status_code, active_sessions()), (200, 1))
+        moved = self.portal(item["id"], email="minji.new@example.test")
+        self.assertEqual((moved.json()["item"]["portal_login"]["email"], active_sessions()),
+                         ("minji.new@example.test", 0))
+        reset = self.portal(item["id"], email="minji.new@example.test", password="Reset#5678",
+                            confirm_password="Reset#5678")
+        self.assertEqual(reset.status_code, 200)
+        self.assertTrue(verify_secret("Reset#5678", self.row(PlatformUser, row.i_platform_user_id).c_password))
+        disabled = self.client.post(f"{API}/{item['id']}/portal-access", json={"enabled": False})
+        self.assertEqual(disabled.json()["item"]["portal_login"]["status"], "inactive")
+        # Portal sign-in for the Employee role is not opened in this step (permissions unchanged).
+        self.portal(item["id"], email="minji.new@example.test")
+        login = self.client.post("/auth/login", data={"store_code": "MER26ABCD", "email": "minji.new@example.test",
+                                                      "password": "Reset#5678"}, follow_redirects=False)
+        self.assertEqual(login.status_code, 401)
+        # Termination disables the account; Reactivate does not restore it.
+        self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": date.today().isoformat()})
+        self.assertEqual(self.row(PlatformUser, row.i_platform_user_id).c_status, "inactive")
+        back = self.client.post(f"{API}/{item['id']}/reactivate", json={})
+        self.assertEqual(back.json()["item"]["portal_login"]["status"], "inactive")
+
+    def test_role_missing_and_other_merchant_and_store_logins_are_refused(self):
+        item = self.create()
+        with self.factory() as db:
+            db.query(Role).filter(Role.c_name == "Employee").delete()
+            db.commit()
+        self.assertEqual(self.portal(item["id"], email="a@example.test", password="Temp#1",
+                                     confirm_password="Temp#1").status_code, 409)
+        self.assertIsNone(self.row(Employee, item["id"]).i_platform_user_id)
+        foreign = self.foreign["id"]
+        self.assertEqual(self.client.post(f"{API}/{foreign}/pos-pin", json={"pin": "1234", "confirm_pin": "1234"})
+                         .status_code, 404)
+        self.assertEqual(self.portal(foreign, email="b@example.test", password="x", confirm_password="x").status_code,
+                         404)
+        self.login("STORE")
+        self.assertEqual(self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "1234", "confirm_pin": "1234"})
+                         .status_code, 403)
+        self.assertEqual(self.portal(item["id"], email="c@example.test").status_code, 403)
 
 
 if __name__ == "__main__":
