@@ -8,6 +8,12 @@ STEP 1A-2 (login IDs, Merchant scope):
 - POS Login: c_pos_login_id (digits, unique per Merchant: uq_tb_employee_pos_login), shared by every Store of the
   Merchant, and the PIN as a bcrypt hash only (c_pin_hash). PIN length / lockout / offline rules come in STEP 2.
 - Address: the common AddressMixin columns (independent of the Merchant / Store address).
+STEP 1A-3 (Job Grade / Job Title): one optional JOB_GRADE and one JOB_TITLE code of the Employee's Merchant
+(tb_common_code, Common Maintenance), the same plain FK as MdDetail.i_color_code_id; the service checks the group and
+the Merchant. Portal only (never POS / receipts).
+STEP 1A-3 Personal Information: optional Birthday (d_birth_date) and Gender (c_gender, a code of EMPLOYEE_GENDERS, a
+fixed list in code like the POS Role Registry; not a Common Maintenance group). Portal only: never in the Employee list
+display, the export, POS or receipts.
 
 Rows are never deleted (FKs RESTRICT): termination ends every Store assignment and keeps all history.
 Merchant ownership is enforced by the database: an assignment's Employee and Store must belong to the same Merchant
@@ -17,11 +23,16 @@ from sqlalchemy import (Boolean, CheckConstraint, Column, Date, DateTime, Foreig
                         Integer, String, UniqueConstraint, text)
 
 from backend.database.pg_platform import PlatformBase
+from backend.models_admin import common_code  # noqa: F401  (registers tb_common_code for the Job Grade / Title FKs)
 from backend.models_common.address_mixin import AddressMixin
 from backend.models_common.audit_mixin import AuditMixin
 
 EMPLOYEE_STATUSES = ("active", "inactive", "terminated")
 ASSIGNMENT_STATUSES = ("active", "inactive", "ended")
+# Gender (code, label); NULL = not entered. The stored code is checked by ck_tb_employee_gender.
+EMPLOYEE_GENDERS = (("MALE", "Male"), ("FEMALE", "Female"), ("NON_BINARY", "Non-binary"),
+                    ("PREFER_NOT_TO_SAY", "Prefer not to say"))
+GENDER_CHECK = "c_gender IS NULL OR c_gender IN ({})".format(", ".join(f"'{code}'" for code, _label in EMPLOYEE_GENDERS))
 
 
 class Employee(PlatformBase, AddressMixin, AuditMixin):
@@ -47,6 +58,7 @@ class Employee(PlatformBase, AddressMixin, AuditMixin):
         CheckConstraint("c_status <> 'terminated' OR d_termination_date IS NOT NULL", name="ck_tb_employee_terminated"),
         CheckConstraint("d_termination_date IS NULL OR d_hire_date IS NULL OR d_termination_date >= d_hire_date",
                         name="ck_tb_employee_dates"),
+        CheckConstraint(GENDER_CHECK, name="ck_tb_employee_gender"),
     )
 
     i_employee_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -61,6 +73,12 @@ class Employee(PlatformBase, AddressMixin, AuditMixin):
     c_email = Column(String(254), nullable=True)            # contact only (the Portal Login ID is the account email)
     c_image_path = Column(String(1000), nullable=True)      # /merchant/{M}/images/employee/{code}.webp
     d_hire_date = Column(Date, nullable=True)
+    d_birth_date = Column(Date, nullable=True)              # Personal Information (optional, never in the future)
+    c_gender = Column(String(20), nullable=True)            # EMPLOYEE_GENDERS code (optional)
+    i_job_grade_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id", ondelete="RESTRICT",
+                                                     name="fk_tb_employee_job_grade_code"), nullable=True, index=True)
+    i_job_title_code_id = Column(Integer, ForeignKey("tb_common_code.i_common_code_id", ondelete="RESTRICT",
+                                                     name="fk_tb_employee_job_title_code"), nullable=True, index=True)
     d_termination_date = Column(Date, nullable=True)
     c_termination_reason = Column(String(200), nullable=True)
     c_status = Column(String(12), nullable=False, default="active")

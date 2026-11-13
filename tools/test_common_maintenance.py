@@ -98,7 +98,11 @@ class CommonMaintenanceTests(unittest.TestCase):
         code, options = self.call(router_module.master_group_options, self.req(), self.db)
         self.assertEqual(code, 200)
         groups = {g["code"]: g for g in options["common_groups"]}
-        self.assertEqual(list(groups), ["COLOR", "UNIT"])
+        self.assertEqual(list(groups), ["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE"])
+        for job in ("JOB_GRADE", "JOB_TITLE"):  # Employee Job Grade / Title: AUTO codes, no Value
+            self.assertEqual((groups[job]["code_mode"], groups[job]["value_type"], groups[job]["read_only"]),
+                             ("AUTO", None, False))
+        self.assertEqual((groups["JOB_GRADE"]["code_prefix"], groups["JOB_TITLE"]["code_prefix"]), ("GRD", "JOB"))
         self.assertEqual((groups["COLOR"]["value_type"], groups["COLOR"]["read_only"]), ("COLOR", False))
         self.assertEqual((groups["UNIT"]["value_type"], groups["UNIT"]["read_only"], groups["UNIT"]["code_mode"]),
                          (None, False, "MANUAL"))

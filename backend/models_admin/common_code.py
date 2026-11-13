@@ -1,4 +1,4 @@
-"""Common Maintenance: shared code groups (COLOR, UNIT) and their codes.
+"""Common Maintenance: shared code groups (COLOR, UNIT, JOB_GRADE, JOB_TITLE) and their codes.
 
 tb_common_group defines a group: how its codes are issued (AUTO prefix + number, or MANUAL upper case) and
 its optional typed Value (TEXT / NUMBER / CURRENCY / COLOR, NULL = no Value).
@@ -30,7 +30,7 @@ class CommonGroup(PlatformBase, AuditMixin):
     )
 
     i_common_group_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    c_group_code = Column(String(30), nullable=False, unique=True, index=True)  # COLOR / UNIT
+    c_group_code = Column(String(30), nullable=False, unique=True, index=True)  # COLOR / UNIT / JOB_GRADE / JOB_TITLE
     c_group_name = Column(String(100), nullable=False)
     c_description = Column(String(200), nullable=True)
     c_code_mode = Column(String(10), nullable=False, default="MANUAL")  # AUTO (prefix + number) / MANUAL
@@ -81,6 +81,6 @@ class MerchantCommonInit(PlatformBase, AuditMixin):
     __tablename__ = "tb_merchant_common_init"
 
     i_merchant_id = Column(Integer, ForeignKey("tb_merchant.i_merchant_id"), primary_key=True, autoincrement=False)
-    c_group_code = Column(String(30), primary_key=True)  # UNIT / COLOR
+    c_group_code = Column(String(30), primary_key=True)  # COLOR / UNIT / JOB_GRADE / JOB_TITLE
     i_copied_count = Column(Integer, nullable=False, default=0)
     i_skipped_count = Column(Integer, nullable=False, default=0)  # codes the Merchant already had (kept as they are)

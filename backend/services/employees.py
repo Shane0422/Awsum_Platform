@@ -29,6 +29,14 @@ STEP 1A-2 (login IDs, every uniqueness rule in the Merchant scope; the same valu
   for the Employee role come with the Portal Role step (routers.auth admits organization admin roles only).
 - Termination also disables POS Login and the Portal account; Reactivate restores neither.
 
+STEP 1A-3 Job Grade / Job Title: optional codes of this Merchant's Common Maintenance JOB_GRADE / JOB_TITLE groups
+(tb_common_code ids). The same rule as the MD Color: the code must be of that group and this Merchant; an inactive code
+is accepted only when it is the Employee's saved code (it keeps showing by name); blank clears it; key absent keeps it.
+Portal only (list subtitle shows the Title, the export both names); never POS / receipts.
+STEP 1A-3 Personal Information: optional Birthday (common date rule, never in the future) and Gender (a code of
+models_admin.employee.EMPLOYEE_GENDERS, the fixed list in code; blank = not entered). Merchant scope only like every
+Employee field; shown only in the edit form (never the list display, search, export, POS or receipts).
+
 Audit (common AuditMixin columns, unchanged): the response adds created_by / updated_by, the names of this
 Merchant's users only (never an ID, email or another owner's user; otherwise None, shown as an em dash). Last Updated
 moves only on a real change: a Save that changes no value and no photo, or a Portal Access save that changes nothing,
@@ -47,14 +55,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from backend.database.pg_platform import ADMIN_STORE_ID
-from backend.models_admin.employee import Employee, EmployeeStore
+from backend.models_admin.employee import EMPLOYEE_GENDERS, Employee, EmployeeStore
 from backend.models_admin.merchant import Merchant
 from backend.models_admin.platform_user import EMPLOYEE_ROLE_NAME, PlatformUser
 from backend.models_admin.role import Role
 from backend.models_admin.store import Store
 from backend.services.app_navigation import STORE_INACTIVE_READ_ONLY
 from backend.services.mail_common import validate_email_address
-from backend.services.master_group import Conflict, FieldErrors, NotFound, _stamp, _text
+from backend.models_admin.common_code import CommonCode
+from backend.services.master_group import (Conflict, FieldErrors, NotFound, _id, _stamp, _text, common_code_query)
 from backend.services.organization_users import organization_user_query
 from backend.services.pos_roles import POS_ROLE_LABELS, normalize_pos_role
 from backend.services.web_sessions import terminate_user_sessions
@@ -69,8 +78,12 @@ ADDRESS_FIELDS = {"address_line1": ("c_address_line1", 200), "address_line2": ("
                   "city": ("c_city", 100), "state": ("c_state", 50), "zip": ("c_zip", 20),
                   "country": ("c_country", 100)}
 DEFAULT_COUNTRY = "United States"  # the common address default (AddressMixin)
+# Job Grade / Job Title: payload key -> (attribute, Common Maintenance group, label).
+JOB_FIELDS = {"job_grade_code_id": ("i_job_grade_code_id", "JOB_GRADE", "Job Grade"),
+              "job_title_code_id": ("i_job_title_code_id", "JOB_TITLE", "Job Title")}
+GENDER_LABELS = dict(EMPLOYEE_GENDERS)
 EDITABLE = frozenset({"first_name", "last_name", "display_name", "phone", "email", "hire_date", "status",
-                      "pos_login_enabled", "pos_login_id", *ADDRESS_FIELDS})
+                      "pos_login_enabled", "pos_login_id", *ADDRESS_FIELDS, *JOB_FIELDS, "birth_date", "gender"})
 POS_LOGIN_ID = re.compile(r"^\d{4,10}$")
 POS_PIN = re.compile(r"^\d{4,8}$")  # interim until the STEP 2 PIN policy
 PORTAL_FIELDS = frozenset({"enabled", "email", "password", "confirm_password"})
@@ -253,10 +266,26 @@ def _pos_login_status(row: Employee) -> str:
     return "active"
 
 
+def gender_options() -> list[dict]:
+    """Gender selector (Employee Master, Merchant login): the fixed list in code."""
+    return [{"code": code, "name": label} for code, label in EMPLOYEE_GENDERS]
+
+
+def _job_codes(db: Session, rows: list[Employee]) -> dict[int, dict]:
+    """Job Grade / Job Title codes referenced by these Employees: id -> {id, code, name, active} (inactive included)."""
+    ids = {getattr(row, attr) for row in rows for attr, _group, _label in JOB_FIELDS.values()} - {None}
+    if not ids:
+        return {}
+    return {r.i_common_code_id: {"id": r.i_common_code_id, "code": r.c_code, "name": r.c_name,
+                                 "active": bool(r.b_active)}
+            for r in db.query(CommonCode).filter(CommonCode.i_common_code_id.in_(ids))}
+
+
 def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformUser | None = None,
-              actors: dict[int, str] | None = None) -> dict:
+              actors: dict[int, str] | None = None, jobs: dict[int, dict] | None = None) -> dict:
     from backend.services.images import image_url
     actors = actors or {}
+    jobs = jobs or {}
     summary = summary or {"primary_store": None, "store_count": 0, "pos_access": False, "stores": []}
     names = [part for part in (row.c_last_name, row.c_first_name) if part]
     terminated = row.c_status == "terminated"
@@ -267,6 +296,9 @@ def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformU
         "hire_date": _iso(row.d_hire_date), "termination_date": _iso(row.d_termination_date),
         "termination_reason": row.c_termination_reason, "status": row.c_status,
         "active": row.c_status == "active",
+        "job_grade_code_id": row.i_job_grade_code_id, "job_grade": jobs.get(row.i_job_grade_code_id),
+        "job_title_code_id": row.i_job_title_code_id, "job_title": jobs.get(row.i_job_title_code_id),
+        "birth_date": _iso(row.d_birth_date), "gender": row.c_gender, "gender_name": GENDER_LABELS.get(row.c_gender or ""),
         "image_path": row.c_image_path, "image_url": image_url(row.c_image_path) if row.c_image_path else None,
         "primary_store": summary["primary_store"], "store_count": summary["store_count"],
         "stores": summary["stores"], "pos_access": summary["pos_access"],
@@ -284,7 +316,8 @@ def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformU
 
 def _serialized(db: Session, row: Employee) -> dict:
     return serialize(row, _store_summaries(db, [row.i_employee_id])[row.i_employee_id],
-                     _portal_users(db, [row]).get(row.i_platform_user_id), _actor_names(db, row.i_merchant_id, [row]))
+                     _portal_users(db, [row]).get(row.i_platform_user_id), _actor_names(db, row.i_merchant_id, [row]),
+                     _job_codes(db, [row]))
 
 
 def serialize_assignment(assignment: EmployeeStore, store: Store, employee: Employee) -> dict:
@@ -356,7 +389,8 @@ def list_employees(db: Session, merchant_id: int, *, q="", status="", store_id=N
     summaries = _store_summaries(db, [row.i_employee_id for row in rows])
     users = _portal_users(db, rows)
     actors = _actor_names(db, merchant_id, rows)
-    return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id), actors)
+    jobs = _job_codes(db, rows)
+    return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id), actors, jobs)
                       for row in rows], "total": total, "page": page,
             "pages": pages, "size": size, "sort": key, "direction": "desc" if direction == "desc" else "asc"}
 
@@ -368,14 +402,16 @@ def export_employees(db: Session, merchant_id: int, *, q="", status="", store_id
                            sort, direction)
     rows = query.all()
     summaries = _store_summaries(db, [row.i_employee_id for row in rows])
+    jobs = _job_codes(db, rows)
     headers = ["Employee Code", "POS #", "Last Name", "First Name", "Display Name", "Phone", "Email", "Hire Date",
-               "Termination Date", "Status", "Primary Store", "Stores", "POS Access", "Address Line 1",
-               "Address Line 2", "City", "State", "ZIP Code", "Country"]
+               "Job Grade", "Job Title", "Termination Date", "Status", "Primary Store", "Stores", "POS Access",
+               "Address Line 1", "Address Line 2", "City", "State", "ZIP Code", "Country"]
     data = []
     for row in rows:
         info = summaries[row.i_employee_id]
         data.append([row.c_employee_code, str(row.i_pos_number), row.c_last_name or "", row.c_first_name or "",
                      row.c_display_name or "", row.c_phone or "", row.c_email or "", _us(row.d_hire_date),
+                     *[(jobs.get(getattr(row, attr)) or {}).get("name", "") for attr, _g, _l in JOB_FIELDS.values()],
                      _us(row.d_termination_date), row.c_status.title(),
                      info["primary_store"]["name"] if info["primary_store"] else "", ", ".join(info["stores"]),
                      "Yes" if info["pos_access"] else "No",
@@ -433,6 +469,20 @@ def _validated(db: Session, payload: dict, current: Employee | None, merchant_id
         errors["pos_login_id"] = POS_LOGIN_DUPLICATE.format(login_id)
     if "hire_date" in payload or current is None:
         values["d_hire_date"] = _date(payload, "hire_date", errors, label="Hire Date")
+    if "birth_date" in payload or current is None:
+        birth = _date(payload, "birth_date", errors, label="Birthday")
+        if birth and birth > date.today():
+            errors["birth_date"] = "Birthday cannot be in the future."
+        values["d_birth_date"] = birth
+    if "gender" in payload or current is None:
+        gender = str(payload.get("gender") or "").strip().upper() or None
+        if gender is not None and gender not in GENDER_LABELS:
+            errors["gender"] = "Select a valid Gender."
+        values["c_gender"] = gender
+    for key, (attr, group, label) in JOB_FIELDS.items():
+        if key in payload or current is None:
+            values[attr] = _job_code(db, payload, key, group, label, getattr(current, attr) if current else None,
+                                     merchant_id, errors)
     if "status" in payload or current is None:
         status = str(payload.get("status") or "active").strip().lower()
         if status == "terminated":
@@ -454,6 +504,20 @@ def _validated(db: Session, payload: dict, current: Employee | None, merchant_id
     if errors:
         raise FieldErrors(errors)
     return values
+
+
+def _job_code(db: Session, payload: dict, key: str, group: str, label: str, saved: int | None, merchant_id: int,
+              errors: dict) -> int | None:
+    """A Job Grade / Job Title code id: this Merchant's code of that group; active, or the Employee's saved one."""
+    code_id = _id(payload, key, errors, required=False, label=label)
+    if key in errors or code_id is None:
+        return saved if key in errors else None
+    code = common_code_query(db, group, merchant_id).filter(CommonCode.i_common_code_id == code_id).first()
+    if code is None:
+        errors[key] = f"{label} does not exist."
+    elif not code.b_active and code_id != saved:
+        errors[key] = f"{label} is inactive."
+    return code_id
 
 
 def _next_numbers(db: Session, merchant_id: int) -> tuple[str, int]:

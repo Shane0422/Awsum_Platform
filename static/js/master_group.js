@@ -76,7 +76,7 @@
       ['active', 'Status', (r) => badge(r.active), true],
     ],
     // Employee Master: photo, name, Employee Code / POS # / primary Store; a non-active status is shown as a badge.
-    employee: [['name', 'Employee', (r) => `<div class="d-flex align-items-center gap-2">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" width="28" height="28" class="rounded-circle mg-emp-photo" loading="lazy">` : ''}<div class="text-truncate"><div class="fw-semibold text-truncate">${esc(r.name || r.display_name || r.code)}</div><div class="small text-muted"><span class="mg-code">${esc(r.code)}</span>${r.pos_login_id ? ` \u00b7 POS ID ${esc(r.pos_login_id)}` : ''}${r.primary_store ? ` \u00b7 ${esc(r.primary_store.name)}` : ''}</div></div>${r.status !== 'active' ? `<span class="ms-auto">${statusBadge(r.status)}</span>` : ''}</div>`, true]],
+    employee: [['name', 'Employee', (r) => `<div class="d-flex align-items-center gap-2">${r.image_url ? `<img src="${esc(r.image_url)}" alt="" width="28" height="28" class="rounded-circle mg-emp-photo" loading="lazy">` : ''}<div class="text-truncate"><div class="fw-semibold text-truncate">${esc(r.name || r.display_name || r.code)}</div><div class="small text-muted"><span class="mg-code">${esc(r.code)}</span>${r.pos_login_id ? ` \u00b7 POS ID ${esc(r.pos_login_id)}` : ''}${r.primary_store ? ` \u00b7 ${esc(r.primary_store.name)}` : ''}${r.job_title ? ` \u00b7 ${esc(r.job_title.name)}` : ''}</div></div>${r.status !== 'active' ? `<span class="ms-auto">${statusBadge(r.status)}</span>` : ''}</div>`, true]],
   };
   // Employee / Store assignment status badges (Active, Inactive, Terminated, Ended).
   const STATUS_BADGE = { active: 'text-bg-success', inactive: 'text-bg-secondary', terminated: 'text-bg-danger', ended: 'text-bg-light border' };
@@ -764,8 +764,15 @@
       + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.' })
       + field('status', 'Status', select('status'))
       + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
-      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' })
-      + field('hire_date', 'Hire Date', input('hire_date', 'date'));
+      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' });
+    // Personal Information: Birthday (common date input, not in the future) + Gender (fixed list from /options), optional.
+    const personal = section('Personal Information', field('birth_date', 'Birthday', input('birth_date', 'date', `max="${today()}"`))
+      + field('gender', 'Gender', select('gender')), 'Optional.', 'id="mgEmpPersonal"');
+    // Employment Information: Hire Date + Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
+    const employment = section('Employment Information', field('hire_date', 'Hire Date', input('hire_date', 'date'))
+      + field('job_grade_code_id', 'Job Grade', select('job_grade_code_id'))
+      + field('job_title_code_id', 'Job Title', select('job_title_code_id')),
+      'Optional. Job Grades and Titles are managed in Master Group &gt; Common Maintenance.', 'id="mgEmpEmployment"');
     // Address: the common address fields and ZIP autofill (static/js/awsum-address.js), same order as the Store form.
     const address = section('Address', field('zip', 'ZIP Code', input('zip', 'text', 'maxlength="20" placeholder="12345 or 12345-6789" autocomplete="off"'))
       + field('city', 'City', input('city', 'text', 'maxlength="100"'))
@@ -841,7 +848,7 @@
     const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>${audit}${termination}`],
+        </div>${personal}${employment}${audit}${termination}`],
       ['Address', 'ADDRESS', address],
       ['Terminal', 'STORE TERMINAL ACCESS', `${posAccess}${asg}`],
       ['Portal', 'PORTAL ACCESS', portalAccess],
@@ -861,7 +868,7 @@
         </div>`;
   }
 
-  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date',
+  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date', 'birth_date',
     'zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'pos_login_id'];
   const POS_STATUS_LABELS = { disabled: 'Disabled', pin_not_set: 'Enabled \u00b7 PIN not set', locked: 'Locked', active: 'Active' };
   function fillEmployeeForm(row) {
@@ -870,6 +877,9 @@
     f('pos_login_enabled').checked = !!(row && row.pos_login_enabled);
     const statuses = row && row.status === 'terminated' ? [['terminated', 'Terminated']] : [['active', 'Active'], ['inactive', 'Inactive']];
     setOptions('status', statuses, row ? row.status : 'active');
+    setOptions('gender', ((state.options && state.options.genders) || []).map((g) => [g.code, g.name]), row ? row.gender : null, 'Not specified');
+    fillCommonCodeSelect(f('job_grade_code_id'), 'job_grade_codes', row ? row.job_grade_code_id : null);
+    fillCommonCodeSelect(f('job_title_code_id'), 'job_title_codes', row ? row.job_title_code_id : null);
     if ($('mgEmpTermDate')) $('mgEmpTermDate').value = today();
     if (row) {
       [['created_by', row.created_by], ['updated_by', row.updated_by]].forEach(([key, name]) => { f(key).value = name || EMPTY_VALUE; });
@@ -1159,12 +1169,15 @@
       + opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
     el.value = selected == null ? '' : String(selected);
   }
-  // MD Color = COLOR codes from Common Maintenance (MD Detail color_code_id): active ones, plus the saved one so
-  // an inactive Color stays selected (and is kept) on edit.
-  const colorById = (id) => ((state.options && state.options.color_codes) || []).find((c) => c.id === Number(id));
-  const colorOpts = (keep) => ((state.options && state.options.color_codes) || [])
+  // Common code selector (one Common Maintenance group from /options, by id): active codes, plus the saved one so
+  // an inactive code stays selected by name (and is kept) on edit. MD Color (color_codes), Employee Job Grade /
+  // Job Title (job_grade_codes / job_title_codes).
+  const commonCodeOpts = (list, keep) => ((state.options && state.options[list]) || [])
     .filter((c) => c.active || (keep != null && c.id === Number(keep))).map((c) => [c.id, c.active ? c.name : `${c.name} (Inactive)`]);
-  const fillColorSelect = (el, selected) => fillSelect(el, colorOpts(selected), selected, 'None');
+  const fillCommonCodeSelect = (el, list, selected) => fillSelect(el, commonCodeOpts(list, selected), selected, 'None');
+  // MD Color = COLOR codes from Common Maintenance (MD Detail color_code_id).
+  const colorById = (id) => ((state.options && state.options.color_codes) || []).find((c) => c.id === Number(id));
+  const fillColorSelect = (el, selected) => fillCommonCodeSelect(el, 'color_codes', selected);
   // Common UNIT selector, shared by MD Master and MD Detail (UNIT codes from Common Maintenance, "EA · Each"):
   // active codes, plus the saved value when it is inactive or not in the UNIT list, so it is shown and kept.
   // No UNIT list (Common tables not migrated): only the saved / default value, as before.

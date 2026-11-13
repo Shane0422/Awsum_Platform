@@ -8,6 +8,8 @@ assignment ends, Inactive Stores included, history kept), rehire, photo storage 
 database constraints SQLite enforces, and the screen (headless Chrome).
 STEP 1A-2: address, POS Login ID (unique per Merchant), POS PIN set / reset (hash only), Portal Login account
 (tb_platform_user of the Merchant, email unique per Merchant), session end, termination, other-Merchant isolation.
+STEP 1A-3: Job Grade / Job Title (Common Maintenance codes of the Merchant; EmployeeJobGradeTitleTests).
+STEP 1A-3: Job Grade / Job Title (Common Maintenance codes of the Merchant; EmployeeJobGradeTitleTests).
 Tabs + Audit: GENERAL / ADDRESS / STORE TERMINAL ACCESS / PORTAL ACCESS (+ Soon: SKILLS, COMPENSATION, HISTORY); Created / Last Updated By names (this Merchant's users only, never
 an ID); Last Updated moves only on a real change (no-op Save / Portal save: no UPDATE, no version bump).
 """
@@ -15,6 +17,7 @@ import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +25,10 @@ from unittest.mock import patch
 from PIL import Image
 from sqlalchemy.exc import IntegrityError
 
+from backend.database.common_code_migration import migrate_common_codes
+from backend.models_admin.common_code import CommonCode, MerchantCommonInit
+from backend.database.common_code_migration import migrate_common_codes
+from backend.models_admin.common_code import CommonCode, MerchantCommonInit
 from backend.models_admin.employee import Employee, EmployeeStore
 from backend.models_admin.merchant import Merchant
 from backend.models_admin.platform_user import PlatformUser
@@ -32,6 +39,8 @@ from backend.models_admin.store import Store
 from backend.routers import images as image_routes
 from backend.services import employees as emp
 from backend.services import images
+from backend.services import master_group as mg_svc
+from backend.services import master_group as mg_svc
 from backend.utils.passwords import verify_secret
 from tools import test_common_app_navigation
 from tools import test_image_components as browser
@@ -379,9 +388,18 @@ class EmployeeMasterTests(unittest.TestCase):
     # ---- screen ----
     @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
     def test_employee_screen(self):
+        with redirect_stdout(io.StringIO()):
+            migrate_common_codes(self.engine)  # Platform Job Grade / Job Title defaults
         self.login("MERCHANT")
+        jobs = self.client.get("/merchant/api/master-group/options").json()  # copy-once: this Merchant's codes
+        grade = next(c for c in jobs["job_grade_codes"] if c["code"] == "GRD00004")
+        title = next(c for c in jobs["job_title_codes"] if c["code"] == "JOB00006")
         item = self.create(display_name="Minji K", hire_date="2026-11-01", phone="703-555-0101", pos_login_id="0101",
-                           zip="22031", city="Fairfax", state="VA")
+                           zip="22031", city="Fairfax", state="VA", job_grade_code_id=grade["id"],
+                           job_title_code_id=title["id"], birth_date="1990-03-15", gender="NON_BINARY")
+        off = self.client.put(f"/merchant/api/master-group/common_code/{title['id']}?group=JOB_TITLE",
+                              json={"name": "Store Manager", "active": False})  # an inactive saved Title
+        self.assertEqual(off.status_code, 200, off.text)
         self.assign(item["id"], pos_access=True, pos_role="MANAGER", primary=True, start_date="2026-11-02")
         self.assign(item["id"], store_id=13, pos_access=True, pos_role="CASHIER", start_date="2026-11-02")
         self.create(first_name="Joon", last_name="Lee")
@@ -414,6 +432,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert([...$('mgEmpStoreFilter').options].length===4&&[...$('mgEmpRoleFilter').options].length===5,'Store / POS Role filters');
  assert([...$('mgActiveFilter').options].some(o=>o.value==='terminated'),'Terminated status filter');
  assert(/EMP00001/.test($('mgBody').textContent)&&/POS ID 0101/.test($('mgBody').textContent),'code and POS Login ID in the list');
+ assert(/POS ID 0101 · Store <One> · Store Manager/.test($('mgBody').textContent),'Job Title in the existing subtitle: '+$('mgBody').textContent);
  doc.querySelector('#mgBody [data-row-select]').click();
  await wait(()=>doc.querySelectorAll('#mgAsgBody tr[data-asg]').length===2,'assignments loaded');
  // Tabs: the common Bootstrap Tab of the MD form; GENERAL first, one pane shown at a time.
@@ -435,7 +454,24 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  // The common PageFrame keeps one height: inactive panes are hidden (visibility), not removed.
  const shown=()=>[...doc.querySelectorAll('#mgFields .tab-pane')].filter(p=>win.getComputedStyle(p).visibility!=='hidden').map(p=>p.id);
  assert(shown().join()==='mgEmpPaneGeneral','only GENERAL shown (Soon click ignored): '+shown());
- for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgf_hire_date','mgEmpAudit','mgEmpTermDate']],
+ // Personal Information (GENERAL): Birthday (common date input, no future date) + Gender (fixed list), optional.
+ assert(/^Personal Information/.test($('mgEmpPersonal').querySelector('h3').textContent),'Personal Information section');
+ assert($('mgEmpPersonal').contains($('mgf_birth_date'))&&$('mgEmpPersonal').contains($('mgf_gender')),'Birthday and Gender');
+ assert($('mgf_birth_date').type==='date'&&$('mgf_birth_date').value==='1990-03-15'&&/^\d{4}-\d{2}-\d{2}$/.test($('mgf_birth_date').max),'Birthday date input, no future');
+ const genderSel=$('mgf_gender');
+ assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female|Non-binary|Prefer not to say'&&genderSel.value==='NON_BINARY','Gender list and saved value');
+ assert($('mgEmpPersonal').compareDocumentPosition($('mgEmpEmployment'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Personal, then Employment Information');
+ assert(!/1990|Non-binary|03\/15/.test($('mgBody').textContent),'Birthday / Gender never in the list display');
+ // Employment Information (GENERAL): Hire Date moved here + Job Grade / Job Title (Common codes, optional).
+ assert(/^Employment Information/.test($('mgEmpEmployment').querySelector('h3').textContent),'Employment Information section');
+ assert(['mgf_hire_date','mgf_job_grade_code_id','mgf_job_title_code_id'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Job Grade, Job Title');
+ assert(!doc.querySelector('.mg-md-fields').contains($('mgf_hire_date'))&&$('mgf_hire_date').value==='2026-11-01','Hire Date moved, value kept');
+ const gradeSel=$('mgf_job_grade_code_id'),titleSel=$('mgf_job_title_code_id'),txt=s=>s.options[s.selectedIndex].text;
+ assert(gradeSel.options[0].value===''&&gradeSel.options[0].text==='None'&&gradeSel.options.length===9,'8 active Grades + None');
+ assert(txt(gradeSel)==='Supervisor','saved Grade selected');
+ assert(titleSel.options.length===11&&txt(titleSel)==='Store Manager (Inactive)','inactive saved Title kept by name: '+txt(titleSel));
+ assert(gradeSel.compareDocumentPosition($('mgEmpAudit'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Employment Information above the audit');
+ for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgEmpPersonal','mgf_hire_date','mgEmpEmployment','mgEmpAudit','mgEmpTermDate']],
    ['mgEmpPaneAddress',['mgf_zip','mgf_country']],['mgEmpPaneTerminal',['mgEmpPos','mgf_pos_login_id','mgPinOpen','mgAsgSection']],
    ['mgEmpPanePortal',['mgEmpPortal','mgPortalOpen']]])
    ids.forEach(id=>assert($(pane).contains($(id)),id+' in '+pane));
@@ -495,7 +531,8 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const put=win.requests.find(r=>r.method==='PUT');
  assert(put.path==='/merchant/api/master-group/employee/'+__ID__+'/with-image','photo-aware save route');
  const keys=Object.keys(JSON.parse(put.body.get('payload'))).sort().join(',');
- assert(keys==='address_line1,address_line2,city,country,display_name,email,first_name,hire_date,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
+ assert(keys==='address_line1,address_line2,birth_date,city,country,display_name,email,first_name,gender,hire_date,job_grade_code_id,job_title_code_id,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
+ assert(JSON.parse(put.body.get('payload')).job_title_code_id===String(win.__list.items[0].job_title_code_id),'saved inactive Title sent back unchanged');
  assert(JSON.parse(put.body.get('payload')).pos_login_enabled===true,'Enable POS Login sent');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  $('mgAddBtn').click();await pause(100);
@@ -740,6 +777,219 @@ class EmployeeLoginAccessTests(unittest.TestCase):
         self.assertEqual(self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "1234", "confirm_pin": "1234"})
                          .status_code, 403)
         self.assertEqual(self.portal(item["id"], email="c@example.test").status_code, 403)
+
+
+class EmployeeJobGradeTitleTests(unittest.TestCase):
+    """STEP 1A-3: Job Grade / Job Title = this Merchant's Common Maintenance JOB_GRADE / JOB_TITLE codes (copied once
+    from the Platform defaults), optional, inactive saved codes kept by name, codes in use never deleted."""
+
+    login, create, row = EmployeeMasterTests.login, EmployeeMasterTests.create, EmployeeMasterTests.row
+    COMMON = "/merchant/api/master-group/common_code"
+
+    def setUp(self):
+        EmployeeMasterTests.setUp(self)
+        with redirect_stdout(io.StringIO()):
+            migrate_common_codes(self.engine)  # Platform defaults, as in the real database
+        self.login("MERCHANT")
+        options = self.client.get("/merchant/api/master-group/options")  # first visit: copy-once initialization
+        self.assertEqual(options.status_code, 200, options.text)
+        self.options = options.json()
+        self.grades = {c["code"]: c for c in self.options["job_grade_codes"]}
+        self.titles = {c["code"]: c for c in self.options["job_title_codes"]}
+
+    def test_options_are_this_merchants_copied_defaults(self):
+        self.assertEqual([(c["code"], c["name"]) for c in self.options["job_grade_codes"]][:2],
+                         [("GRD00001", "Entry Level"), ("GRD00002", "Staff")])
+        self.assertEqual((len(self.grades), len(self.titles)), (8, 10))
+        self.assertEqual(self.titles["JOB00010"]["name"], "General Manager")
+        for item in (*self.grades.values(), *self.titles.values()):  # the Merchant's own copies, never Platform rows
+            self.assertEqual(self.row(CommonCode, item["id"]).i_merchant_id, 10)
+        added = self.client.post(f"{self.COMMON}?group=JOB_GRADE", json={"name": "Intern"})
+        self.assertEqual(added.status_code, 201, added.text)
+        self.assertEqual(added.json()["item"]["code"], "GRD00009")  # AUTO: the Merchant's own sequence
+        duplicate = self.client.post(f"{self.COMMON}?group=JOB_TITLE", json={"name": "cashier"})
+        self.assertEqual(duplicate.status_code, 422, duplicate.text)
+        self.assertIn("name", duplicate.json()["errors"])
+
+    def test_save_read_list_and_export(self):
+        new = self.create()  # both optional
+        self.assertEqual((new["job_grade_code_id"], new["job_grade"], new["job_title_code_id"], new["job_title"]),
+                         (None, None, None, None))
+        grade, title = self.grades["GRD00004"], self.titles["JOB00001"]
+        item = self.create(first_name="Jisoo", job_grade_code_id=grade["id"], job_title_code_id=str(title["id"]))
+        self.assertEqual((item["job_grade"]["name"], item["job_title"]["code"]), ("Supervisor", "JOB00001"))
+        with self.factory() as db:
+            saved = db.get(Employee, item["id"])
+            self.assertEqual((saved.i_job_grade_code_id, saved.i_job_title_code_id), (grade["id"], title["id"]))
+        listed = {i["id"]: i for i in self.client.get(API, params={"size": 100}).json()["items"]}
+        self.assertEqual(listed[item["id"]]["job_title"]["name"], "Cashier")
+        self.assertIsNone(listed[new["id"]]["job_title"])
+        cleared = self.client.put(f"{API}/{item['id']}", json={"job_title_code_id": ""})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual((cleared.json()["item"]["job_title"], cleared.json()["item"]["job_grade"]["name"]),
+                         (None, "Supervisor"))  # key absent keeps the saved Job Grade
+        self.client.put(f"{API}/{item['id']}", json={"job_title_code_id": title["id"]})
+        text = self.client.get(f"{API}/export", params={"format": "csv"}).content.decode("utf-8-sig")
+        header, *lines = text.split("\r\n")
+        self.assertIn("Hire Date,Job Grade,Job Title,Termination Date", header)
+        self.assertTrue(any(",Supervisor,Cashier," in line for line in lines), text)
+
+    def test_wrong_group_other_merchant_platform_and_inactive_codes_are_refused(self):
+        with self.factory() as db:
+            other = mg_svc.create_item(db, "common_code", {"name": "Other Grade"}, 1, merchant_id=11, group="JOB_GRADE")
+            platform = db.query(CommonCode.i_common_code_id).filter(
+                CommonCode.c_code == "GRD00001", CommonCode.i_merchant_id.is_(None)).scalar()
+        for payload in ({"job_grade_code_id": self.titles["JOB00001"]["id"]},  # a Title is not a Grade
+                        {"job_grade_code_id": other["id"]}, {"job_grade_code_id": platform},
+                        {"job_grade_code_id": 999999}, {"job_grade_code_id": "abc"}):
+            response = self.client.post(API, json={"first_name": "X", **payload})
+            self.assertEqual(response.status_code, 422, (payload, response.text))
+            self.assertIn("job_grade_code_id", response.json()["errors"])
+        staff = self.grades["GRD00002"]
+        item = self.create(job_grade_code_id=staff["id"])
+        off = self.client.put(f"{self.COMMON}/{staff['id']}?group=JOB_GRADE", json={"name": "Staff", "active": False})
+        self.assertEqual(off.status_code, 200, off.text)
+        self.assertEqual(self.client.post(API, json={"first_name": "Y", "job_grade_code_id": staff["id"]}).status_code,
+                         422)  # an inactive code is not selectable for another Employee
+        kept = self.client.put(f"{API}/{item['id']}", json={"first_name": "Kept", "job_grade_code_id": staff["id"]})
+        self.assertEqual(kept.status_code, 200, kept.text)  # ... but the Employee's saved one is kept by name
+        self.assertEqual((kept.json()["item"]["job_grade"]["name"], kept.json()["item"]["job_grade"]["active"]),
+                         ("Staff", False))
+        options = self.client.get("/merchant/api/master-group/options").json()
+        self.assertFalse(next(c for c in options["job_grade_codes"] if c["id"] == staff["id"])["active"])
+
+    def test_codes_in_use_are_never_deleted_even_by_terminated_employees(self):
+        grade, title, unused = self.grades["GRD00003"], self.titles["JOB00002"], self.titles["JOB00003"]
+        item = self.create(job_grade_code_id=grade["id"], job_title_code_id=title["id"], hire_date="2026-01-05")
+        for group, code in (("JOB_GRADE", grade), ("JOB_TITLE", title)):
+            self.assertEqual(self.client.delete(f"{self.COMMON}/{code['id']}?group={group}").status_code, 409)
+        ended = self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": "2026-11-01"})
+        self.assertEqual(ended.status_code, 200, ended.text)
+        self.assertEqual(self.client.delete(f"{self.COMMON}/{grade['id']}?group=JOB_GRADE").status_code, 409)
+        self.assertEqual(self.client.delete(f"{self.COMMON}/{unused['id']}?group=JOB_TITLE").status_code, 200)
+        with self.factory() as db:
+            saved = db.get(Employee, item["id"])
+            self.assertEqual((saved.i_job_grade_code_id, saved.i_job_title_code_id), (grade["id"], title["id"]))
+
+    def test_audit_moves_only_on_a_real_job_change(self):
+        item = self.create(job_title_code_id=self.titles["JOB00001"]["id"])
+        same = self.client.put(f"{API}/{item['id']}", json={"job_title_code_id": self.titles["JOB00001"]["id"],
+                                                             "job_grade_code_id": ""}).json()["item"]
+        self.assertEqual((same["row_version"], same["updated_at"]), (item["row_version"], item["updated_at"]))
+        changed = self.client.put(f"{API}/{item['id']}",
+                                  json={"job_title_code_id": self.titles["JOB00006"]["id"]}).json()["item"]
+        self.assertEqual((changed["row_version"], changed["job_title"]["name"]),
+                         (item["row_version"] + 1, "Store Manager"))
+        self.assertIsNotNone(changed["updated_by"])
+
+    def test_already_initialized_merchant_gets_only_the_job_groups(self):
+        """Merchant 20 case: COLOR / UNIT initialized before this step stay exactly as they are."""
+        with self.factory() as db:
+            with patch.object(mg_svc, "COMMON_MAINTENANCE_GROUPS", ("COLOR", "UNIT")):
+                mg_svc.initialize_merchant_common_codes(db, 11, 1)
+            db.query(CommonCode).filter(CommonCode.i_merchant_id == 11, CommonCode.c_code == "CLR00001").update(
+                {"c_name": "Jet Black"})
+            db.commit()
+            snapshot = lambda: sorted((r.i_common_code_id, r.c_code, r.c_name, r.b_active) for r in
+                                      db.query(CommonCode).filter(CommonCode.i_merchant_id == 11))
+            before = snapshot()
+            self.assertEqual(sorted(r.c_group_code for r in db.query(MerchantCommonInit).filter(
+                MerchantCommonInit.i_merchant_id == 11)), ["COLOR", "UNIT"])
+            result = mg_svc.initialize_merchant_common_codes(db, 11, 1)  # the next Merchant visit
+            self.assertEqual(sorted(result), ["JOB_GRADE", "JOB_TITLE"])
+            after = snapshot()
+            self.assertEqual([r for r in after if not r[1].startswith(("GRD", "JOB"))], before)
+            self.assertTrue(any(r[1:] == ("CLR00001", "Jet Black", True) for r in after))
+            self.assertEqual(len(after) - len(before), 18)
+            self.assertEqual(mg_svc.initialize_merchant_common_codes(db, 11, 1), {})
+
+
+class EmployeePersonalInfoTests(unittest.TestCase):
+    """STEP 1A-3 Personal Information: optional Birthday (never in the future) and Gender (fixed list in code); Merchant
+    scope only; never in the list display, search or export."""
+
+    login, create, row = EmployeeMasterTests.login, EmployeeMasterTests.create, EmployeeMasterTests.row
+
+    def setUp(self):
+        EmployeeMasterTests.setUp(self)
+        # The fixture's initial client is the Platform Admin: no Employee access, no Gender list.
+        self.platform = (self.client.get("/platform/api/master-group/employee").status_code,
+                         self.client.get("/platform/api/master-group/options").json()["genders"])
+        self.login("MERCHANT")
+
+    def test_optional_crud_and_key_absent_keeps(self):
+        plain = self.create()
+        self.assertEqual((plain["birth_date"], plain["gender"], plain["gender_name"]), (None, None, None))
+        item = self.create(first_name="Jisoo", birth_date="03/15/1990", gender="non_binary")
+        self.assertEqual((item["birth_date"], item["gender"], item["gender_name"]),
+                         ("1990-03-15", "NON_BINARY", "Non-binary"))
+        with self.factory() as db:
+            saved = db.get(Employee, item["id"])
+            self.assertEqual((saved.d_birth_date, saved.c_gender), (date(1990, 3, 15), "NON_BINARY"))
+        kept = self.client.put(f"{API}/{item['id']}", json={"phone": "703-555-0199"}).json()["item"]
+        self.assertEqual((kept["birth_date"], kept["gender"]), ("1990-03-15", "NON_BINARY"))  # keys absent: kept
+        changed = self.client.put(f"{API}/{item['id']}", json={"birth_date": "1991-01-02", "gender": "FEMALE"}).json()["item"]
+        self.assertEqual((changed["birth_date"], changed["gender_name"]), ("1991-01-02", "Female"))
+        cleared = self.client.put(f"{API}/{item['id']}", json={"birth_date": "", "gender": ""})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual((cleared.json()["item"]["birth_date"], cleared.json()["item"]["gender"]), (None, None))
+        for code, label in (("MALE", "Male"), ("FEMALE", "Female"), ("NON_BINARY", "Non-binary"),
+                            ("PREFER_NOT_TO_SAY", "Prefer not to say")):
+            response = self.client.put(f"{API}/{item['id']}", json={"gender": code})
+            self.assertEqual((response.status_code, response.json()["item"]["gender_name"]), (200, label))
+
+    def test_validation(self):
+        today = date.today()
+        tomorrow = date.fromordinal(today.toordinal() + 1)
+        cases = [({"birth_date": tomorrow.isoformat()}, "birth_date", "Birthday cannot be in the future."),
+                 ({"birth_date": "13/45/1990"}, "birth_date", "Enter Birthday as MM/DD/YYYY."),
+                 ({"gender": "UNKNOWN"}, "gender", "Select a valid Gender."),
+                 ({"gender": "Non-binary"}, "gender", "Select a valid Gender.")]  # the label is not a code
+        for payload, field, message in cases:
+            response = self.client.post(API, json={"first_name": "X", **payload})
+            self.assertEqual(response.status_code, 422, (payload, response.text))
+            self.assertEqual(response.json()["errors"][field], message)
+        self.assertEqual(self.create(birth_date=today.isoformat())["birth_date"], today.isoformat())  # today is allowed
+        item = self.create(birth_date="1990-03-15")
+        self.assertEqual(self.client.put(f"{API}/{item['id']}", json={"birth_date": tomorrow.isoformat()}).status_code, 422)
+        self.assertEqual(self.row(Employee, item["id"]).d_birth_date, date(1990, 3, 15))  # refused: unchanged
+
+    def test_not_in_export_search_or_pos_and_options_merchant_only(self):
+        item = self.create(birth_date="1990-03-15", gender="FEMALE", phone="703-555-0101")
+        header = self.client.get(f"{API}/export", params={"format": "csv"}).content.decode("utf-8-sig").split("\r\n")[0]
+        for word in ("Birth", "Gender"):
+            self.assertNotIn(word, header)
+        self.assertEqual(self.client.get(API, params={"q": "1990"}).json()["items"], [])  # never searched
+        self.assertEqual(self.client.get(API, params={"q": "FEMALE"}).json()["items"], [])
+        options = self.client.get("/merchant/api/master-group/options").json()
+        self.assertEqual([g["code"] for g in options["genders"]], ["MALE", "FEMALE", "NON_BINARY", "PREFER_NOT_TO_SAY"])
+        self.login("STORE")
+        self.assertEqual(self.client.get("/store/api/master-group/options").json()["genders"], [])
+        self.assertEqual(self.client.get(API).status_code, 403)
+        self.assertEqual(self.client.put(f"{API}/{item['id']}", json={"gender": "MALE"}).status_code, 403)
+        self.assertEqual(self.row(Employee, item["id"]).c_gender, "FEMALE")
+
+    def test_other_merchant_platform_and_terminated_access(self):
+        fid = self.foreign["id"]
+        self.assertEqual(self.client.put(f"{API}/{fid}", json={"birth_date": "1990-01-01"}).status_code, 404)
+        self.assertNotIn(fid, [i["id"] for i in self.client.get(API).json()["items"]])
+        self.assertIsNone(self.row(Employee, fid).d_birth_date)
+        item = self.create(birth_date="1990-03-15", hire_date="2026-01-05")
+        self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": "2026-11-01"})
+        self.assertEqual(self.client.put(f"{API}/{item['id']}", json={"gender": "MALE"}).status_code, 409)  # view only
+        self.assertEqual(self.platform, (403, []))
+
+    def test_audit_moves_only_on_a_real_change(self):
+        item = self.create(birth_date="1990-03-15", gender="MALE")
+        same = self.client.put(f"{API}/{item['id']}", json={"birth_date": "03/15/1990", "gender": "male"}).json()["item"]
+        self.assertEqual((same["row_version"], same["updated_at"]), (item["row_version"], item["updated_at"]))
+        changed = self.client.put(f"{API}/{item['id']}", json={"gender": "PREFER_NOT_TO_SAY"}).json()["item"]
+        self.assertEqual(changed["row_version"], item["row_version"] + 1)  # current rule: any real change bumps
+
+    def test_database_check_refuses_an_unknown_gender(self):
+        with self.factory() as db, self.assertRaises(IntegrityError):
+            db.query(Employee).filter(Employee.i_employee_id == self.foreign["id"]).update({"c_gender": "OTHER"})
+            db.commit()
 
 
 if __name__ == "__main__":

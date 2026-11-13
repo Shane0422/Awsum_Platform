@@ -4,12 +4,15 @@ before step 6 (earlier tb_color) has its colors copied instead of the defaults. 
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
-from backend.database.common_code_migration import DEFAULT_COLORS, UNIT_CODES, migrate_common_codes
+from backend.database.common_code_migration import (DEFAULT_COLORS, JOB_GRADES, JOB_TITLES, UNIT_CODES,
+                                                    migrate_common_codes)
+from backend.database import common_code_migration
 from backend.database.pg_platform import PlatformBase
 from backend.models_admin.common_code import CommonCode, CommonGroup
 from backend.models_admin.merchant import Merchant
@@ -56,16 +59,26 @@ class CommonCodeMigrationTests(unittest.TestCase):
     # ---- new installation: no tb_color ----
     def test_new_database_seeds_default_colors_and_units_directly(self):
         result, _ = self.migrate()
-        self.assertEqual((result["groups"], result["colors"], result["units"]), (["COLOR", "UNIT"], 13, 14))
+        self.assertEqual((result["groups"], result["colors"], result["units"], result["job_grades"], result["job_titles"]),
+                         (["COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE"], 13, 14, 8, 10))
         self.assertFalse(inspect(self.engine).has_table("tb_color"))
         groups = self.rows("SELECT c_group_code, c_code_mode, c_code_prefix, i_code_max_length, c_value_type, "
                            "c_value_label, b_merchant_extendable, b_active FROM tb_common_group ORDER BY i_display_order")
         self.assertEqual(groups, [("COLOR", "AUTO", "CLR", 20, "COLOR", "Swatch HEX", 0, 1),
-                                  ("UNIT", "MANUAL", None, 30, None, None, 0, 1)])
+                                  ("UNIT", "MANUAL", None, 30, None, None, 0, 1),
+                                  ("JOB_GRADE", "AUTO", "GRD", 20, None, None, 0, 1),
+                                  ("JOB_TITLE", "AUTO", "JOB", 20, None, None, 0, 1)])
         self.assertEqual(self.codes("COLOR"), [(f"CLR{n:05d}", name, hex_, None, n * 10, 1, None, None)
                                                for n, (name, hex_) in enumerate(DEFAULT_COLORS, start=1)])
         self.assertEqual([(c[0], c[1], c[4]) for c in self.codes("UNIT")],
                          [(code, name, n * 10) for n, (code, name) in enumerate(UNIT_CODES, start=1)])
+        # Employee Master defaults (approved lists), AUTO codes, Platform scope, no Value.
+        self.assertEqual(self.codes("JOB_GRADE"), [(f"GRD{n:05d}", name, None, None, n * 10, 1, None, None)
+                                                   for n, name in enumerate(JOB_GRADES, start=1)])
+        self.assertEqual(self.codes("JOB_TITLE"), [(f"JOB{n:05d}", name, None, None, n * 10, 1, None, None)
+                                                   for n, name in enumerate(JOB_TITLES, start=1)])
+        self.assertEqual((JOB_GRADES[0], JOB_GRADES[-1], len(JOB_GRADES)), ("Entry Level", "Executive", 8))
+        self.assertEqual((JOB_TITLES[0], JOB_TITLES[-1], len(JOB_TITLES)), ("Cashier", "General Manager", 10))
         self.assertNotIn("SIZE", {g[0] for g in groups})
         self.assertNotIn("ITEM_KIND", {g[0] for g in groups})
         self.assertNotIn("i_legacy_id", {c["name"] for c in inspect(self.engine).get_columns("tb_common_code")})
@@ -79,13 +92,33 @@ class CommonCodeMigrationTests(unittest.TestCase):
             conn.execute(text("DELETE FROM tb_common_code WHERE c_code = 'CLR00006'"))  # a deleted default stays deleted
             conn.execute(text("UPDATE tb_common_code SET c_name = 'Piece' WHERE c_code = 'EA'"))
             conn.execute(text("DELETE FROM tb_common_code WHERE c_code = 'DAY'"))
+            conn.execute(text("UPDATE tb_common_code SET c_name = 'Lead Cashier', b_active = FALSE WHERE c_code = 'JOB00001'"))
+            conn.execute(text("DELETE FROM tb_common_code WHERE c_code = 'GRD00008'"))  # deleted default stays deleted
         snapshot = self.rows("SELECT * FROM tb_common_code ORDER BY i_common_code_id")
         groups = self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id")
         result, out = self.migrate()
-        self.assertEqual((result["groups"], result["colors"], result["units"]), ([], 0, 0))
+        self.assertEqual((result["groups"], result["colors"], result["units"], result["job_grades"], result["job_titles"]),
+                         ([], 0, 0, 0, 0))
         self.assertEqual(self.rows("SELECT * FROM tb_common_code ORDER BY i_common_code_id"), snapshot)
         self.assertEqual(self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id"), groups)
         self.assertEqual(out, "")
+
+    def test_existing_database_gets_only_the_job_groups_and_keeps_color_and_unit(self):
+        """The real database (COLOR / UNIT seeded and edited before this step): only JOB_GRADE / JOB_TITLE are added."""
+        with patch.object(common_code_migration, "COMMON_GROUPS", common_code_migration.COMMON_GROUPS[:2]),                 patch.object(common_code_migration, "AUTO_CODE_SEEDS", ()):
+            before, _ = self.migrate()
+        self.assertEqual(before["groups"], ["COLOR", "UNIT"])
+        with self.engine.begin() as conn:  # Merchant / admin changes made before this step
+            conn.execute(text("UPDATE tb_common_code SET c_name = 'Piece' WHERE c_code = 'EA'"))
+        old_codes = self.rows("SELECT * FROM tb_common_code ORDER BY i_common_code_id")
+        old_groups = self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id")
+        result, out = self.migrate()
+        self.assertEqual((result["groups"], result["colors"], result["units"], result["job_grades"], result["job_titles"]),
+                         (["JOB_GRADE", "JOB_TITLE"], 0, 0, 8, 10))
+        self.assertEqual(self.rows("SELECT * FROM tb_common_code ORDER BY i_common_code_id")[:len(old_codes)], old_codes)
+        self.assertEqual(self.rows("SELECT * FROM tb_common_group ORDER BY i_common_group_id")[:len(old_groups)], old_groups)
+        self.assertEqual(len(self.codes("JOB_GRADE")) + len(self.codes("JOB_TITLE")), 18)
+        self.assertIn("JOB_GRADE seeded: 8; JOB_TITLE seeded: 10", out)
 
     # ---- database created before COLOR step 6: tb_color is copied, defaults are not seeded ----
     def test_earlier_tb_color_is_copied_with_its_creation_record(self):

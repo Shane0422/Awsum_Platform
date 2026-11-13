@@ -114,7 +114,10 @@ MERCHANT_MD_FIXED_VALUES = {
 # even if the Platform EA were missing or inactive. EA is protected in every scope (PROTECTED_COMMON_CODES).
 MERCHANT_DEFAULT_UNITS = (("EA", "Each"),)
 # Common Maintenance groups shown now. SIZE and ITEM_KIND are never Common Maintenance groups.
-COMMON_MAINTENANCE_GROUPS = ("COLOR", "UNIT")
+# JOB_GRADE / JOB_TITLE: Employee Master Job Grade / Job Title (tb_employee i_job_grade_code_id / i_job_title_code_id).
+COMMON_MAINTENANCE_GROUPS = ("COLOR", "UNIT", "JOB_GRADE", "JOB_TITLE")
+# Employee column per Employee-referenced group (in-use check: any Employee status, terminated included).
+EMPLOYEE_COMMON_GROUPS = {"JOB_GRADE": "i_job_grade_code_id", "JOB_TITLE": "i_job_title_code_id"}
 # View-only Common Groups (none since COLOR step 5-2: COLOR is managed here; the mechanism stays for later groups).
 READ_ONLY_COMMON_GROUPS: dict[str, str] = {}
 # MD Detail Color is a COLOR common code (color_code_id); the removed tb_color id (color_id) is refused (422).
@@ -162,7 +165,7 @@ def _scoped_query(db: Session, model, merchant_id: int | None):
 
 
 def common_group(db: Session, group: str | None) -> CommonGroup:
-    """The active Common Maintenance group named by ?group= (COLOR / UNIT only)."""
+    """The active Common Maintenance group named by ?group= (COMMON_MAINTENANCE_GROUPS only)."""
     code = str(group or "").strip().upper()
     row = (db.query(CommonGroup).filter(CommonGroup.c_group_code == code).first()
            if code in COMMON_MAINTENANCE_GROUPS else None)
@@ -674,7 +677,25 @@ def common_code_in_use(db: Session, group_code: str, row: CommonCode) -> bool:
                                                                 MdDetail.c_unit == row.c_code).first())
     if group_code == "COLOR":  # MD Detail references the COLOR code (i_color_code_id)
         return bool(db.query(MdDetail.i_md_detail_id).filter(MdDetail.i_color_code_id == row.i_common_code_id).first())
+    if group_code in EMPLOYEE_COMMON_GROUPS:  # Employee Job Grade / Job Title, terminated Employees included
+        column = getattr(Employee, EMPLOYEE_COMMON_GROUPS[group_code])
+        return bool(db.query(Employee.i_employee_id).filter(column == row.i_common_code_id).first())
     return False
+
+
+def common_code_options(db: Session, group_code: str, merchant_id: int | None = None) -> list[dict]:
+    """One group's codes of the scope for a Common selector (inactive ones too, so a saved code keeps its name;
+    the screen offers active codes plus the saved one). Empty while the Common tables are not migrated."""
+    if not inspect(db.get_bind()).has_table(CommonGroup.__tablename__):
+        return []
+    rows = common_code_query(db, group_code, merchant_id).order_by(CommonCode.i_display_order, CommonCode.c_code)
+    return [{"id": r.i_common_code_id, "code": r.c_code, "name": r.c_name, "active": bool(r.b_active)} for r in rows]
+
+
+def common_code_query(db: Session, group_code: str, merchant_id: int | None = None):
+    """The scope's own codes of one group (Platform, or exactly this Merchant)."""
+    return (db.query(CommonCode).join(CommonGroup, CommonGroup.i_common_group_id == CommonCode.i_common_group_id)
+            .filter(CommonGroup.c_group_code == group_code, common_code_scope(merchant_id)))
 
 
 def color_code_options(db: Session, merchant_id: int | None = None) -> list[dict]:
@@ -687,8 +708,7 @@ def color_code_options(db: Session, merchant_id: int | None = None) -> list[dict
 
 
 def _color_code_query(db: Session, merchant_id: int | None = None):
-    return (db.query(CommonCode).join(CommonGroup, CommonGroup.i_common_group_id == CommonCode.i_common_group_id)
-            .filter(CommonGroup.c_group_code == "COLOR", common_code_scope(merchant_id)))
+    return common_code_query(db, "COLOR", merchant_id)
 
 
 
@@ -770,7 +790,7 @@ def _copy_platform_group(db: Session, group: CommonGroup, merchant_id: int, user
 
 
 def initialize_merchant_common_codes(db: Session, merchant_id: int | None, user_id, *, commit: bool = True) -> dict:
-    """First initialization of a Merchant's Common Maintenance: each active group (COLOR / UNIT) that has no
+    """First initialization of a Merchant's Common Maintenance: each active group (COMMON_MAINTENANCE_GROUPS) with no
     tb_merchant_common_init row gets the active Platform codes copied once. Returns {group: counts} for the
     groups initialized now ({} when every group was already done).
 
@@ -802,7 +822,7 @@ def initialize_merchant_common_codes(db: Session, merchant_id: int | None, user_
 
 
 def common_groups(db: Session) -> list[dict]:
-    """Common Maintenance groups for the screen (COLOR / UNIT, active), with their code and Value rules.
+    """Common Maintenance groups for the screen (COMMON_MAINTENANCE_GROUPS, active), with their code and Value rules.
 
     Empty while the Common tables are not migrated yet (e.g. Production before its approved migration), so the
     shared /options response used by MD keeps working.
@@ -1967,6 +1987,9 @@ def lookup_options(db: Session, can_cost: bool = False, *, merchant_id: int | No
         "default_item_kind": DEFAULT_ITEM_KIND,
         # MD Color selector: COLOR codes from Common Maintenance (MD Detail color_code_id).
         "color_codes": color_code_options(db, merchant_id),
+        # Employee Master Job Grade / Job Title selectors (Common Maintenance JOB_GRADE / JOB_TITLE).
+        "job_grade_codes": common_code_options(db, "JOB_GRADE", merchant_id),
+        "job_title_codes": common_code_options(db, "JOB_TITLE", merchant_id),
         "billing_cycles": list(BILLING_CYCLES),
         # Behavior flags come from the Common definition so the UI never re-derives them from numbers.
         "inventory_types": [b.as_dict() for b in inventory.inventory_types()],

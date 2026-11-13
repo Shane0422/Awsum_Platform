@@ -332,6 +332,8 @@ def master_group_options(request: Request, db: Session = Depends(get_db)):
         "view_only_entities": sorted(STORE_VIEW_ONLY_ENTITIES) if scope is not None and scope.context == "STORE" else [],
         # Employee Master (Merchant login): the POS Role Registry for Store assignments.
         "pos_roles": pos_role_options() if scope is not None and scope.context == "MERCHANT" else [],
+        # Employee Master Personal Information: the Gender list (fixed in code; Merchant login only).
+        "genders": emp.gender_options() if scope is not None and scope.context == "MERCHANT" else [],
         "detail_cost": not (scope is not None and scope.context == "STORE")}))
 
 
