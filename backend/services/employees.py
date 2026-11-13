@@ -33,8 +33,8 @@ STEP 1A-3 Job Grade / Job Title: optional codes of this Merchant's Common Mainte
 (tb_common_code ids). The same rule as the MD Color: the code must be of that group and this Merchant; an inactive code
 is accepted only when it is the Employee's saved code (it keeps showing by name); blank clears it; key absent keeps it.
 Portal only (list subtitle shows the Title, the export both names); never POS / receipts.
-STEP 1A-3 Personal Information: optional Birthday (common date rule, never in the future) and Gender (a code of
-models_admin.employee.EMPLOYEE_GENDERS, the fixed list in code; blank = not entered). Merchant scope only like every
+STEP 1A-3 Personal Information: optional Birthday (common date rule, never in the future) and Gender (MALE / FEMALE,
+models_admin.employee.EMPLOYEE_GENDERS, the fixed list in code; blank = not selected = NULL). Merchant scope only like every
 Employee field; shown only in the edit form (never the list display, search, export, POS or receipts).
 
 Audit (common AuditMixin columns, unchanged): the response adds created_by / updated_by, the names of this

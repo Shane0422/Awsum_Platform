@@ -29,9 +29,8 @@ from backend.models_common.audit_mixin import AuditMixin
 
 EMPLOYEE_STATUSES = ("active", "inactive", "terminated")
 ASSIGNMENT_STATUSES = ("active", "inactive", "ended")
-# Gender (code, label); NULL = not entered. The stored code is checked by ck_tb_employee_gender.
-EMPLOYEE_GENDERS = (("MALE", "Male"), ("FEMALE", "Female"), ("NON_BINARY", "Non-binary"),
-                    ("PREFER_NOT_TO_SAY", "Prefer not to say"))
+# Gender (code, label); NULL = not selected. The stored code is checked by ck_tb_employee_gender.
+EMPLOYEE_GENDERS = (("MALE", "Male"), ("FEMALE", "Female"))
 GENDER_CHECK = "c_gender IS NULL OR c_gender IN ({})".format(", ".join(f"'{code}'" for code, _label in EMPLOYEE_GENDERS))
 
 

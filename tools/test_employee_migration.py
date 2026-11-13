@@ -11,8 +11,8 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
 from backend.database.employee_migration import (EMPLOYEE_LOGIN_COLUMNS, EMPLOYEE_TABLES, JOB_COLUMNS, PERSONAL_COLUMNS,
-                                                 POS_LOGIN_INDEX, STORE_INDEX, migrate_employee_schema,
-                                                 pending_employee_schema)
+                                                 POS_LOGIN_INDEX, STORE_INDEX, gender_check_codes,
+                                                 migrate_employee_schema, pending_employee_schema)
 from backend.database.pg_platform import PlatformBase
 import backend.models_admin  # noqa: F401
 
@@ -41,11 +41,13 @@ class EmployeeMigrationTests(unittest.TestCase):
         self.assertEqual(pending_employee_schema(self.engine), {"tables": list(EMPLOYEE_TABLES), "store_index": True,
                                                                 "employee_columns": [], "pos_login_index": False,
                                                                 "job_columns": [], "job_fks": [], "job_indexes": [],
-                                                                "personal_columns": [], "gender_check": False})
+                                                                "personal_columns": [], "gender_check": False,
+                                                                "gender_check_replace": False})
         result = migrate_employee_schema(self.engine)
         self.assertEqual(result, {"created_tables": list(EMPLOYEE_TABLES), "store_index_created": True,
                                   "added_employee_columns": [], "pos_login_index_created": False, "added_job_columns": [], "added_job_fks": [], "created_job_indexes": [],
-                                  "added_personal_columns": [], "gender_check_created": False})
+                                  "added_personal_columns": [], "gender_check_created": False,
+                                  "gender_check_replaced": False})
         inspector = inspect(self.engine)
         self.assertTrue(set(EMPLOYEE_TABLES) <= set(inspector.get_table_names()))
         self.assertIn(STORE_INDEX, {ix["name"] for ix in inspector.get_indexes("tb_store")})
@@ -54,11 +56,13 @@ class EmployeeMigrationTests(unittest.TestCase):
         self.assertEqual(pending_employee_schema(self.engine), {"tables": [], "store_index": False,
                                                                 "employee_columns": [], "pos_login_index": False,
                                                                 "job_columns": [], "job_fks": [], "job_indexes": [],
-                                                                "personal_columns": [], "gender_check": False})
+                                                                "personal_columns": [], "gender_check": False,
+                                                                "gender_check_replace": False})
         self.assertEqual(migrate_employee_schema(self.engine), {"created_tables": [], "store_index_created": False,
                                                                 "added_employee_columns": [],
                                                                 "pos_login_index_created": False, "added_job_columns": [], "added_job_fks": [], "created_job_indexes": [],
-                                  "added_personal_columns": [], "gender_check_created": False})
+                                  "added_personal_columns": [], "gender_check_created": False,
+                                  "gender_check_replaced": False})
         job_fks = {fk["constrained_columns"][0]: fk["referred_table"] for fk in inspector.get_foreign_keys("tb_employee")}
         self.assertEqual({name: job_fks.get(name) for name in JOB_COLUMNS},
                          {name: "tb_common_code" for name in JOB_COLUMNS})  # new table: built from the model
@@ -183,6 +187,21 @@ class EmployeeJobMigrationTests(unittest.TestCase):
         with self.engine.begin() as conn:
             conn.execute(text("UPDATE tb_employee SET i_job_grade_code_id = 7"))  # a stored reference
             self.assertEqual(conn.execute(text("SELECT i_job_grade_code_id FROM tb_employee")).scalar(), 7)
+
+
+class GenderCheckTests(unittest.TestCase):
+    """Gender list change (MALE / FEMALE): an existing ck_tb_employee_gender is replaced when its code list differs.
+    The PostgreSQL replacement itself (and its refusal while a row holds a removed code) is verified by the rehearsal."""
+
+    def test_codes_are_read_from_the_reflected_definition(self):
+        old = ("CHECK (((c_gender IS NULL) OR ((c_gender)::text = ANY ((ARRAY['MALE'::character varying, "
+               "'FEMALE'::character varying, 'NON_BINARY'::character varying, "
+               "'PREFER_NOT_TO_SAY'::character varying])::text[]))))")
+        self.assertEqual(gender_check_codes(old), {"MALE", "FEMALE", "NON_BINARY", "PREFER_NOT_TO_SAY"})
+        from backend.models_admin.employee import EMPLOYEE_GENDERS, GENDER_CHECK
+        self.assertEqual(EMPLOYEE_GENDERS, (("MALE", "Male"), ("FEMALE", "Female")))
+        self.assertEqual(gender_check_codes(GENDER_CHECK), {"MALE", "FEMALE"})
+        self.assertEqual(gender_check_codes(""), set())
 
 
 if __name__ == "__main__":

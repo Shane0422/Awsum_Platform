@@ -396,7 +396,7 @@ class EmployeeMasterTests(unittest.TestCase):
         title = next(c for c in jobs["job_title_codes"] if c["code"] == "JOB00006")
         item = self.create(display_name="Minji K", hire_date="2026-11-01", phone="703-555-0101", pos_login_id="0101",
                            zip="22031", city="Fairfax", state="VA", job_grade_code_id=grade["id"],
-                           job_title_code_id=title["id"], birth_date="1990-03-15", gender="NON_BINARY")
+                           job_title_code_id=title["id"], birth_date="1990-03-15", gender="FEMALE")
         off = self.client.put(f"/merchant/api/master-group/common_code/{title['id']}?group=JOB_TITLE",
                               json={"name": "Store Manager", "active": False})  # an inactive saved Title
         self.assertEqual(off.status_code, 200, off.text)
@@ -459,9 +459,9 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgEmpPersonal').contains($('mgf_birth_date'))&&$('mgEmpPersonal').contains($('mgf_gender')),'Birthday and Gender');
  assert($('mgf_birth_date').type==='date'&&$('mgf_birth_date').value==='1990-03-15'&&/^\d{4}-\d{2}-\d{2}$/.test($('mgf_birth_date').max),'Birthday date input, no future');
  const genderSel=$('mgf_gender');
- assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female|Non-binary|Prefer not to say'&&genderSel.value==='NON_BINARY','Gender list and saved value');
+ assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female'&&genderSel.value==='FEMALE','Gender list (Male / Female / not selected) and saved value');
  assert($('mgEmpPersonal').compareDocumentPosition($('mgEmpEmployment'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Personal, then Employment Information');
- assert(!/1990|Non-binary|03\/15/.test($('mgBody').textContent),'Birthday / Gender never in the list display');
+ assert(!/1990|Female|03\/15/.test($('mgBody').textContent),'Birthday / Gender never in the list display');
  // Employment Information (GENERAL): Hire Date moved here + Job Grade / Job Title (Common codes, optional).
  assert(/^Employment Information/.test($('mgEmpEmployment').querySelector('h3').textContent),'Employment Information section');
  assert(['mgf_hire_date','mgf_job_grade_code_id','mgf_job_title_code_id'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Job Grade, Job Title');
@@ -920,21 +920,22 @@ class EmployeePersonalInfoTests(unittest.TestCase):
     def test_optional_crud_and_key_absent_keeps(self):
         plain = self.create()
         self.assertEqual((plain["birth_date"], plain["gender"], plain["gender_name"]), (None, None, None))
-        item = self.create(first_name="Jisoo", birth_date="03/15/1990", gender="non_binary")
+        item = self.create(first_name="Jisoo", birth_date="03/15/1990", gender="female")
         self.assertEqual((item["birth_date"], item["gender"], item["gender_name"]),
-                         ("1990-03-15", "NON_BINARY", "Non-binary"))
+                         ("1990-03-15", "FEMALE", "Female"))
         with self.factory() as db:
             saved = db.get(Employee, item["id"])
-            self.assertEqual((saved.d_birth_date, saved.c_gender), (date(1990, 3, 15), "NON_BINARY"))
+            self.assertEqual((saved.d_birth_date, saved.c_gender), (date(1990, 3, 15), "FEMALE"))
         kept = self.client.put(f"{API}/{item['id']}", json={"phone": "703-555-0199"}).json()["item"]
-        self.assertEqual((kept["birth_date"], kept["gender"]), ("1990-03-15", "NON_BINARY"))  # keys absent: kept
-        changed = self.client.put(f"{API}/{item['id']}", json={"birth_date": "1991-01-02", "gender": "FEMALE"}).json()["item"]
-        self.assertEqual((changed["birth_date"], changed["gender_name"]), ("1991-01-02", "Female"))
+        self.assertEqual((kept["birth_date"], kept["gender"]), ("1990-03-15", "FEMALE"))  # keys absent: kept
+        changed = self.client.put(f"{API}/{item['id']}", json={"birth_date": "1991-01-02", "gender": "MALE"}).json()["item"]
+        self.assertEqual((changed["birth_date"], changed["gender_name"]), ("1991-01-02", "Male"))
+        self.assertEqual(self.client.get(API).json()["items"][-1]["gender"], "MALE")  # re-read
         cleared = self.client.put(f"{API}/{item['id']}", json={"birth_date": "", "gender": ""})
         self.assertEqual(cleared.status_code, 200, cleared.text)
         self.assertEqual((cleared.json()["item"]["birth_date"], cleared.json()["item"]["gender"]), (None, None))
-        for code, label in (("MALE", "Male"), ("FEMALE", "Female"), ("NON_BINARY", "Non-binary"),
-                            ("PREFER_NOT_TO_SAY", "Prefer not to say")):
+        self.assertIsNone(self.row(Employee, item["id"]).c_gender)  # not selected = NULL
+        for code, label in (("MALE", "Male"), ("FEMALE", "Female")):
             response = self.client.put(f"{API}/{item['id']}", json={"gender": code})
             self.assertEqual((response.status_code, response.json()["item"]["gender_name"]), (200, label))
 
@@ -944,7 +945,9 @@ class EmployeePersonalInfoTests(unittest.TestCase):
         cases = [({"birth_date": tomorrow.isoformat()}, "birth_date", "Birthday cannot be in the future."),
                  ({"birth_date": "13/45/1990"}, "birth_date", "Enter Birthday as MM/DD/YYYY."),
                  ({"gender": "UNKNOWN"}, "gender", "Select a valid Gender."),
-                 ({"gender": "Non-binary"}, "gender", "Select a valid Gender.")]  # the label is not a code
+                 ({"gender": "M"}, "gender", "Select a valid Gender."),  # an abbreviation is not a code
+                 ({"gender": "NON_BINARY"}, "gender", "Select a valid Gender."),  # removed from the list
+                 ({"gender": "PREFER_NOT_TO_SAY"}, "gender", "Select a valid Gender.")]
         for payload, field, message in cases:
             response = self.client.post(API, json={"first_name": "X", **payload})
             self.assertEqual(response.status_code, 422, (payload, response.text))
@@ -962,7 +965,7 @@ class EmployeePersonalInfoTests(unittest.TestCase):
         self.assertEqual(self.client.get(API, params={"q": "1990"}).json()["items"], [])  # never searched
         self.assertEqual(self.client.get(API, params={"q": "FEMALE"}).json()["items"], [])
         options = self.client.get("/merchant/api/master-group/options").json()
-        self.assertEqual([g["code"] for g in options["genders"]], ["MALE", "FEMALE", "NON_BINARY", "PREFER_NOT_TO_SAY"])
+        self.assertEqual(options["genders"], [{"code": "MALE", "name": "Male"}, {"code": "FEMALE", "name": "Female"}])
         self.login("STORE")
         self.assertEqual(self.client.get("/store/api/master-group/options").json()["genders"], [])
         self.assertEqual(self.client.get(API).status_code, 403)
@@ -983,13 +986,14 @@ class EmployeePersonalInfoTests(unittest.TestCase):
         item = self.create(birth_date="1990-03-15", gender="MALE")
         same = self.client.put(f"{API}/{item['id']}", json={"birth_date": "03/15/1990", "gender": "male"}).json()["item"]
         self.assertEqual((same["row_version"], same["updated_at"]), (item["row_version"], item["updated_at"]))
-        changed = self.client.put(f"{API}/{item['id']}", json={"gender": "PREFER_NOT_TO_SAY"}).json()["item"]
+        changed = self.client.put(f"{API}/{item['id']}", json={"gender": "FEMALE"}).json()["item"]
         self.assertEqual(changed["row_version"], item["row_version"] + 1)  # current rule: any real change bumps
 
     def test_database_check_refuses_an_unknown_gender(self):
-        with self.factory() as db, self.assertRaises(IntegrityError):
-            db.query(Employee).filter(Employee.i_employee_id == self.foreign["id"]).update({"c_gender": "OTHER"})
-            db.commit()
+        for code in ("OTHER", "NON_BINARY", "PREFER_NOT_TO_SAY"):  # the CHECK follows the Male / Female list
+            with self.subTest(code=code), self.factory() as db, self.assertRaises(IntegrityError):
+                db.query(Employee).filter(Employee.i_employee_id == self.foreign["id"]).update({"c_gender": code})
+                db.commit()
 
 
 if __name__ == "__main__":

@@ -22,11 +22,16 @@ STEP 1A-3 (Job Grade / Job Title, on an existing tb_employee)
    tb_common_code are created first when missing (new installation), as for the MD Detail Color FK.
 6. tb_employee: ADD COLUMN d_birth_date (DATE NULL) and c_gender (VARCHAR(20) NULL), and on PostgreSQL the CHECK
    ck_tb_employee_gender (the new column is empty, so no row can violate it). No index (never searched or sorted).
+7. Gender list change (MALE / FEMALE only): on PostgreSQL an existing ck_tb_employee_gender whose code list differs
+   from models_admin.employee.EMPLOYEE_GENDERS is replaced (DROP + ADD in one transaction). It is never replaced while a
+   row holds a code outside the list: the step stops and no value is changed or removed.
 
 No existing value is changed or removed. The tb_role "Employee" row is seeded by db_init_platform (default roles).
 Runs from db_init_platform before the generic schema step (which would otherwise create tb_employee_store before the
 tb_store index exists).
 """
+import re
+
 from sqlalchemy import inspect, text
 
 EMPLOYEE_TABLES = ("tb_portal_role", "tb_portal_role_permission", "tb_employee", "tb_employee_store",
@@ -62,7 +67,7 @@ def pending_employee_schema(engine) -> dict:
         ix["name"] == STORE_INDEX for ix in inspector.get_indexes("tb_store"))
     columns, login_index = [], False
     job_columns, job_fks, job_indexes = [], [], []
-    personal_columns, gender_check = [], False
+    personal_columns, gender_check, gender_check_replace = [], False, False
     if "tb_employee" in tables:
         present = {column["name"] for column in inspector.get_columns("tb_employee")}
         columns = [name for name in EMPLOYEE_LOGIN_COLUMNS if name not in present]
@@ -75,17 +80,31 @@ def pending_employee_schema(engine) -> dict:
         job_indexes = [name for name, (_fk, index) in JOB_COLUMNS.items() if index not in indexes]
         personal_columns = [name for name in PERSONAL_COLUMNS if name not in present]
         if engine.dialect.name == "postgresql":  # SQLite cannot add a CHECK to an existing table
-            gender_check = GENDER_CHECK_NAME not in {ck["name"] for ck in inspector.get_check_constraints("tb_employee")}
+            checks = {ck["name"]: ck["sqltext"] for ck in inspector.get_check_constraints("tb_employee")}
+            gender_check = GENDER_CHECK_NAME not in checks
+            gender_check_replace = (not gender_check
+                                    and gender_check_codes(checks[GENDER_CHECK_NAME]) != _allowed_genders())
     return {"tables": [name for name in EMPLOYEE_TABLES if name not in tables], "store_index": not store_index,
             "employee_columns": columns, "pos_login_index": login_index,
             "job_columns": job_columns, "job_fks": job_fks, "job_indexes": job_indexes,
-            "personal_columns": personal_columns, "gender_check": gender_check}
+            "personal_columns": personal_columns, "gender_check": gender_check,
+            "gender_check_replace": gender_check_replace}
+
+
+def _allowed_genders() -> set[str]:
+    from backend.models_admin.employee import EMPLOYEE_GENDERS
+    return {code for code, _label in EMPLOYEE_GENDERS}
+
+
+def gender_check_codes(definition: str) -> set[str]:
+    """The quoted codes of a ck_tb_employee_gender definition (as reflected or written)."""
+    return set(re.findall(r"'([A-Z_]+)'", definition or ""))
 
 
 def _job_pending(pending: dict) -> bool:
     """Anything of STEP 1A-3 (Job Grade / Job Title, Personal Information) still missing."""
     return bool(pending["job_columns"] or pending["job_fks"] or pending["job_indexes"]
-                or pending["personal_columns"] or pending["gender_check"])
+                or pending["personal_columns"] or pending["gender_check"] or pending["gender_check_replace"])
 
 
 def _ensure_common_tables(conn) -> None:
@@ -114,8 +133,17 @@ def _migrate_job_schema(conn, pending: dict) -> None:
         conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index} ON tb_employee ({name})"))
     for name in pending["personal_columns"]:
         conn.execute(text(f"ALTER TABLE tb_employee ADD COLUMN {name} {PERSONAL_COLUMNS[name]}"))
-    if pending["gender_check"]:  # PostgreSQL only (pending_employee_schema)
-        from backend.models_admin.employee import GENDER_CHECK
+    from backend.models_admin.employee import GENDER_CHECK
+    if pending["gender_check_replace"]:  # PostgreSQL only: the code list changed (never while a row is outside it)
+        allowed = sorted(_allowed_genders())
+        outside = conn.execute(text("SELECT c_gender, count(*) FROM tb_employee WHERE c_gender IS NOT NULL AND "
+                                    "c_gender <> ALL(:allowed) GROUP BY c_gender ORDER BY c_gender"),
+                               {"allowed": allowed}).fetchall()
+        if outside:
+            raise RuntimeError(f"tb_employee has Gender codes outside {allowed}: {[tuple(r) for r in outside]}; "
+                               f"{GENDER_CHECK_NAME} was not changed and no value was changed.")
+        conn.execute(text(f"ALTER TABLE tb_employee DROP CONSTRAINT {GENDER_CHECK_NAME}"))
+    if pending["gender_check"] or pending["gender_check_replace"]:  # PostgreSQL only (pending_employee_schema)
         conn.execute(text(f"ALTER TABLE tb_employee ADD CONSTRAINT {GENDER_CHECK_NAME} CHECK ({GENDER_CHECK})"))
 
 
@@ -151,7 +179,8 @@ def migrate_employee_schema(engine) -> dict:
               "added_job_columns": pending["job_columns"], "added_job_fks": pending["job_fks"],
               "created_job_indexes": pending["job_indexes"],
               "added_personal_columns": pending["personal_columns"],
-              "gender_check_created": pending["gender_check"]}
+              "gender_check_created": pending["gender_check"],
+              "gender_check_replaced": pending["gender_check_replace"]}
     if not pending["tables"] and not pending["store_index"]:
         if pending["employee_columns"] or pending["pos_login_index"]:
             with engine.begin() as conn:
@@ -179,5 +208,6 @@ def migrate_employee_schema(engine) -> dict:
             _migrate_job_schema(conn, pending)
     if "tb_employee" in pending["tables"]:  # created with every column / index / CHECK / FK by create_all
         result.update(added_employee_columns=[], pos_login_index_created=False, added_job_columns=[],
-                      added_job_fks=[], created_job_indexes=[], added_personal_columns=[], gender_check_created=False)
+                      added_job_fks=[], created_job_indexes=[], added_personal_columns=[], gender_check_created=False,
+                      gender_check_replaced=False)
     return result
