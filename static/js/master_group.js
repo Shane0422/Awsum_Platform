@@ -737,16 +737,14 @@
   const posRoles = () => (state.options && state.options.pos_roles) || [];
   const pad2 = (n) => String(n).padStart(2, '0');
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
-  const usDate = (iso) => (iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : '');
-  // Date-time display (MM/DD/YYYY hh:mm AM/PM) of a saved timestamp exactly as stored: the text is read, no Date()
+  // Dates: the AWSUM Common Date standard (static/js/date.js): screens show and accept MM-DD-YYYY, the API keeps ISO.
+  const usDate = (iso) => AwsumDateInput.format(iso);
+  // Date-time display (MM-DD-YYYY hh:mm AM/PM) of a saved timestamp exactly as stored: the text is read, no Date()
   // time-zone conversion (stored timestamps carry no zone). The one place to add a Merchant / Store time zone later.
   const EMPTY_VALUE = '—';
-  const usDateTime = (iso) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(iso || ''));
-    if (!m) return EMPTY_VALUE;
-    const hour = Number(m[4]);
-    return `${m[2]}/${m[3]}/${m[1]} ${String(hour % 12 || 12).padStart(2, '0')}:${m[5]} ${hour < 12 ? 'AM' : 'PM'}`;
-  };
+  const usDateTime = (iso) => AwsumDateInput.formatDateTime(iso, EMPTY_VALUE);
+  // A common date input (bound by AwsumDateInput.bindAll when the form is filled); rules come from data-date-*.
+  const dateInput = (name, label, extra) => input(name, 'text', `data-awsum-date data-date-label="${label}" ${extra || ''}`);
   let assignments = [];
   let editingAssignmentId = null;
   let assignmentToken = 0;
@@ -766,10 +764,10 @@
       + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
       + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' });
     // Personal Information: Birthday (common date input, not in the future) + Gender (fixed list from /options), optional.
-    const personal = section('Personal Information', field('birth_date', 'Birthday', input('birth_date', 'date', `max="${today()}"`))
+    const personal = section('Personal Information', field('birth_date', 'Birthday', dateInput('birth_date', 'Birthday', 'data-date-max="today" data-date-max-message="Birthday cannot be in the future."'))
       + field('gender', 'Gender', select('gender')), 'Optional.', 'id="mgEmpPersonal"');
     // Employment Information: Hire Date + Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
-    const employment = section('Employment Information', field('hire_date', 'Hire Date', input('hire_date', 'date'))
+    const employment = section('Employment Information', field('hire_date', 'Hire Date', dateInput('hire_date', 'Hire Date'))
       + field('job_grade_code_id', 'Job Grade', select('job_grade_code_id'))
       + field('job_title_code_id', 'Job Title', select('job_title_code_id')),
       'Optional. Job Grades and Titles are managed in Master Group &gt; Common Maintenance.', 'id="mgEmpEmployment"');
@@ -819,7 +817,7 @@
           <div class="row g-2">
             <div class="col-md-4"><label class="form-label" for="mgAsgStore">Store</label><select id="mgAsgStore" class="form-select"></select></div>
             <div class="col-md-3"><label class="form-label" for="mgAsgRole">POS Role</label><select id="mgAsgRole" class="form-select"></select></div>
-            <div class="col-md-3"><label class="form-label" for="mgAsgStart">Start Date</label><input id="mgAsgStart" class="form-control" type="date"></div>
+            <div class="col-md-3"><label class="form-label" for="mgAsgStart">Start Date</label><input id="mgAsgStart" class="form-control" type="text" data-awsum-date data-date-label="Start Date" data-date-required="true"><div class="invalid-feedback"></div></div>
             <div class="col-md-2 d-none" id="mgAsgStatusWrap"><label class="form-label" for="mgAsgStatus">Status</label><select id="mgAsgStatus" class="form-select"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
             <div class="col-12 d-flex gap-4">
               <label class="form-check mb-0"><input class="form-check-input" id="mgAsgPos" type="checkbox"> POS Access</label>
@@ -834,7 +832,7 @@
       </section>`;
     const termination = !row ? '' : row.status === 'terminated'
       ? section('Termination', `<div class="col-12 small" id="mgEmpTerminated">Terminated on <strong>${esc(usDate(row.termination_date))}</strong>${row.termination_reason ? ` \u00b7 ${esc(row.termination_reason)}` : ''}. Store assignments ended; every record is kept. Reactivate to rehire (assignments are not restored).</div>`)
-      : section('Termination', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Termination Date</label><input class="form-control" id="mgEmpTermDate" type="date"></div>
+      : section('Termination', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Termination Date</label><input class="form-control" id="mgEmpTermDate" type="text" data-awsum-date data-date-label="Termination Date"><div class="invalid-feedback"></div></div>
           <div class="col-md-8"><label class="form-label" for="mgEmpTermReason">Reason</label><input class="form-control" id="mgEmpTermReason" type="text" maxlength="200"></div>
           <div class="col-12 form-text">Terminate (top right) ends every Store assignment, Inactive Stores included, and removes POS access. Records are kept.</div>`);
     // Audit (read only, never saved: no name attribute): the common AuditMixin values of the response.
@@ -868,11 +866,14 @@
         </div>`;
   }
 
-  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date', 'birth_date',
+  const EMPLOYEE_DATE_FIELDS = ['hire_date', 'birth_date']; // common date inputs (MM-DD-YYYY on screen, ISO in the API)
+  const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email',
     'zip', 'city', 'state', 'address_line1', 'address_line2', 'country', 'pos_login_id'];
   const POS_STATUS_LABELS = { disabled: 'Disabled', pin_not_set: 'Enabled \u00b7 PIN not set', locked: 'Locked', active: 'Active' };
   function fillEmployeeForm(row) {
+    AwsumDateInput.bindAll($('mgFields'));
     EMPLOYEE_TEXT_FIELDS.forEach((key) => { f(key).value = (row && row[key]) || ''; });
+    EMPLOYEE_DATE_FIELDS.forEach((key) => AwsumDateInput.setValue(f(key), (row && row[key]) || ''));
     if (!row) f('country').value = 'United States'; // the common address default
     f('pos_login_enabled').checked = !!(row && row.pos_login_enabled);
     const statuses = row && row.status === 'terminated' ? [['terminated', 'Terminated']] : [['active', 'Active'], ['inactive', 'Inactive']];
@@ -880,7 +881,7 @@
     setOptions('gender', ((state.options && state.options.genders) || []).map((g) => [g.code, g.name]), row ? row.gender : null, 'Not specified');
     fillCommonCodeSelect(f('job_grade_code_id'), 'job_grade_codes', row ? row.job_grade_code_id : null);
     fillCommonCodeSelect(f('job_title_code_id'), 'job_title_codes', row ? row.job_title_code_id : null);
-    if ($('mgEmpTermDate')) $('mgEmpTermDate').value = today();
+    if ($('mgEmpTermDate')) AwsumDateInput.setValue($('mgEmpTermDate'), today());
     if (row) {
       [['created_by', row.created_by], ['updated_by', row.updated_by]].forEach(([key, name]) => { f(key).value = name || EMPTY_VALUE; });
       f('created_at').value = usDateTime(row.created_at);
@@ -1072,7 +1073,7 @@
     $('mgAsgPrimary').checked = !!(a && a.primary);
     $('mgAsgStatusWrap').classList.toggle('d-none', !a);
     $('mgAsgStatus').value = a ? a.status : 'active';
-    $('mgAsgStart').value = a ? a.start_date : today();
+    AwsumDateInput.setValue($('mgAsgStart'), a ? a.start_date : today());
     assignmentMessage('');
     $('mgAsgEditor').classList.remove('d-none');
   }
@@ -1080,7 +1081,8 @@
     const row = state.editing;
     if (!row) return;
     const body = { pos_access: $('mgAsgPos').checked, pos_role: $('mgAsgRole').value, primary: $('mgAsgPrimary').checked,
-      start_date: $('mgAsgStart').value };
+      start_date: AwsumDateInput.getValue($('mgAsgStart')) };
+    if (!AwsumDateInput.check($('mgAsgStart'))) { $('mgAsgStart').focus(); return; }
     if (editingAssignmentId) body.status = $('mgAsgStatus').value;
     else body.store_id = Number($('mgAsgStore').value);
     try {
@@ -1132,7 +1134,8 @@
       return data.item;
     }
     if (act === 'terminate') {
-      const date = $('mgEmpTermDate') ? $('mgEmpTermDate').value : '';
+      const date = $('mgEmpTermDate') ? AwsumDateInput.getValue($('mgEmpTermDate')) : '';
+      if ($('mgEmpTermDate') && !AwsumDateInput.check($('mgEmpTermDate'))) { $('mgEmpTermDate').focus(); return null; }
       if (!date) {
         showMessage('Enter the Termination Date in the Termination section.', 'warning');
         if ($('mgEmpTermDate')) $('mgEmpTermDate').focus();
@@ -1774,7 +1777,8 @@
     $('mgFields').querySelectorAll('[name]').forEach((el) => {
       if (el.disabled || el.type === 'radio' || el.type === 'checkbox') return; // option groups are read below
       if (el.closest('[data-item-feature-off]')) return; // OFF feature: keep the saved value
-      payload[el.name] = el.hasAttribute('data-awsum-money') ? AwsumMoneyInput.getValue(el) : el.value;
+      payload[el.name] = el.hasAttribute('data-awsum-money') ? AwsumMoneyInput.getValue(el)
+        : el.hasAttribute('data-awsum-date') ? AwsumDateInput.getValue(el) : el.value;
     });
     $('mgFields').querySelectorAll('[data-awsum-option-group]').forEach((group) => {
       if (group.closest('[data-item-feature-off]')) return; // OFF feature: keep the saved value

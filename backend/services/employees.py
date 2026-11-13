@@ -61,6 +61,7 @@ from backend.models_admin.platform_user import EMPLOYEE_ROLE_NAME, PlatformUser
 from backend.models_admin.role import Role
 from backend.models_admin.store import Store
 from backend.services.app_navigation import STORE_INACTIVE_READ_ONLY
+from backend.services.dates import DATE_FORMAT, format_date, parse_date
 from backend.services.mail_common import validate_email_address
 from backend.models_admin.common_code import CommonCode
 from backend.services.master_group import (Conflict, FieldErrors, NotFound, _id, _stamp, _text, common_code_query)
@@ -101,18 +102,15 @@ TERMINATED_MESSAGE = "Terminated employee: view only. Reactivate to make changes
 
 # ---------- helpers ----------
 def _date(payload: dict, key: str, errors: dict, *, label: str, required: bool = False) -> date | None:
-    raw = str(payload.get(key) or "").strip()
-    if not raw:
-        if required:
-            errors[key] = f"{label} is required."
+    """A date field: ISO (API), MM-DD-YYYY or the earlier MM/DD/YYYY (services.dates, the Common Date standard)."""
+    try:
+        value = parse_date(payload.get(key))
+    except ValueError:
+        errors[key] = f"Enter {label} as {DATE_FORMAT}."
         return None
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(raw[:10], fmt).date()
-        except ValueError:
-            continue
-    errors[key] = f"Enter {label} as MM/DD/YYYY."
-    return None
+    if value is None and required:
+        errors[key] = f"{label} is required."
+    return value
 
 
 def _flag(value) -> bool:
@@ -126,7 +124,8 @@ def _iso(value) -> str | None:
 
 
 def _us(value) -> str:
-    return value.strftime("%m/%d/%Y") if value else ""
+    """Export / message date: MM-DD-YYYY (Common Date standard)."""
+    return format_date(value)
 
 
 def _reject_unexpected(payload: dict, allowed) -> None:
@@ -143,8 +142,11 @@ def _same(saved, sent) -> bool:
         saved = saved.isoformat()
     left = "" if saved is None else str(saved).strip()
     right = "" if sent is None else str(sent).strip()
-    if isinstance(saved, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", left) and re.fullmatch(r"\d{2}/\d{2}/\d{4}", right):
-        right = datetime.strptime(right, "%m/%d/%Y").date().isoformat()
+    if isinstance(saved, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", left) and re.fullmatch(r"\d{2}[-/]\d{2}[-/]\d{4}", right):
+        try:  # MM-DD-YYYY / MM/DD/YYYY sent for a saved ISO date
+            right = parse_date(right).isoformat()
+        except ValueError:
+            pass  # not a real date: compared as text (a change)
     return left.upper() == right.upper()
 
 

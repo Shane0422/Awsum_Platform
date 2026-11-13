@@ -9,6 +9,7 @@ database constraints SQLite enforces, and the screen (headless Chrome).
 STEP 1A-2: address, POS Login ID (unique per Merchant), POS PIN set / reset (hash only), Portal Login account
 (tb_platform_user of the Merchant, email unique per Merchant), session end, termination, other-Merchant isolation.
 STEP 1A-3: Job Grade / Job Title (Common Maintenance codes of the Merchant; EmployeeJobGradeTitleTests).
+Common Date standard: MM-DD-YYYY screens / export, ISO API (EmployeeDateFormatTests + the screen test).
 STEP 1A-3: Job Grade / Job Title (Common Maintenance codes of the Merchant; EmployeeJobGradeTitleTests).
 Tabs + Audit: GENERAL / ADDRESS / STORE TERMINAL ACCESS / PORTAL ACCESS (+ Soon: SKILLS, COMPENSATION, HISTORY); Created / Last Updated By names (this Merchant's users only, never
 an ID); Last Updated moves only on a real change (no-op Save / Portal save: no UPDATE, no version bump).
@@ -457,7 +458,14 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  // Personal Information (GENERAL): Birthday (common date input, no future date) + Gender (fixed list), optional.
  assert(/^Personal Information/.test($('mgEmpPersonal').querySelector('h3').textContent),'Personal Information section');
  assert($('mgEmpPersonal').contains($('mgf_birth_date'))&&$('mgEmpPersonal').contains($('mgf_gender')),'Birthday and Gender');
- assert($('mgf_birth_date').type==='date'&&$('mgf_birth_date').value==='1990-03-15'&&/^\d{4}-\d{2}-\d{2}$/.test($('mgf_birth_date').max),'Birthday date input, no future');
+ // Common Date (AwsumDateInput): MM-DD-YYYY text input + calendar button; the API keeps ISO.
+ const bd=$('mgf_birth_date');
+ assert(bd.type==='text'&&bd.hasAttribute('data-awsum-date')&&bd.placeholder==='MM-DD-YYYY'&&bd.value==='03-15-1990','Birthday common date input (MM-DD-YYYY): '+bd.value);
+ assert(bd.closest('.awsum-date-group')&&bd.closest('.awsum-date-group').querySelector('.awsum-date-trigger'),'calendar button');
+ assert(['mgf_hire_date','mgEmpTermDate','mgAsgStart'].every(id=>$(id).type==='text'&&$(id).hasAttribute('data-awsum-date')),'every Employee date uses the common input');
+ assert(!doc.querySelector('#mgFields input[type="date"]'),'no native date input left');
+ assert(/^\d{2}-\d{2}-\d{4}$/.test($('mgEmpTermDate').value),'Termination Date defaults to today (MM-DD-YYYY): '+$('mgEmpTermDate').value);
+ assert(/11-02-2026/.test($('mgAsgBody').textContent),'assignment start shown as MM-DD-YYYY');
  const genderSel=$('mgf_gender');
  assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female'&&genderSel.value==='FEMALE','Gender list (Male / Female / not selected) and saved value');
  assert($('mgEmpPersonal').compareDocumentPosition($('mgEmpEmployment'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Personal, then Employment Information');
@@ -465,7 +473,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  // Employment Information (GENERAL): Hire Date moved here + Job Grade / Job Title (Common codes, optional).
  assert(/^Employment Information/.test($('mgEmpEmployment').querySelector('h3').textContent),'Employment Information section');
  assert(['mgf_hire_date','mgf_job_grade_code_id','mgf_job_title_code_id'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Job Grade, Job Title');
- assert(!doc.querySelector('.mg-md-fields').contains($('mgf_hire_date'))&&$('mgf_hire_date').value==='2026-11-01','Hire Date moved, value kept');
+ assert(!doc.querySelector('.mg-md-fields').contains($('mgf_hire_date'))&&$('mgf_hire_date').value==='11-01-2026','Hire Date moved, value kept (MM-DD-YYYY)');
  const gradeSel=$('mgf_job_grade_code_id'),titleSel=$('mgf_job_title_code_id'),txt=s=>s.options[s.selectedIndex].text;
  assert(gradeSel.options[0].value===''&&gradeSel.options[0].text==='None'&&gradeSel.options.length===9,'8 active Grades + None');
  assert(txt(gradeSel)==='Supervisor','saved Grade selected');
@@ -484,7 +492,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgEmpAudit').compareDocumentPosition($('mgEmpTermDate'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Termination at the bottom of GENERAL');
  // Audit: read only, never part of Save; the stored timestamp text is shown without a time-zone conversion.
  const listed=win.__list.items[0],us=iso=>{const [d,t]=iso.split('T');const h=Number(t.slice(0,2));
-   return `${d.slice(5,7)}/${d.slice(8,10)}/${d.slice(0,4)} ${String(h%12||12).padStart(2,'0')}:${t.slice(3,5)} ${h<12?'AM':'PM'}`;};
+   return `${d.slice(5,7)}-${d.slice(8,10)}-${d.slice(0,4)} ${String(h%12||12).padStart(2,'0')}:${t.slice(3,5)} ${h<12?'AM':'PM'}`;};
  assert(listed.created_by&&$('mgf_created_by').value===listed.created_by&&$('mgf_updated_by').value===listed.updated_by,'audit names');
  assert($('mgf_created_at').value===us(listed.created_at)&&$('mgf_updated_at').value===us(listed.updated_at),'audit times as stored');
  assert(['created_by','created_at','updated_by','updated_at'].every(k=>$('mgf_'+k).readOnly&&!$('mgf_'+k).name),'audit read only, unnamed');
@@ -524,6 +532,28 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const opts=[...$('mgAsgStore').options];
  assert(opts.find(o=>/Idle Store/.test(o.textContent)).disabled,'Inactive Store cannot be chosen');
  assert(opts.filter(o=>o.disabled).length===3,'assigned Stores and the Inactive Store are disabled');
+ // Date input behaviour: typing mask, blur check (future Birthday refused in place), picker with the max, ISO payload.
+ const type=(el,text)=>{el.focus();el.value=text;el.dispatchEvent(new Event('input',{bubbles:true}));};
+ const fb=el=>el.closest('[data-field-wrap]').querySelector('.invalid-feedback');
+ type(bd,'12312999');assert(bd.value==='12-31-2999','mask: '+bd.value);
+ bd.dispatchEvent(new Event('blur'));
+ assert(bd.classList.contains('is-invalid')&&fb(bd).textContent==='Birthday cannot be in the future.'&&win.getComputedStyle(fb(bd)).display!=='none','future Birthday error shown');
+ type(bd,'02302020');bd.dispatchEvent(new Event('blur'));
+ assert(fb(bd).textContent==='Enter Birthday as MM-DD-YYYY.','not a real date');
+ bd.closest('.awsum-date-group').querySelector('.awsum-date-trigger').click();await pause(50);
+ const pk=doc.querySelector('.awsum-date-picker');
+ assert(pk&&!pk.classList.contains('is-hidden'),'picker open');
+ const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
+ const tIso=`${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`;
+ const tBtn=pk.querySelector(`[data-iso="${tIso}"]`);
+ assert(!tBtn||tBtn.disabled,'days after today cannot be picked for the Birthday');
+ assert(pk.querySelector('[data-date-action="day"]:not(:disabled):not(.is-outside)'),'earlier days can be picked');
+ pk.querySelector('[data-date-action="year"]').value='1990';pk.querySelector('[data-date-action="year"]').dispatchEvent(new Event('change',{bubbles:true}));
+ pk.querySelector('[data-date-action="month"]').value='2';pk.querySelector('[data-date-action="month"]').dispatchEvent(new Event('change',{bubbles:true}));
+ pk.querySelector('[data-iso="1990-03-15"]').click();await pause(50);
+ assert(bd.value==='03-15-1990'&&!bd.classList.contains('is-invalid')&&pk.classList.contains('is-hidden'),'picked from the calendar: '+bd.value);
+ type($('mgf_hire_date'),'11/01/2026');$('mgf_hire_date').dispatchEvent(new Event('blur'));
+ assert($('mgf_hire_date').value==='11-01-2026','earlier MM/DD/YYYY typing is accepted and shown as MM-DD-YYYY');
  $('mgf_last_name').value='Park';
  $('mgf_pos_login_enabled').checked=true;
  $('mgSave').click();
@@ -534,6 +564,8 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(keys==='address_line1,address_line2,birth_date,city,country,display_name,email,first_name,gender,hire_date,job_grade_code_id,job_title_code_id,last_name,phone,pos_login_enabled,pos_login_id,state,status,zip','only the editable fields: '+keys);
  assert(JSON.parse(put.body.get('payload')).job_title_code_id===String(win.__list.items[0].job_title_code_id),'saved inactive Title sent back unchanged');
  assert(JSON.parse(put.body.get('payload')).pos_login_enabled===true,'Enable POS Login sent');
+ const sent=JSON.parse(put.body.get('payload'));
+ assert(sent.birth_date==='1990-03-15'&&sent.hire_date==='2026-11-01','dates sent as ISO: '+sent.birth_date+' / '+sent.hire_date);
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  $('mgAddBtn').click();await pause(100);
  assert($('mgf_pos_login_id').value===''&&$('mgf_country').value==='United States','new form defaults');
@@ -943,7 +975,8 @@ class EmployeePersonalInfoTests(unittest.TestCase):
         today = date.today()
         tomorrow = date.fromordinal(today.toordinal() + 1)
         cases = [({"birth_date": tomorrow.isoformat()}, "birth_date", "Birthday cannot be in the future."),
-                 ({"birth_date": "13/45/1990"}, "birth_date", "Enter Birthday as MM/DD/YYYY."),
+                 ({"birth_date": "13/45/1990"}, "birth_date", "Enter Birthday as MM-DD-YYYY."),
+                 ({"birth_date": "02-30-1990"}, "birth_date", "Enter Birthday as MM-DD-YYYY."),
                  ({"gender": "UNKNOWN"}, "gender", "Select a valid Gender."),
                  ({"gender": "M"}, "gender", "Select a valid Gender."),  # an abbreviation is not a code
                  ({"gender": "NON_BINARY"}, "gender", "Select a valid Gender."),  # removed from the list
@@ -994,6 +1027,61 @@ class EmployeePersonalInfoTests(unittest.TestCase):
             with self.subTest(code=code), self.factory() as db, self.assertRaises(IntegrityError):
                 db.query(Employee).filter(Employee.i_employee_id == self.foreign["id"]).update({"c_gender": code})
                 db.commit()
+
+
+class EmployeeDateFormatTests(unittest.TestCase):
+    """Common Date standard on the Employee API: MM-DD-YYYY (and the earlier MM/DD/YYYY) accepted besides ISO; responses
+    stay ISO; export and messages show MM-DD-YYYY; the DB keeps DATE."""
+
+    login, create, assign, row = (EmployeeMasterTests.login, EmployeeMasterTests.create, EmployeeMasterTests.assign,
+                                  EmployeeMasterTests.row)
+
+    def setUp(self):
+        EmployeeMasterTests.setUp(self)
+        self.login("MERCHANT")
+
+    def test_every_employee_date_accepts_the_screen_formats_and_returns_iso(self):
+        item = self.create(birth_date="04-22-1961", hire_date="11/01/2026")
+        self.assertEqual((item["birth_date"], item["hire_date"]), ("1961-04-22", "2026-11-01"))
+        with self.factory() as db:
+            saved = db.get(Employee, item["id"])
+            self.assertEqual((saved.d_birth_date, saved.d_hire_date), (date(1961, 4, 22), date(2026, 11, 1)))
+        same = self.client.put(f"{API}/{item['id']}", json={"birth_date": "1961-04-22", "hire_date": "11-01-2026"})
+        self.assertEqual(same.json()["item"]["row_version"], item["row_version"])  # the same date: no change
+        start = self.assign(item["id"], start_date="11-02-2026")
+        self.assertEqual(start.status_code, 201, start.text)
+        self.assertEqual(start.json()["item"]["start_date"], "2026-11-02")
+        early = self.assign(item["id"], store_id=13, start_date="10-01-2026")
+        self.assertEqual(early.json()["errors"]["start_date"], "Start Date must be on or after the Hire Date (11-01-2026).")
+        ended = self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": "11-30-2026"})
+        self.assertEqual(ended.status_code, 200, ended.text)
+        self.assertEqual(ended.json()["item"]["termination_date"], "2026-11-30")
+        # the read-only Termination Date may be sent back unchanged in the screen format (no 403)
+        self.client.post(f"{API}/{item['id']}/reactivate", json={})
+        again = self.create(first_name="Two", hire_date="2026-01-05")
+        kept = self.client.put(f"{API}/{again['id']}", json={"termination_date": "", "first_name": "Two"})
+        self.assertEqual(kept.status_code, 200, kept.text)
+
+    def test_invalid_dates_are_refused_with_the_standard_message(self):
+        for key, label in (("birth_date", "Birthday"), ("hire_date", "Hire Date")):
+            for bad in ("02-30-2024", "13-01-2020", "2024/01/01", "abc"):
+                response = self.client.post(API, json={"first_name": "X", key: bad})
+                self.assertEqual(response.status_code, 422, (key, bad, response.text))
+                self.assertEqual(response.json()["errors"][key], f"Enter {label} as MM-DD-YYYY.")
+        item = self.create(hire_date="2026-01-05")
+        bad = self.assign(item["id"], start_date="02-30-2026")
+        self.assertEqual(bad.status_code, 422, bad.text)
+
+    def test_export_shows_mm_dd_yyyy(self):
+        item = self.create(hire_date="2026-01-05", birth_date="1961-04-22")
+        self.assign(item["id"], start_date="2026-01-06")
+        self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": "2026-11-30"})
+        text = self.client.get(f"{API}/export", params={"format": "csv"}).content.decode("utf-8-sig")
+        header, line = text.split("\r\n")[:2]
+        columns = dict(zip(header.split(","), line.split(",")))
+        self.assertEqual((columns["Hire Date"], columns["Termination Date"]), ("01-05-2026", "11-30-2026"))
+        self.assertNotIn("1961", text)  # Birthday is never exported
+        self.assertNotIn("2026-01-05", text)
 
 
 if __name__ == "__main__":

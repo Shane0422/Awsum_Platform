@@ -1,0 +1,41 @@
+/* AWSUM Common Date (static/js/date.js, AwsumDateInput): MM-DD-YYYY input, calendar button and picker.
+   The master_management.html picker styles made common (not scoped to one page). */
+.awsum-date-group .awsum-date-input { font-variant-numeric: tabular-nums; }
+.awsum-date-group .awsum-date-trigger { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; }
+/* The field error sits after the input group (the common field markup), so show it whenever it has text. */
+.awsum-date-group + .invalid-feedback:not(:empty) { display: block; }
+
+.awsum-date-picker {
+  position: fixed; z-index: 2000; width: 286px; padding: .75rem;
+  background: #fff; border: 1px solid #d8e0ea; border-radius: 12px;
+  box-shadow: 0 20px 35px -24px rgba(15, 23, 42, .45);
+}
+.awsum-date-picker.is-hidden { display: none; }
+.awsum-date-head { display: flex; align-items: center; gap: .35rem; margin-bottom: .55rem; }
+.awsum-date-select {
+  height: 30px; border: 1px solid #d6dde8; border-radius: 8px; background: #fff; color: #334155;
+  font-size: .78rem; padding: 0 .35rem;
+}
+.awsum-date-select.month { flex: 1 1 auto; min-width: 0; }
+.awsum-date-select.year { width: 74px; }
+.awsum-date-nav {
+  width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid #d6dde8; border-radius: 8px;
+  background: #fff; color: #334155; font-size: .9rem; line-height: 1;
+}
+.awsum-date-nav:hover:not(:disabled) { background: #f8fafc; }
+.awsum-date-week, .awsum-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .24rem; }
+.awsum-date-week span { text-align: center; font-size: .72rem; font-weight: 600; color: #64748b; padding-bottom: .2rem; }
+.awsum-date-day {
+  height: 34px; border: 0; border-radius: 8px; background: transparent; color: #1e293b;
+  font-size: .83rem; font-weight: 500;
+}
+.awsum-date-day:hover:not(:disabled) { background: #eef4ff; color: #1d4ed8; }
+.awsum-date-day.is-outside { color: #a0aec0; }
+.awsum-date-day.is-today { box-shadow: inset 0 0 0 1px #93c5fd; }
+.awsum-date-day.is-selected { background: #2563eb; color: #fff; }
+.awsum-date-day:disabled, .awsum-date-nav:disabled { color: #cbd5e1; cursor: not-allowed; background: transparent; }
+.awsum-date-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: .6rem; padding-top: .55rem; border-top: 1px solid #edf2f7;
+}
+.awsum-date-foot .btn { font-size: .75rem; padding: .2rem .55rem; }
