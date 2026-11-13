@@ -254,9 +254,11 @@ def _entity(entity: str, request: Request | None = None, db: Session | None = No
     return entity
 
 
-@router.get("/merchant/business/employees", response_class=HTMLResponse)
+@router.get("/merchant/employee-group/employee-master", response_class=HTMLResponse)
+@router.get("/merchant/business/employees", response_class=HTMLResponse)  # earlier URL, kept compatible
 def merchant_employee_page(request: Request, db: Session = Depends(get_db)):
-    """Business > People > Employees (Merchant login): the common Master Group screen for the Employee entity."""
+    """Employee Group > Employee Master (Merchant login): the common Master Group screen for the Employee entity.
+    Both URLs render this same page with the same API and permission checks."""
     return master_group_page("employees", request, db)
 
 

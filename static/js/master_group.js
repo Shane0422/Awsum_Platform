@@ -775,7 +775,7 @@
       + field('country', 'Country', input('country', 'text', 'maxlength="100" placeholder="United States"')),
       'Optional. Enter a US ZIP Code to fill City and State.', 'id="mgEmpAddress"');
     // POS Access: one POS Login ID per Merchant (all its Stores); PIN set / reset only (never shown).
-    const posAccess = section('POS Access', `<div class="col-md-6" data-field-wrap="pos_login_enabled"><label class="form-check mt-md-4 mb-0"><input class="form-check-input" id="mgf_pos_login_enabled" type="checkbox"> Enable POS Login</label></div>`
+    const posAccess = section('POS Login', `<div class="col-md-6" data-field-wrap="pos_login_enabled"><label class="form-check mt-md-4 mb-0"><input class="form-check-input" id="mgf_pos_login_enabled" type="checkbox"> Enable POS Login</label></div>`
       + field('pos_login_id', 'POS Login ID', input('pos_login_id', 'text', 'maxlength="10" inputmode="numeric" autocomplete="off"'),
         { help: 'Suggested from the last 4 digits of the Phone. Unique in this Merchant; used at every Store.' })
       + `<div class="col-12 d-flex flex-wrap align-items-center gap-3"><span class="small text-muted">Account Status</span> <span class="fw-semibold small" id="mgPosStatus">-</span>
@@ -789,12 +789,13 @@
     // Portal Access: the employee's own web login account of this Merchant (email + password, set / reset only).
     const portalAccess = section('Portal Access', `<div class="col-12 d-flex flex-wrap align-items-center gap-3"><span class="small text-muted">Account Status</span> <span class="fw-semibold small" id="mgPortalStatus">Not created</span>
           <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="mgPortalOpen" disabled>Set Up Portal Login</button></div>
+        <div class="col-12 d-flex flex-wrap align-items-center gap-3" id="mgPortalPasswordRow"><span class="small text-muted">Portal Password</span> <span class="small font-monospace" id="mgPortalPasswordMask" aria-label="Password hidden">—</span> <span class="badge text-bg-secondary" id="mgPortalPasswordState">Not Set</span></div>
         <div class="col-12 border rounded p-3 d-none" id="mgPortalEditor"><div class="row g-2">
           <div class="col-12"><label class="form-check mb-0"><input class="form-check-input" id="mgPortalEnabled" type="checkbox"> Enable Portal Login</label></div>
           <div class="col-md-6"><label class="form-label" for="mgPortalEmail">Portal Login Email</label><input id="mgPortalEmail" class="form-control" type="email" maxlength="254" autocomplete="off"><div class="invalid-feedback" data-error-for="email"></div></div>
           <div class="col-md-6 d-none d-md-block"></div>
           <div class="col-md-6"><label class="form-label" for="mgPortalPassword" id="mgPortalPasswordLabel">Password</label><input id="mgPortalPassword" class="form-control" type="password" maxlength="72" autocomplete="new-password"><div class="invalid-feedback" data-error-for="password"></div></div>
-          <div class="col-md-6"><label class="form-label" for="mgPortalConfirm">Confirm Password</label><input id="mgPortalConfirm" class="form-control" type="password" maxlength="72" autocomplete="new-password"><div class="invalid-feedback" data-error-for="confirm_password"></div></div>
+          <div class="col-md-6"><label class="form-label" for="mgPortalConfirm" id="mgPortalConfirmLabel">Confirm Password</label><input id="mgPortalConfirm" class="form-control" type="password" maxlength="72" autocomplete="new-password"><div class="invalid-feedback" data-error-for="confirm_password"></div></div>
           <div class="col-12 form-text" id="mgPortalHelp">Unique in this Merchant. The employee changes this temporary password at the first sign-in.</div>
           <div class="col-12 d-flex justify-content-end gap-2"><button type="button" class="btn btn-sm btn-outline-secondary" id="mgPortalCancel">Cancel</button><button type="button" class="btn btn-sm btn-primary" id="mgPortalSave">Save Portal Access</button></div></div></div>`,
       row ? 'Separate from the POS Login.' : 'Save the employee first to set up the Portal Login.', 'id="mgEmpPortal"');
@@ -834,18 +835,25 @@
       `<input class="form-control mg-record-code-input" id="mgf_${name}" type="text" readonly tabindex="-1" value="${EMPTY_VALUE}">`);
     const audit = !row ? '' : section('', auditField('created_by', 'Created By') + auditField('created_at', 'Created At')
       + auditField('updated_by', 'Last Updated By') + auditField('updated_at', 'Last Updated At'), '', 'id="mgEmpAudit"');
-    // Tabs: the common Bootstrap Tab markup and styles of the MD form (.mg-md-pageframe); one Save for every tab.
+    // Tabs: the common Bootstrap Tab markup and styles of the MD form (.mg-md-pageframe: every pane keeps the
+    // height of the tallest, so the frame and Save never move); one Save for every tab. A tab without a body is
+    // not built yet: shown with the common "Soon" badge, disabled, no pane.
     const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
         </div>${audit}${termination}`],
       ['Address', 'ADDRESS', address],
-      ['Access', 'SECURITY &amp; ACCESS', `${posAccess}${portalAccess}${asg}`]];
+      ['Terminal', 'STORE TERMINAL ACCESS', `${posAccess}${asg}`],
+      ['Portal', 'PORTAL ACCESS', portalAccess],
+      ['Skills', 'SKILLS', null], ['Compensation', 'COMPENSATION', null], ['History', 'HISTORY', null]];
+    const tabButton = ([key, label, body], i) => (body === null
+      ? `<button class="nav-link disabled" id="mgEmpTab${key}" type="button" role="tab" disabled aria-disabled="true" title="Coming soon">${label}<span class="platform-menu-soon ms-1">Soon</span></button>`
+      : `<button class="nav-link${i ? '' : ' active'}" id="mgEmpTab${key}" data-bs-toggle="tab" data-bs-target="#mgEmpPane${key}" type="button" role="tab" aria-controls="mgEmpPane${key}" aria-selected="${i ? 'false' : 'true'}">${label}</button>`);
     return `<div class="col-12 mg-md-pageframe">
-          <ul class="nav nav-tabs" id="mgEmpTabs" role="tablist">${tabs.map(([key, label], i) => `
-            <li class="nav-item" role="presentation"><button class="nav-link${i ? '' : ' active'}" id="mgEmpTab${key}" data-bs-toggle="tab" data-bs-target="#mgEmpPane${key}" type="button" role="tab" aria-controls="mgEmpPane${key}" aria-selected="${i ? 'false' : 'true'}">${label}</button></li>`).join('')}
+          <ul class="nav nav-tabs" id="mgEmpTabs" role="tablist">${tabs.map((tab, i) => `
+            <li class="nav-item" role="presentation">${tabButton(tab, i)}</li>`).join('')}
           </ul>
-          <div class="tab-content">${tabs.map(([key, , body], i) => `
+          <div class="tab-content">${tabs.filter(([, , body]) => body !== null).map(([key, , body], i) => `
             <div class="tab-pane fade${i ? '' : ' show active'}" id="mgEmpPane${key}" role="tabpanel" aria-labelledby="mgEmpTab${key}" tabindex="0">
               <div class="row g-3">${body}</div>
             </div>`).join('')}
@@ -907,6 +915,11 @@
       : (portal.status === 'inactive' ? `Disabled \u00b7 ${portal.email}` : 'Not created');
     $('mgPortalOpen').textContent = portal.status === 'not_created' ? 'Set Up Portal Login' : 'Change / Reset Password';
     $('mgPortalOpen').disabled = !editable;
+    // Registration state only (the server never sends the password or its hash): a fixed mask, not the real length.
+    const passwordSet = !!portal.password_set;
+    $('mgPortalPasswordMask').textContent = passwordSet ? '••••••••' : EMPTY_VALUE;
+    $('mgPortalPasswordState').textContent = passwordSet ? 'Password Set' : 'Not Set';
+    $('mgPortalPasswordState').className = `badge ${passwordSet ? 'text-bg-success' : 'text-bg-secondary'}`;
     $('mgPinEditor').classList.add('d-none');
     $('mgPortalEditor').classList.add('d-none');
   }
@@ -955,7 +968,8 @@
       $('mgPortalEmail').value = portal.email || f('email').value || '';
       $('mgPortalPassword').value = '';
       $('mgPortalConfirm').value = '';
-      $('mgPortalPasswordLabel').textContent = portal.status === 'not_created' ? 'Password' : 'New Password (leave empty to keep)';
+      $('mgPortalPasswordLabel').textContent = portal.password_set ? 'New Password (leave empty to keep)' : 'Password';
+      $('mgPortalConfirmLabel').textContent = portal.password_set ? 'Confirm New Password' : 'Confirm Password';
       accessErrors($('mgPortalEditor'), {});
       $('mgPortalEditor').classList.remove('d-none');
       $('mgPortalEmail').focus();

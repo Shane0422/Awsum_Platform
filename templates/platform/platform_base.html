@@ -222,6 +222,18 @@
           </section>
         </div>
         {% endif %}
+        {% if app_navigation.employee %}
+        <div class="platform-mega-menu" id="mega-employee-group" aria-labelledby="nav-employee-group" hidden>
+          <section class="platform-menu-section">
+            <h2>{{ nav_icon('employee') }}Employee Group</h2>
+            <ul class="platform-menu-list">
+              {% for item in app_navigation.employee_items %}
+              {% if item.available %}{{ nav_link(item.label, item.url, active_module == 'employees' and item.slug == 'employee-master') }}{% else %}{{ soon(item.label) }}{% endif %}
+              {% endfor %}
+            </ul>
+          </section>
+        </div>
+        {% endif %}
         {% if app_navigation.reports %}
         <div class="platform-mega-menu" id="mega-reports" aria-labelledby="nav-reports" hidden>
           <section class="platform-menu-section">

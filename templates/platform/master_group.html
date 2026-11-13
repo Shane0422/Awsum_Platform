@@ -26,6 +26,10 @@
   .mg-md-form #mgDetailSection { margin-top: 0; padding-top: 0; border-top: 0; }
   .mg-md-form .mg-md-pageframe { margin-top: 6px; }
   .mg-md-form .mg-md-pageframe .nav-tabs .nav-link { padding: .3rem .9rem; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+  /* Employee Master (7 tabs): one tab row that scrolls sideways on a narrow panel instead of wrapping (this screen only). */
+  .mg-md-form #mgEmpTabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+  .mg-md-form #mgEmpTabs .nav-link { white-space: nowrap; }
+  .mg-md-form #mgEmpTabs .nav-link.disabled { color: var(--list-muted, #8a96a8); }
   .mg-md-form .mg-md-pageframe .tab-content { padding-top: 6px; }
   .mg-md-form .mg-md-pageframe .tab-pane > .row { --bs-gutter-y: .35rem; --bs-gutter-x: .6rem; }
   .mg-md-form .mg-md-pageframe .tab-pane > .row > .pm-section + .pm-section { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--list-border); }
@@ -352,5 +356,5 @@
 {% if mg_entity in ('category3', 'md') %}<script src="/static/js/lookup-modal.js?v=1"></script>{% endif %}
 <script src="/static/js/page-actions.js?v=1"></script>
 {% if mg_entity == 'employee' %}<script src="/static/js/awsum-address.js?v=1"></script>{% endif %}
-<script src="/static/js/master_group.js?v=86"></script>
+<script src="/static/js/master_group.js?v=88"></script>
 {% endblock %}

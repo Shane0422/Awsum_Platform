@@ -233,12 +233,14 @@ def _actor_names(db: Session, merchant_id: int, rows: list[Employee]) -> dict[in
 
 
 def _portal_view(user: PlatformUser | None) -> dict:
-    """Portal Login state (never the password)."""
+    """Portal Login state: never the password or its hash, only whether one is registered (password_set)."""
     if user is None:
-        return {"enabled": False, "email": None, "status": "not_created", "must_change_password": False}
+        return {"enabled": False, "email": None, "status": "not_created", "must_change_password": False,
+                "password_set": False}
     active = (user.c_status or "").lower() == "active"
     return {"enabled": active, "email": user.c_email, "status": "active" if active else "inactive",
-            "must_change_password": active and user.i_must_change_password == 1}
+            "must_change_password": active and user.i_must_change_password == 1,
+            "password_set": bool(user.c_password)}
 
 
 def _pos_login_status(row: Employee) -> str:

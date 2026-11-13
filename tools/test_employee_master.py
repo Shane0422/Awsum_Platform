@@ -8,7 +8,7 @@ assignment ends, Inactive Stores included, history kept), rehire, photo storage 
 database constraints SQLite enforces, and the screen (headless Chrome).
 STEP 1A-2: address, POS Login ID (unique per Merchant), POS PIN set / reset (hash only), Portal Login account
 (tb_platform_user of the Merchant, email unique per Merchant), session end, termination, other-Merchant isolation.
-Tabs + Audit: GENERAL / ADDRESS / SECURITY & ACCESS; Created / Last Updated By names (this Merchant's users only, never
+Tabs + Audit: GENERAL / ADDRESS / STORE TERMINAL ACCESS / PORTAL ACCESS (+ Soon: SKILLS, COMPENSATION, HISTORY); Created / Last Updated By names (this Merchant's users only, never
 an ID); Last Updated moves only on a real change (no-op Save / Portal save: no UPDATE, no version bump).
 """
 import io
@@ -93,18 +93,36 @@ class EmployeeMasterTests(unittest.TestCase):
     def test_menu_page_and_merchant_only_scope(self):
         self.login("MERCHANT")
         dashboard = self.client.get("/merchant/dashboard/standard").text
-        self.assertIn('href="/merchant/business/employees"', dashboard.split('id="mega-business"', 1)[1])
-        page = self.client.get("/merchant/business/employees")
-        self.assertEqual(page.status_code, 200, page.text[:300])
-        self.assertIn('data-entity="employee"', page.text)
-        self.assertIn('data-api-base="/merchant/api/master-group"', page.text)
-        self.assertIn('id="mgEmpStoreFilter"', page.text)
+        # Top navigation: Dashboard | Master Group | Business | Employee Group | Reports (common header).
+        nav = dashboard.split('class="platform-nav-row"', 1)[1]
+        tops = [nav.index("Dashboard</a>")] + [nav.index(f'id="nav-{key}"') for key in (
+            "master-group", "business", "employee-group", "reports")]
+        self.assertEqual(tops, sorted(tops))
+        group = dashboard.split('id="mega-employee-group"', 1)[1].split('class="platform-mega-menu"', 1)[0]
+        self.assertIn('href="/merchant/employee-group/employee-master"', group)
+        for label in ("Time Card", "Scheduling", "Payroll", "Employee Reports"):  # common soon(): never linked
+            self.assertIn(f'aria-disabled="true" title="Coming soon">{label}<span class="platform-menu-soon">', group)
+        self.assertEqual(group.count("href="), 1)
+        business = dashboard.split('id="mega-business"', 1)[1].split('class="platform-mega-menu"', 1)[0]
+        self.assertNotIn("employee", business.lower())                     # moved out of Business
+        self.assertIn('href="/merchant/business/stores"', business)
+        for url in ("/merchant/employee-group/employee-master", "/merchant/business/employees"):  # same page
+            page = self.client.get(url)
+            self.assertEqual(page.status_code, 200, page.text[:300])
+            self.assertIn('data-entity="employee"', page.text)
+            self.assertIn('data-api-base="/merchant/api/master-group"', page.text)
+            self.assertIn('id="mgEmpStoreFilter"', page.text)
+            self.assertIn('class="platform-menu-link active" href="/merchant/employee-group/employee-master"', page.text)
         options = self.client.get("/merchant/api/master-group/options").json()
         self.assertEqual([r["code"] for r in options["pos_roles"]], ["MANAGER", "CASHIER", "SERVER", "KITCHEN"])
         self.assertEqual(sorted(s["id"] for s in options["stores"]), [10, 12, 13])
         self.login("STORE")
-        self.assertNotIn("/merchant/business/employees", self.client.get("/merchant/dashboard/standard").text)
+        store_dashboard = self.client.get("/merchant/dashboard/standard").text
+        self.assertNotIn("/merchant/business/employees", store_dashboard)
+        self.assertNotIn('id="nav-employee-group"', store_dashboard)
         for call in (lambda: self.client.get("/store/master-group/employees"),
+                     lambda: self.client.get("/merchant/employee-group/employee-master"),
+                     lambda: self.client.get("/merchant/business/employees"),
                      lambda: self.client.get("/store/api/master-group/employee"),
                      lambda: self.client.post("/store/api/master-group/employee", json={"first_name": "X"}),
                      lambda: self.client.get(API)):
@@ -400,14 +418,33 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  await wait(()=>doc.querySelectorAll('#mgAsgBody tr[data-asg]').length===2,'assignments loaded');
  // Tabs: the common Bootstrap Tab of the MD form; GENERAL first, one pane shown at a time.
  const tabs=[...$('mgEmpTabs').querySelectorAll('[role="tab"]')];
- assert(tabs.map(t=>t.textContent.trim()).join('|')==='GENERAL|ADDRESS|SECURITY & ACCESS','three tabs in order');
+ assert(tabs.map(t=>t.textContent.trim()).join('|')==='GENERAL|ADDRESS|STORE TERMINAL ACCESS|PORTAL ACCESS|SKILLSSoon|COMPENSATIONSoon|HISTORYSoon','seven tabs in order: '+tabs.map(t=>t.textContent.trim()));
  assert($('mgEmpTabs').closest('.mg-md-pageframe')&&$('mgEmpTabs').classList.contains('nav-tabs'),'common tab markup');
+ // Soon tabs: the common Soon badge, disabled, no pane; clicking does nothing.
+ const soon=['Skills','Compensation','History'].map(k=>$('mgEmpTab'+k));
+ assert(soon.every(t=>t.disabled&&t.classList.contains('disabled')&&!t.dataset.bsToggle&&t.querySelector('.platform-menu-soon')),'Soon tabs disabled');
+ assert(doc.querySelectorAll('#mgFields .tab-pane').length===4,'panes only for built tabs');
+ soon[0].click();await pause(250);
+ // One tab row: scrolls sideways (this screen only) instead of wrapping.
+ assert(tabs.every(t=>Math.abs(t.getBoundingClientRect().top-tabs[0].getBoundingClientRect().top)<2),'tabs on one row');
+ assert(win.getComputedStyle($('mgEmpTabs')).overflowX==='auto','tab row scrolls');
+ frame.style.width='760px';await pause(200);                       // a narrow panel: still one row, scrolls
+ assert(tabs.every(t=>Math.abs(t.getBoundingClientRect().top-tabs[0].getBoundingClientRect().top)<2),'one row when narrow');
+ assert($('mgEmpTabs').scrollWidth>$('mgEmpTabs').clientWidth,'narrow tab row scrolls sideways');
+ frame.style.width='1400px';await pause(200);
  // The common PageFrame keeps one height: inactive panes are hidden (visibility), not removed.
  const shown=()=>[...doc.querySelectorAll('#mgFields .tab-pane')].filter(p=>win.getComputedStyle(p).visibility!=='hidden').map(p=>p.id);
- assert(shown().join()==='mgEmpPaneGeneral','only GENERAL shown: '+shown());
+ assert(shown().join()==='mgEmpPaneGeneral','only GENERAL shown (Soon click ignored): '+shown());
  for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgf_hire_date','mgEmpAudit','mgEmpTermDate']],
-   ['mgEmpPaneAddress',['mgf_zip','mgf_country']],['mgEmpPaneAccess',['mgEmpPos','mgEmpPortal','mgAsgSection']]])
+   ['mgEmpPaneAddress',['mgf_zip','mgf_country']],['mgEmpPaneTerminal',['mgEmpPos','mgf_pos_login_id','mgPinOpen','mgAsgSection']],
+   ['mgEmpPanePortal',['mgEmpPortal','mgPortalOpen']]])
    ids.forEach(id=>assert($(pane).contains($(id)),id+' in '+pane));
+ assert($('mgEmpPos').compareDocumentPosition($('mgAsgSection'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'POS Login, then Store Assignments');
+ assert(/^POS Login/.test($('mgEmpPos').querySelector('h3').textContent),'POS Login section');
+ // Common PageFrame: every tab has the same frame height, so Save never moves.
+ const frameH=()=>Math.round($('mgEmpTabs').closest('.mg-md-pageframe').getBoundingClientRect().height);
+ const saveTop=()=>Math.round($('mgSave').getBoundingClientRect().top);
+ const heights=[],saves=[];
  assert($('mgEmpAudit').compareDocumentPosition($('mgEmpTermDate'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Termination at the bottom of GENERAL');
  // Audit: read only, never part of Save; the stored timestamp text is shown without a time-zone conversion.
  const listed=win.__list.items[0],us=iso=>{const [d,t]=iso.split('T');const h=Number(t.slice(0,2));
@@ -416,16 +453,20 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgf_created_at').value===us(listed.created_at)&&$('mgf_updated_at').value===us(listed.updated_at),'audit times as stored');
  assert(['created_by','created_at','updated_by','updated_at'].every(k=>$('mgf_'+k).readOnly&&!$('mgf_'+k).name),'audit read only, unnamed');
  // Switching tabs keeps typed values (no reload, no save).
+ heights.push(frameH());saves.push(saveTop());
  $('mgf_first_name').value='Typed';$('mgEmpTabAddress').click();await pause(250);
- assert(shown().join()==='mgEmpPaneAddress','ADDRESS shown');
- $('mgf_city').value='Typed City';$('mgEmpTabAccess').click();await pause(250);
- assert(shown().join()==='mgEmpPaneAccess','SECURITY & ACCESS shown');
+ assert(shown().join()==='mgEmpPaneAddress','ADDRESS shown');heights.push(frameH());saves.push(saveTop());
+ $('mgf_city').value='Typed City';$('mgEmpTabTerminal').click();await pause(250);
+ assert(shown().join()==='mgEmpPaneTerminal','STORE TERMINAL ACCESS shown');heights.push(frameH());saves.push(saveTop());
+ $('mgEmpTabPortal').click();await pause(250);
+ assert(shown().join()==='mgEmpPanePortal','PORTAL ACCESS shown');heights.push(frameH());saves.push(saveTop());
+ assert(new Set(heights).size===1&&new Set(saves).size===1,'same frame height and Save position: '+heights+' / '+saves);
  $('mgEmpTabGeneral').click();await pause(250);
  assert($('mgf_first_name').value==='Typed'&&$('mgf_city').value==='Typed City'&&!win.requests.some(r=>r.method==='PUT'),'values kept, nothing saved');
  // A Save error on a field of a hidden tab selects that tab and focuses the field.
  win.__fail={detail:'Please fix the highlighted fields.',errors:{pos_login_id:'POS Login ID must be 4 to 10 digits.'}};
  $('mgSave').click();
- await wait(()=>shown().join()==='mgEmpPaneAccess'&&doc.activeElement===$('mgf_pos_login_id'),'error tab selected');
+ await wait(()=>shown().join()==='mgEmpPaneTerminal'&&doc.activeElement===$('mgf_pos_login_id'),'error tab selected');
  assert($('mgf_pos_login_id').classList.contains('is-invalid'),'error marked');
  win.requests.length=0;$('mgEmpTabGeneral').click();await pause(250);
  $('mgf_first_name').value='Minji';$('mgf_city').value='Fairfax';
@@ -434,6 +475,8 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgf_pos_login_id').value==='0101'&&!$('mgf_pos_login_enabled').checked,'POS Login filled');
  assert($('mgPosStatus').textContent==='Disabled'&&$('mgPinOpen').textContent==='Set PIN'&&!$('mgPinOpen').disabled,'POS status / Set PIN');
  assert($('mgPortalStatus').textContent==='Not created'&&!$('mgPortalOpen').disabled,'Portal status');
+ assert($('mgPortalPasswordState').textContent==='Not Set'&&$('mgPortalPasswordMask').textContent==='—','Portal Password Not Set');
+ assert($('mgPortalPasswordMask').tagName==='SPAN'&&$('mgPortalEditor').contains($('mgPortalPassword'))&&!$('mgPortalEditor').contains($('mgPortalPasswordState')),'state display is separate from the password input');
  assert(typeof win.AwsumAddress==='object'&&$('mgf_zip').dataset.zipAutofillBound==='1','common address ZIP autofill bound');
  $('mgPortalOpen').click();
  assert(!$('mgPortalEditor').classList.contains('d-none')&&$('mgPortalEmail').value==='','Portal editor opens');
@@ -472,9 +515,19 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  await wait(()=>/Terminated/.test($('mgBody').textContent),'terminated row listed');
  doc.querySelector('#mgBody [data-row-select]').click();await pause(100);
  assert($('mgf_first_name').disabled&&$('mgPinOpen').disabled&&$('mgAsgAdd').disabled,'read-only fields and actions');
- assert(tabs.length&&[...$('mgEmpTabs').querySelectorAll('[role="tab"]')].every(t=>!t.disabled),'tabs usable');
- $('mgEmpTabAccess').click();await pause(250);
- assert(shown().join()==='mgEmpPaneAccess','read-only tab switch');
+ assert([...$('mgEmpTabs').querySelectorAll('[data-bs-toggle="tab"]')].every(t=>!t.disabled),'built tabs usable');
+ assert(['Skills','Compensation','History'].every(k=>$('mgEmpTab'+k).disabled),'Soon tabs stay disabled');
+ $('mgEmpTabPortal').click();await pause(250);
+ assert(shown().join()==='mgEmpPanePortal'&&$('mgPortalOpen').disabled,'read-only tab switch');
+ // A registered password: fixed mask + Password Set, the password inputs stay empty (nothing is sent to the screen).
+ win.__list.items[0]=Object.assign({},win.__list.items[0],{read_only:false,status:'active',portal_login:{enabled:true,email:'minji.portal@example.test',status:'active',must_change_password:true,password_set:true}});
+ $('mgActiveFilter').dispatchEvent(new Event('change',{bubbles:true}));
+ await wait(()=>!/Terminated/.test($('mgBody').textContent),'active row listed');
+ doc.querySelector('#mgBody [data-row-select]').click();await pause(100);
+ assert($('mgPortalPasswordMask').textContent==='••••••••'&&$('mgPortalPasswordState').textContent==='Password Set','Password Set mask');
+ $('mgPortalOpen').click();
+ assert($('mgPortalPassword').value===''&&$('mgPortalConfirm').value===''&&/leave empty to keep/.test($('mgPortalPasswordLabel').textContent)&&$('mgPortalConfirmLabel').textContent==='Confirm New Password','reset inputs empty, labelled New Password');
+ assert(!$('mgPortalPassword').name&&!$('mgPortalConfirm').name,'password inputs are not part of the Employee Save');
  assert($('mgf_created_by').value==='—'&&$('mgf_updated_by').value==='—'&&$('mgf_updated_at').value==='—','no value: em dash');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
@@ -574,6 +627,7 @@ class EmployeeLoginAccessTests(unittest.TestCase):
 
     def test_portal_login_account_of_the_merchant(self):
         item = self.create(email="minji@example.test", phone="703-555-0101")
+        self.assertFalse(item["portal_login"]["password_set"])                      # Not Set before the account
         missing = self.portal(item["id"], email="minji.portal@example.test")
         self.assertEqual(missing.json()["errors"]["password"], "Set a password to create the Portal Login.")
         mismatch = self.portal(item["id"], email="minji.portal@example.test", password="Temp#1234",
@@ -588,7 +642,7 @@ class EmployeeLoginAccessTests(unittest.TestCase):
         self.assertEqual(created.status_code, 200, created.text)
         portal = created.json()["item"]["portal_login"]
         self.assertEqual(portal, {"enabled": True, "email": "minji.portal@example.test", "status": "active",
-                                  "must_change_password": True})
+                                  "must_change_password": True, "password_set": True})
         self.assertNotIn("Temp#1234", created.text)
         self.assertNotIn("$2", created.text)
         row = self.row(Employee, item["id"])
@@ -599,6 +653,26 @@ class EmployeeLoginAccessTests(unittest.TestCase):
                          (10, emp.ADMIN_STORE_ID, None, role.i_role_id, "active"))
         self.assertTrue(verify_secret("Temp#1234", user.c_password))
         self.assertIsNone(getattr(row, "c_password", None))
+        # Password Set is only a flag: neither the password nor its hash reaches the screen (detail / list / export).
+        for text in (created.text, self.client.get(API).text,
+                     self.client.get(f"{API}/export", params={"format": "csv"}).text):
+            self.assertNotIn("Temp#1234", text)
+            self.assertNotIn(user.c_password, text)
+        # A general Employee Save never changes or clears the Portal Password: password keys are refused there.
+        refused = self.client.put(f"{API}/{item['id']}", json={"first_name": "Minjee", "password": "",
+                                                               "confirm_password": ""})
+        self.assertEqual(refused.status_code, 422)
+        self.assertEqual(set(refused.json()["errors"]), {"password", "confirm_password"})
+        self.assertEqual(self.client.put(f"{API}/{item['id']}", json={"first_name": "Minjee"}).status_code, 200)
+        self.assertEqual(self.row(PlatformUser, row.i_platform_user_id).c_password, user.c_password)
+        listed = next(i for i in self.client.get(API).json()["items"] if i["id"] == item["id"])
+        self.assertTrue(listed["portal_login"]["password_set"])
+        # The POS PIN is separate: setting it leaves the Portal Password as it was, and vice versa.
+        self.client.put(f"{API}/{item['id']}", json={"pos_login_id": "0101"})
+        self.assertEqual(self.client.post(f"{API}/{item['id']}/pos-pin", json={"pin": "2468", "confirm_pin": "2468"})
+                         .status_code, 200)
+        self.assertEqual(self.row(PlatformUser, row.i_platform_user_id).c_password, user.c_password)
+        pin_hash = self.row(Employee, item["id"]).c_pin_hash
         # A second employee cannot take the same login email in this Merchant; another Merchant may.
         other = self.create(first_name="Joon")
         self.assertEqual(self.portal(other["id"], email="minji.portal@example.test", password="Temp#1234",
@@ -631,6 +705,8 @@ class EmployeeLoginAccessTests(unittest.TestCase):
                             confirm_password="Reset#5678")
         self.assertEqual(reset.status_code, 200)
         self.assertTrue(verify_secret("Reset#5678", self.row(PlatformUser, row.i_platform_user_id).c_password))
+        self.assertEqual(self.row(Employee, item["id"]).c_pin_hash, pin_hash)          # the PIN is untouched
+        self.assertTrue(reset.json()["item"]["portal_login"]["password_set"])
         self.assertEqual(self.row(Employee, item["id"]).i_row_version, version + 2)  # email change + reset
         disabled = self.client.post(f"{API}/{item['id']}/portal-access", json={"enabled": False})
         self.assertEqual(disabled.json()["item"]["portal_login"]["status"], "inactive")

@@ -21,9 +21,15 @@ MASTER_SLUGS = (("common-maintenance", "Common Maintenance", True), ("tax", "Tax
                 ("location-master", "Location Master", True))
 # Business > Organizations (Platform: Agencies, Merchants, Stores). Merchant Store Management: the Merchant login
 # manages its own Stores (routers.merchant_store). A Store login never has Store Management (no Business menu).
-# Employees (Employee Management STEP 1A): the Merchant-wide Employee Master (routers.master_group, entity employee).
-BUSINESS_SLUGS = (("stores", "Stores", True), ("employees", "Employees", True))
-BUSINESS_URLS = {"stores": "/merchant/business/stores", "employees": "/merchant/business/employees"}
+BUSINESS_SLUGS = (("stores", "Stores", True),)
+BUSINESS_URLS = {"stores": "/merchant/business/stores"}
+# Employee Group (Merchant login, same visibility as Business): Employee Master is the Merchant-wide Employee screen
+# (routers.master_group, entity employee; /merchant/business/employees stays as a compatible URL of the same page).
+# The rest are not built yet: available=False -> "Soon", never linked.
+EMPLOYEE_SLUGS = (("employee-master", "Employee Master", True), ("time-card", "Time Card", False),
+                  ("scheduling", "Scheduling", False), ("payroll", "Payroll", False),
+                  ("employee-reports", "Employee Reports", False))
+EMPLOYEE_URLS = {"employee-master": "/merchant/employee-group/employee-master"}
 TENANT_ROLES = {
     "MERCHANT": {MERCHANT_ADMIN_ROLE_NAME},
     "STORE": {"Admin", "CustomerAdmin", "StoreAdmin"},
@@ -105,6 +111,8 @@ class AppScope:
         # Store Management is a Merchant login menu only (Store login: no Business > Organizations > Stores).
         business_items = [{"label": label, "slug": slug, "available": available, "url": BUSINESS_URLS.get(slug)}
                           for slug, label, available in BUSINESS_SLUGS]             if self.permitted and self.context == "MERCHANT" else []
+        employee_items = [{"label": label, "slug": slug, "available": available, "url": EMPLOYEE_URLS.get(slug)}
+                          for slug, label, available in EMPLOYEE_SLUGS]             if self.permitted and self.context == "MERCHANT" else []
         return {
             "scope": self.context, "dashboard_url": "/merchant/dashboard/standard",
             "settings_url": "/auth/change-password",
@@ -115,7 +123,9 @@ class AppScope:
                 if slug != "location-master" or self.location_management
             ] if self.permitted else [],
             "business_items": business_items,
-            "business": bool(business_items), "reports": self.permitted,
+            "business": bool(business_items),
+            "employee_items": employee_items, "employee": bool(employee_items),
+            "reports": self.permitted,
             "api_base": f"/{self.context.lower()}/api/master-group",
         }
 
