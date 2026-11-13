@@ -738,6 +738,15 @@
   const pad2 = (n) => String(n).padStart(2, '0');
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
   const usDate = (iso) => (iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : '');
+  // Date-time display (MM/DD/YYYY hh:mm AM/PM) of a saved timestamp exactly as stored: the text is read, no Date()
+  // time-zone conversion (stored timestamps carry no zone). The one place to add a Merchant / Store time zone later.
+  const EMPTY_VALUE = '—';
+  const usDateTime = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(iso || ''));
+    if (!m) return EMPTY_VALUE;
+    const hour = Number(m[4]);
+    return `${m[2]}/${m[3]}/${m[1]} ${String(hour % 12 || 12).padStart(2, '0')}:${m[5]} ${hour < 12 ? 'AM' : 'PM'}`;
+  };
   let assignments = [];
   let editingAssignmentId = null;
   let assignmentToken = 0;
@@ -820,10 +829,28 @@
       : section('Termination', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Termination Date</label><input class="form-control" id="mgEmpTermDate" type="date"></div>
           <div class="col-md-8"><label class="form-label" for="mgEmpTermReason">Reason</label><input class="form-control" id="mgEmpTermReason" type="text" maxlength="200"></div>
           <div class="col-12 form-text">Terminate (top right) ends every Store assignment, Inactive Stores included, and removes POS access. Records are kept.</div>`);
-    return `<div class="col-12 mg-md-top">
+    // Audit (read only, never saved: no name attribute): the common AuditMixin values of the response.
+    const auditField = (name, text) => field(name, text,
+      `<input class="form-control mg-record-code-input" id="mgf_${name}" type="text" readonly tabindex="-1" value="${EMPTY_VALUE}">`);
+    const audit = !row ? '' : section('', auditField('created_by', 'Created By') + auditField('created_at', 'Created At')
+      + auditField('updated_by', 'Last Updated By') + auditField('updated_at', 'Last Updated At'), '', 'id="mgEmpAudit"');
+    // Tabs: the common Bootstrap Tab markup and styles of the MD form (.mg-md-pageframe); one Save for every tab.
+    const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>${address}${posAccess}${portalAccess}${asg}${termination}`;
+        </div>${audit}${termination}`],
+      ['Address', 'ADDRESS', address],
+      ['Access', 'SECURITY &amp; ACCESS', `${posAccess}${portalAccess}${asg}`]];
+    return `<div class="col-12 mg-md-pageframe">
+          <ul class="nav nav-tabs" id="mgEmpTabs" role="tablist">${tabs.map(([key, label], i) => `
+            <li class="nav-item" role="presentation"><button class="nav-link${i ? '' : ' active'}" id="mgEmpTab${key}" data-bs-toggle="tab" data-bs-target="#mgEmpPane${key}" type="button" role="tab" aria-controls="mgEmpPane${key}" aria-selected="${i ? 'false' : 'true'}">${label}</button></li>`).join('')}
+          </ul>
+          <div class="tab-content">${tabs.map(([key, , body], i) => `
+            <div class="tab-pane fade${i ? '' : ' show active'}" id="mgEmpPane${key}" role="tabpanel" aria-labelledby="mgEmpTab${key}" tabindex="0">
+              <div class="row g-3">${body}</div>
+            </div>`).join('')}
+          </div>
+        </div>`;
   }
 
   const EMPLOYEE_TEXT_FIELDS = ['first_name', 'last_name', 'display_name', 'phone', 'email', 'hire_date',
@@ -836,6 +863,11 @@
     const statuses = row && row.status === 'terminated' ? [['terminated', 'Terminated']] : [['active', 'Active'], ['inactive', 'Inactive']];
     setOptions('status', statuses, row ? row.status : 'active');
     if ($('mgEmpTermDate')) $('mgEmpTermDate').value = today();
+    if (row) {
+      [['created_by', row.created_by], ['updated_by', row.updated_by]].forEach(([key, name]) => { f(key).value = name || EMPTY_VALUE; });
+      f('created_at').value = usDateTime(row.created_at);
+      f('updated_at').value = usDateTime(row.updated_at);
+    }
     renderLoginAccess(row);
   }
 
@@ -1356,7 +1388,15 @@
       if (el) { el.classList.add('is-invalid'); first = first || el; }
       if (slot) slot.textContent = msg;
     });
+    if (first && entity === 'employee') showTabOf(first); // a field in a hidden tab: select that tab first
     if (first) first.focus();
+  }
+  // Selects the Bootstrap tab whose pane holds the element (no-op when it is already shown or not in a tab).
+  function showTabOf(el) {
+    const pane = el.closest('.tab-pane');
+    if (!pane || pane.classList.contains('active')) return;
+    const button = $('mgFields').querySelector(`[data-bs-toggle="tab"][data-bs-target="#${pane.id}"]`);
+    if (button && window.bootstrap && bootstrap.Tab) bootstrap.Tab.getOrCreateInstance(button).show();
   }
 
   // Location Master: a new record is saved with 'Save' (other screens keep 'Create').
@@ -1456,7 +1496,7 @@
     if (window.AwsumOptionGroup) AwsumOptionGroup.bindAll($('mgFields'));
     applyItemFeatures($('mgFields'));
     if (row && row.read_only) { // read-only Common Group (COLOR): view only; the server refuses writes too
-      $('mgFields').querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = true; });
+      $('mgFields').querySelectorAll('input, select, textarea, button:not([data-bs-toggle="tab"])').forEach((el) => { el.disabled = true; });
       $('mgSave').disabled = true;
       const message = row.read_only_message || (currentGroup() && currentGroup().read_only_message) || 'This group is read-only.';
       $('mgFields').insertAdjacentHTML('afterbegin', `<div class="col-12"><div class="alert alert-info py-1 px-2 mb-0 small" id="mgReadOnlyNote">${esc(message)}</div></div>`);

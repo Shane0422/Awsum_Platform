@@ -28,6 +28,12 @@ STEP 1A-2 (login IDs, every uniqueness rule in the Merchant scope; the same valu
   only on the account. Disabling, an email change or a reset ends the account's sessions. Portal sign-in rights
   for the Employee role come with the Portal Role step (routers.auth admits organization admin roles only).
 - Termination also disables POS Login and the Portal account; Reactivate restores neither.
+
+Audit (common AuditMixin columns, unchanged): the response adds created_by / updated_by, the names of this
+Merchant's users only (never an ID, email or another owner's user; otherwise None, shown as an em dash). Last Updated
+moves only on a real change: a Save that changes no value and no photo, or a Portal Access save that changes nothing,
+issues no UPDATE (no row_version bump, no stamp, so the dt_updated onupdate does not fire). PIN, Terminate and
+Reactivate always change the row. Store assignment changes keep their own audit on tb_employee_store.
 """
 from __future__ import annotations
 
@@ -38,6 +44,7 @@ from fastapi import HTTPException
 from sqlalchemy import exists, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from backend.database.pg_platform import ADMIN_STORE_ID
 from backend.models_admin.employee import Employee, EmployeeStore
@@ -163,6 +170,13 @@ def _bump(row) -> None:
     row.i_row_version = (row.i_row_version or 0) + 1
 
 
+def _bump_keep_audit(row: Employee) -> None:
+    """Version bump for a change that has its own audit (a Store assignment): the saved dt_updated is written back
+    explicitly, so the AuditMixin onupdate does not move the Employee's Last Updated."""
+    _bump(row)
+    flag_modified(row, "dt_updated")
+
+
 def _commit_image(db: Session, row: Employee, *, image_data: bytes | None = None, remove_image: bool = False):
     """Employee photo through the common image service (Merchant-wide path, file name = Employee Code). Commits."""
     from backend.services.image_service import commit_entity_image, image_operation_lock
@@ -204,6 +218,20 @@ def _portal_users(db: Session, rows: list[Employee]) -> dict[int, PlatformUser]:
             for user in db.query(PlatformUser).filter(PlatformUser.i_platform_user_id.in_(ids))}
 
 
+def _actor_names(db: Session, merchant_id: int, rows: list[Employee]) -> dict[int, str]:
+    """Created By / Last Updated By: names of this Merchant's own users only (no email, ID or other owners)."""
+    ids = {uid for row in rows for uid in (row.i_created_by, row.i_updated_by) if uid}
+    if not ids:
+        return {}
+    users = organization_user_query(db, "MERCHANT", merchant_id).filter(PlatformUser.i_platform_user_id.in_(ids))
+    names = {}
+    for user in users:
+        name = " ".join(part.strip() for part in (user.c_first_name, user.c_last_name) if part and part.strip())
+        if name:
+            names[user.i_platform_user_id] = name
+    return names
+
+
 def _portal_view(user: PlatformUser | None) -> dict:
     """Portal Login state (never the password)."""
     if user is None:
@@ -223,8 +251,10 @@ def _pos_login_status(row: Employee) -> str:
     return "active"
 
 
-def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformUser | None = None) -> dict:
+def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformUser | None = None,
+              actors: dict[int, str] | None = None) -> dict:
     from backend.services.images import image_url
+    actors = actors or {}
     summary = summary or {"primary_store": None, "store_count": 0, "pos_access": False, "stores": []}
     names = [part for part in (row.c_last_name, row.c_first_name) if part]
     terminated = row.c_status == "terminated"
@@ -246,12 +276,13 @@ def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformU
         "read_only": terminated, "read_only_message": TERMINATED_MESSAGE if terminated else None,
         "row_version": row.i_row_version,
         "created_at": _iso(row.dt_created), "updated_at": _iso(row.dt_updated),
+        "created_by": actors.get(row.i_created_by), "updated_by": actors.get(row.i_updated_by),
     }
 
 
 def _serialized(db: Session, row: Employee) -> dict:
     return serialize(row, _store_summaries(db, [row.i_employee_id])[row.i_employee_id],
-                     _portal_users(db, [row]).get(row.i_platform_user_id))
+                     _portal_users(db, [row]).get(row.i_platform_user_id), _actor_names(db, row.i_merchant_id, [row]))
 
 
 def serialize_assignment(assignment: EmployeeStore, store: Store, employee: Employee) -> dict:
@@ -322,7 +353,8 @@ def list_employees(db: Session, merchant_id: int, *, q="", status="", store_id=N
     rows = query.offset((page - 1) * size).limit(size).all()
     summaries = _store_summaries(db, [row.i_employee_id for row in rows])
     users = _portal_users(db, rows)
-    return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id))
+    actors = _actor_names(db, merchant_id, rows)
+    return {"items": [serialize(row, summaries[row.i_employee_id], users.get(row.i_platform_user_id), actors)
                       for row in rows], "total": total, "page": page,
             "pages": pages, "size": size, "sort": key, "direction": "desc" if direction == "desc" else "asc"}
 
@@ -467,10 +499,13 @@ def update_employee(db: Session, merchant_id: int, employee_id: int, payload: di
     if row.c_status == "terminated":
         raise Conflict(TERMINATED_MESSAGE)
     values = _validated(db, payload, row, merchant_id)
-    for attr, value in values.items():
+    changed = {attr: value for attr, value in values.items() if getattr(row, attr) != value}
+    photo_changed = image_data is not None or (remove_image and bool(row.c_image_path))
+    for attr, value in changed.items():
         setattr(row, attr, value)
-    _bump(row)
-    _stamp(row, user_id, created=False)
+    if changed or photo_changed:  # a Save that changes nothing issues no UPDATE (no version bump, no stamp)
+        _bump(row)
+        _stamp(row, user_id, created=False)
     try:
         db.flush()
     except IntegrityError:  # the POS Login ID was saved concurrently by another employee of this Merchant
@@ -609,7 +644,7 @@ def create_assignment(db: Session, merchant_id: int, employee_id: int, payload: 
                                **values)
     _stamp(assignment, user_id, created=True)
     db.add(assignment)
-    _bump(employee)
+    _bump_keep_audit(employee)  # the assignment has its own audit; the Employee's Last Updated stays
     try:
         db.commit()
     except IntegrityError:
@@ -749,6 +784,7 @@ def set_portal_access(db: Session, merchant_id: int, employee_id: int, payload: 
         raise Conflict(TERMINATED_MESSAGE)
     user = _portal_user(db, row)
     if not _flag(payload.get("enabled")):
+        changed = user is not None and (user.c_status or "").lower() != "inactive"
         _disable_portal(db, row, user_id)
     else:
         errors: dict[str, str] = {}
@@ -766,6 +802,7 @@ def set_portal_access(db: Session, merchant_id: int, employee_id: int, payload: 
         if role is None or (role.c_status or "").lower() != "active":
             raise Conflict("An active Employee Role is required. Apply the Employee Management migration.")
         now = datetime.now()
+        changed = user is None or bool(password) or user.c_email != email or (user.c_status or "").lower() != "active"
         if user is None:
             user = PlatformUser(i_merchant_id=merchant_id, i_store_id=ADMIN_STORE_ID, i_role_id=role.i_role_id,
                                 c_email=email, c_first_name=row.c_first_name, c_last_name=row.c_last_name,
@@ -773,8 +810,9 @@ def set_portal_access(db: Session, merchant_id: int, employee_id: int, payload: 
                                 i_must_change_password=1, dt_created=now, dt_updated=now)
             db.add(user)
         else:
-            ends_sessions = bool(password) or user.c_email != email or (user.c_status or "").lower() != "active"
-            user.c_email, user.c_status, user.dt_updated = email, "active", now
+            ends_sessions = changed
+            if changed:  # the same email of an active account without a password changes nothing
+                user.c_email, user.c_status, user.dt_updated = email, "active", now
             if password:
                 user.c_password, user.i_must_change_password = hash_secret(password), 1
             if ends_sessions:
@@ -784,9 +822,11 @@ def set_portal_access(db: Session, merchant_id: int, employee_id: int, payload: 
         except IntegrityError:  # the same email was saved concurrently in this Merchant
             db.rollback()
             raise FieldErrors({"email": EMAIL_TAKEN}) from None
-        row.i_platform_user_id = user.i_platform_user_id
-    _bump(row)
-    _stamp(row, user_id, created=False)
+        if row.i_platform_user_id != user.i_platform_user_id:
+            row.i_platform_user_id, changed = user.i_platform_user_id, True
+    if changed:  # Portal account created / changed / reset / disabled: the Employee's Last Updated
+        _bump(row)
+        _stamp(row, user_id, created=False)
     db.commit()
     db.refresh(row)
     return _serialized(db, row)

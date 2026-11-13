@@ -354,7 +354,7 @@ class MerchantMdScreenTests(unittest.TestCase):
         self.assertIn("if (el.closest('[data-item-feature-off]')) return;", js)
         self.assertNotIn("field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6', feature", js)
         html = (Path(__file__).resolve().parents[1] / "templates" / "platform" / "master_group.html").read_text(encoding="utf-8")
-        self.assertIn('src="/static/js/master_group.js?v=85"', html)
+        self.assertIn('src="/static/js/master_group.js?v=86"', html)
 
 
 if __name__ == "__main__":

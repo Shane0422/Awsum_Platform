@@ -8,6 +8,8 @@ assignment ends, Inactive Stores included, history kept), rehire, photo storage 
 database constraints SQLite enforces, and the screen (headless Chrome).
 STEP 1A-2: address, POS Login ID (unique per Merchant), POS PIN set / reset (hash only), Portal Login account
 (tb_platform_user of the Merchant, email unique per Merchant), session end, termination, other-Merchant isolation.
+Tabs + Audit: GENERAL / ADDRESS / SECURITY & ACCESS; Created / Last Updated By names (this Merchant's users only, never
+an ID); Last Updated moves only on a real change (no-op Save / Portal save: no UPDATE, no version bump).
 """
 import io
 import json
@@ -157,6 +159,38 @@ class EmployeeMasterTests(unittest.TestCase):
         self.assertEqual(self.client.post(API, json={"last_name": ""}).status_code, 422)
         self.assertEqual(self.client.delete(f"{API}/{item['id']}").status_code, 409)  # never deleted
         self.assertIsNotNone(self.row(Employee, item["id"]))
+        # Audit: Created / Last Updated By are names of this Merchant's users only (never an ID or another owner).
+        with self.factory() as db:
+            admin = db.query(PlatformUser).filter(PlatformUser.i_merchant_id == 10,
+                                                  PlatformUser.c_email == "primary@example.test").one()
+            admin.c_first_name, admin.c_last_name = "Pat", "Lee"
+            platform = db.query(PlatformUser).filter(PlatformUser.i_merchant_id.is_(None),
+                                                     PlatformUser.i_agency_id.is_(None)).first()
+            platform.c_first_name, platform.c_last_name = "Platform", "Person"
+            admin_id, platform_id = admin.i_platform_user_id, platform.i_platform_user_id
+            db.commit()
+        listed = next(r for r in self.client.get(API).json()["items"] if r["id"] == item["id"])
+        self.assertEqual((listed["created_by"], listed["updated_by"]), ("Pat Lee", "Pat Lee"))
+        self.assertFalse([key for key in listed if key.endswith("_by_id") or key.startswith("i_")])
+        for key in ("created_by", "updated_by", "created_at", "updated_at"):  # read only: refused in a Save
+            self.assertEqual(self.client.put(f"{API}/{item['id']}", json={key: "x"}).status_code, 422, key)
+        # A Save that changes nothing: no UPDATE (dt_updated, row_version and stamp unchanged); a real change stamps.
+        before = self.row(Employee, item["id"])
+        same = self.client.put(f"{API}/{item['id']}", json={"first_name": "Minji", "last_name": "Park",
+                                                           "status": "inactive", "phone": "703-555-0101"})
+        self.assertEqual(same.status_code, 200, same.text)
+        after = self.row(Employee, item["id"])
+        self.assertEqual((after.dt_updated, after.i_row_version), (before.dt_updated, before.i_row_version))
+        self.client.put(f"{API}/{item['id']}", json={"display_name": "MK"})
+        changed = self.row(Employee, item["id"])
+        self.assertEqual((changed.i_row_version, changed.i_updated_by), (before.i_row_version + 1, admin_id))
+        self.assertGreaterEqual(changed.dt_updated, before.dt_updated)
+        with self.factory() as db:  # stamped by a user outside this Merchant: no name is shown
+            db.get(Employee, item["id"]).i_created_by = platform_id
+            db.commit()
+        shown = self.client.get(API).json()["items"]
+        self.assertIsNone(next(r for r in shown if r["id"] == item["id"])["created_by"])
+        self.assertNotIn("Platform Person", self.client.get(API).text)
 
     def test_other_merchant_employees_are_invisible(self):
         self.login("MERCHANT")
@@ -185,6 +219,9 @@ class EmployeeMasterTests(unittest.TestCase):
         self.assertEqual(first.status_code, 201, first.text)
         self.assertEqual((first.json()["item"]["pos_role"], first.json()["item"]["primary"]), ("MANAGER", True))
         self.assertEqual(self.assign(eid).status_code, 409)  # one open assignment per Store
+        # Store assignments keep their own audit: the Employee's Last Updated does not move (its version still does).
+        saved = self.row(Employee, eid)
+        self.assertEqual((saved.dt_updated.isoformat(), saved.i_row_version), (item["updated_at"], item["row_version"] + 1))
         second = self.assign(eid, store_id=13, pos_access=True, pos_role="CASHIER", primary=True).json()["item"]
         rows = {a["store_id"]: a for a in self.client.get(f"{API}/{eid}/assignments").json()["items"]}
         self.assertEqual((rows[10]["primary"], rows[13]["primary"]), (False, True))  # the new primary moved
@@ -343,6 +380,8 @@ window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  if(url.pathname.endsWith('/options'))return J(__options);
  if(url.pathname.endsWith('/assignments'))return J(__asg);
  if(url.pathname==='/merchant/api/master-group/employee')return J(__list);
+ if(window.__fail&&options.method==='PUT'){const body=__fail;window.__fail=null;
+   return new Response(JSON.stringify(body),{status:422,headers:{'Content-Type':'application/json'}});}
  return J({item:__list.items[0]});};""")
         page = inline_page(self.client.get("/merchant/business/employees").text, mock)
         script = "const page=" + json.dumps(page).replace("</", "<\\/") + ";\n" + r"""
@@ -359,6 +398,37 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(/EMP00001/.test($('mgBody').textContent)&&/POS ID 0101/.test($('mgBody').textContent),'code and POS Login ID in the list');
  doc.querySelector('#mgBody [data-row-select]').click();
  await wait(()=>doc.querySelectorAll('#mgAsgBody tr[data-asg]').length===2,'assignments loaded');
+ // Tabs: the common Bootstrap Tab of the MD form; GENERAL first, one pane shown at a time.
+ const tabs=[...$('mgEmpTabs').querySelectorAll('[role="tab"]')];
+ assert(tabs.map(t=>t.textContent.trim()).join('|')==='GENERAL|ADDRESS|SECURITY & ACCESS','three tabs in order');
+ assert($('mgEmpTabs').closest('.mg-md-pageframe')&&$('mgEmpTabs').classList.contains('nav-tabs'),'common tab markup');
+ // The common PageFrame keeps one height: inactive panes are hidden (visibility), not removed.
+ const shown=()=>[...doc.querySelectorAll('#mgFields .tab-pane')].filter(p=>win.getComputedStyle(p).visibility!=='hidden').map(p=>p.id);
+ assert(shown().join()==='mgEmpPaneGeneral','only GENERAL shown: '+shown());
+ for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgf_hire_date','mgEmpAudit','mgEmpTermDate']],
+   ['mgEmpPaneAddress',['mgf_zip','mgf_country']],['mgEmpPaneAccess',['mgEmpPos','mgEmpPortal','mgAsgSection']]])
+   ids.forEach(id=>assert($(pane).contains($(id)),id+' in '+pane));
+ assert($('mgEmpAudit').compareDocumentPosition($('mgEmpTermDate'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Termination at the bottom of GENERAL');
+ // Audit: read only, never part of Save; the stored timestamp text is shown without a time-zone conversion.
+ const listed=win.__list.items[0],us=iso=>{const [d,t]=iso.split('T');const h=Number(t.slice(0,2));
+   return `${d.slice(5,7)}/${d.slice(8,10)}/${d.slice(0,4)} ${String(h%12||12).padStart(2,'0')}:${t.slice(3,5)} ${h<12?'AM':'PM'}`;};
+ assert(listed.created_by&&$('mgf_created_by').value===listed.created_by&&$('mgf_updated_by').value===listed.updated_by,'audit names');
+ assert($('mgf_created_at').value===us(listed.created_at)&&$('mgf_updated_at').value===us(listed.updated_at),'audit times as stored');
+ assert(['created_by','created_at','updated_by','updated_at'].every(k=>$('mgf_'+k).readOnly&&!$('mgf_'+k).name),'audit read only, unnamed');
+ // Switching tabs keeps typed values (no reload, no save).
+ $('mgf_first_name').value='Typed';$('mgEmpTabAddress').click();await pause(250);
+ assert(shown().join()==='mgEmpPaneAddress','ADDRESS shown');
+ $('mgf_city').value='Typed City';$('mgEmpTabAccess').click();await pause(250);
+ assert(shown().join()==='mgEmpPaneAccess','SECURITY & ACCESS shown');
+ $('mgEmpTabGeneral').click();await pause(250);
+ assert($('mgf_first_name').value==='Typed'&&$('mgf_city').value==='Typed City'&&!win.requests.some(r=>r.method==='PUT'),'values kept, nothing saved');
+ // A Save error on a field of a hidden tab selects that tab and focuses the field.
+ win.__fail={detail:'Please fix the highlighted fields.',errors:{pos_login_id:'POS Login ID must be 4 to 10 digits.'}};
+ $('mgSave').click();
+ await wait(()=>shown().join()==='mgEmpPaneAccess'&&doc.activeElement===$('mgf_pos_login_id'),'error tab selected');
+ assert($('mgf_pos_login_id').classList.contains('is-invalid'),'error marked');
+ win.requests.length=0;$('mgEmpTabGeneral').click();await pause(250);
+ $('mgf_first_name').value='Minji';$('mgf_city').value='Fairfax';
  assert($('mgEmpCode').textContent==='EMP00001'&&!$('mgEmpPosNumber'),'read-only Employee Code (no POS # shown)');
  assert($('mgf_zip').value==='22031'&&$('mgf_state').value==='VA'&&$('mgf_country').value==='United States','address filled');
  assert($('mgf_pos_login_id').value==='0101'&&!$('mgf_pos_login_enabled').checked,'POS Login filled');
@@ -395,6 +465,17 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  $('mgf_phone').value='972-555-0000';$('mgf_phone').dispatchEvent(new Event('input',{bubbles:true}));
  assert($('mgf_pos_login_id').value==='7777','a typed ID is kept');
  assert($('mgPinOpen').disabled&&$('mgPortalOpen').disabled,'PIN / Portal need a saved employee');
+ assert(!$('mgEmpAudit')&&$('mgEmpTabs'),'a new employee has no audit yet');
+ // A terminated (read-only) employee: every field and action stays disabled, the tabs stay usable to view.
+ win.__list.items[0]=Object.assign({},win.__list.items[0],{status:'terminated',read_only:true,termination_date:'2026-11-10',created_by:null,updated_by:null,updated_at:null});
+ $('mgActiveFilter').dispatchEvent(new Event('change',{bubbles:true}));
+ await wait(()=>/Terminated/.test($('mgBody').textContent),'terminated row listed');
+ doc.querySelector('#mgBody [data-row-select]').click();await pause(100);
+ assert($('mgf_first_name').disabled&&$('mgPinOpen').disabled&&$('mgAsgAdd').disabled,'read-only fields and actions');
+ assert(tabs.length&&[...$('mgEmpTabs').querySelectorAll('[role="tab"]')].every(t=>!t.disabled),'tabs usable');
+ $('mgEmpTabAccess').click();await pause(250);
+ assert(shown().join()==='mgEmpPaneAccess','read-only tab switch');
+ assert($('mgf_created_by').value==='—'&&$('mgf_updated_by').value==='—'&&$('mgf_updated_at').value==='—','no value: em dash');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
@@ -539,8 +620,10 @@ class EmployeeLoginAccessTests(unittest.TestCase):
                 return db.query(SessionTbl).filter(SessionTbl.i_platform_user_id == row.i_platform_user_id,
                                                    SessionTbl.c_status == "ACTIVE").count()
         self.assertEqual(active_sessions(), 1)
+        version = self.row(Employee, item["id"]).i_row_version
         keep = self.portal(item["id"], email="minji.portal@example.test")              # nothing changed
         self.assertEqual((keep.status_code, active_sessions()), (200, 1))
+        self.assertEqual(self.row(Employee, item["id"]).i_row_version, version)      # no UPDATE, no stamp
         moved = self.portal(item["id"], email="minji.new@example.test")
         self.assertEqual((moved.json()["item"]["portal_login"]["email"], active_sessions()),
                          ("minji.new@example.test", 0))
@@ -548,8 +631,11 @@ class EmployeeLoginAccessTests(unittest.TestCase):
                             confirm_password="Reset#5678")
         self.assertEqual(reset.status_code, 200)
         self.assertTrue(verify_secret("Reset#5678", self.row(PlatformUser, row.i_platform_user_id).c_password))
+        self.assertEqual(self.row(Employee, item["id"]).i_row_version, version + 2)  # email change + reset
         disabled = self.client.post(f"{API}/{item['id']}/portal-access", json={"enabled": False})
         self.assertEqual(disabled.json()["item"]["portal_login"]["status"], "inactive")
+        self.client.post(f"{API}/{item['id']}/portal-access", json={"enabled": False})    # already disabled
+        self.assertEqual(self.row(Employee, item["id"]).i_row_version, version + 3)
         # Portal sign-in for the Employee role is not opened in this step (permissions unchanged).
         self.portal(item["id"], email="minji.new@example.test")
         login = self.client.post("/auth/login", data={"store_code": "MER26ABCD", "email": "minji.new@example.test",
