@@ -197,30 +197,68 @@ class BrandingTests(unittest.TestCase):
         brand = self.brand_data(self.client.get(expired.headers["x-awsum-login"]))
         self.assertEqual(brand["context_type"], "PLATFORM")
         self.assertIn("/platform/", brand["logo_url"])
+        # Store Portal login (organization login, auth.REGISTRATION_OWNERS): the Store's admin (StoreAdmin role) signs in
+        # with the Store code and gets one STORE session for that Store.
         result = self.client.post("/auth/login", data={
             "store_code": "STR00002", "email": "store@example.test", "password": PASSWORD,
         })
-        self.assertEqual(result.status_code, 400)
-        self.assertIn("operation DB", result.json()["message"])
+        self.assertEqual(result.status_code, 303, result.text)
+        with self.factory() as db:
+            row = db.query(SessionTbl).filter_by(i_platform_user_id=3, c_status="ACTIVE").one()
+            self.assertEqual((row.c_login_context, row.i_store_id, row.i_agency_id), ("STORE", 2, None))
+        self.client.get("/auth/logout")
+        # Cross-organization access is refused: the Store admin with another organization's code, and a Platform user
+        # with the Store code (not an admin of that Store).
+        for code, email in (("CLT11001", "store@example.test"), ("AGT00001", "store@example.test"),
+                            ("STR00002", "user1@example.test")):
+            with self.subTest(code=code, email=email):
+                denied = self.client.post("/auth/login", data={"store_code": code, "email": email, "password": PASSWORD})
+                self.assertEqual(denied.status_code, 401, denied.text)
+                self.assertEqual(denied.json()["message"], "Invalid credentials.")
+                self.assertNotIn("access_token", denied.cookies)
+        with self.factory() as db:
+            self.assertEqual(db.query(SessionTbl).filter_by(i_platform_user_id=3, c_status="ACTIVE").count(), 0)
+
+    def organization_admins(self):
+        """Agency Admin of Agency 1 and Merchant Admin of Merchant 1, as session_context.login_identity requires:
+        the organization's admin role, its organization id and the HQ Store; plus Agency 2 / Merchant 2 for denial."""
+        from backend.database.pg_platform import ADMIN_STORE_ID
+        with self.factory() as db:
+            db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
+            db.add(Role(i_role_id=98, c_name="Merchant Admin", c_status="active"))
+            db.add(Agency(i_agency_id=2, c_agency_code="AGT00002", c_agency_name="Other Agency", c_status="active"))
+            db.add(Merchant(i_merchant_id=2, c_merchant_code="CLT11002", c_merchant_name="Other Merchant", c_status="active"))
+            db.get(Agency, 1).c_status = "active"
+            db.get(Merchant, 1).c_status = "active"
+            hashed = db.get(PlatformUser, 3).c_password
+            for user_id, role_id, agency_id, merchant_id in ((41, 99, 1, None), (42, 98, None, 1)):
+                db.add(PlatformUser(i_platform_user_id=user_id, i_store_id=ADMIN_STORE_ID, i_role_id=role_id,
+                                    i_agency_id=agency_id, i_merchant_id=merchant_id, c_email=f"org{user_id}@example.test",
+                                    c_password=hashed, c_first_name="Org", c_last_name="Admin", c_status="active",
+                                    i_must_change_password=0))
+            db.commit()
 
     def test_every_context_preserves_its_entry_on_logout_and_termination(self):
-        for context, claims, expected in (
-            ("agency", {"agency_id": 1}, "/login/agency/AGT00001"),
-            ("merchant", {"merchant_id": 1}, "/login/merchant/CLT11001"),
-            ("store", {}, "/login/store/STR00002"),
+        from fastapi import HTTPException
+        self.organization_admins()
+        # Cross-organization access is refused: an organization admin cannot open a session for another organization.
+        with self.factory() as db:
+            for user_id, claims in ((41, {"scope_type": "agency", "agency_id": 2}),
+                                    (42, {"scope_type": "merchant", "merchant_id": 2}),
+                                    (41, {"scope_type": "merchant", "merchant_id": 1}),
+                                    (3, {"scope_type": "agency", "agency_id": 1})):
+                with self.subTest(denied=user_id, claims=claims), self.assertRaises(HTTPException) as refused:
+                    web_sessions.create_session(db, db.get(PlatformUser, user_id), request(), claims)
+                self.assertEqual(refused.exception.status_code, 401)
+            self.assertEqual(db.query(SessionTbl).count(), 0)
+        for context, claims, expected, user_id in (
+            ("agency", {"agency_id": 1}, "/login/agency/AGT00001", 41),
+            ("merchant", {"merchant_id": 1}, "/login/merchant/CLT11001", 42),
+            ("store", {}, "/login/store/STR00002", 3),
         ):
             with self.subTest(context=context):
                 with self.factory() as db:
-                    user = db.get(PlatformUser, 3)
-                    if context == "agency":
-                        if db.get(Role, 99) is None:
-                            db.add(Role(i_role_id=99, c_name="Agency Admin", c_status="active"))
-                        db.get(Agency, 1).c_status = "active"
-                        user.i_role_id, user.i_agency_id = 99, 1
-                    else:
-                        user.i_role_id, user.i_agency_id = 2, None
-                    db.commit()
-                    token = web_sessions.create_session(db, db.get(PlatformUser, 3), request(),
+                    token = web_sessions.create_session(db, db.get(PlatformUser, user_id), request(),
                                                         {"scope_type": context, **claims})
                     row = db.query(SessionTbl).filter_by(c_status="ACTIVE").one()
                     self.assertEqual(row.c_login_path, expected)
@@ -233,7 +271,7 @@ class BrandingTests(unittest.TestCase):
                 self.assertEqual(self.client.get("/auth/logout").headers["location"], expected)
                 self.assertEqual(self.brand_data(self.client.get(expected))["context_type"], context.upper())
                 with self.factory() as db:
-                    token = web_sessions.create_session(db, db.get(PlatformUser, 3), request(),
+                    token = web_sessions.create_session(db, db.get(PlatformUser, user_id), request(),
                                                         {"scope_type": context, **claims})
                 self.client.cookies.set("access_token", token, domain="testserver.local", path="/")
                 self.assertEqual(self.client.get("/auth/logout").headers["location"], expected)

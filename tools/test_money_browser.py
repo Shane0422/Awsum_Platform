@@ -17,13 +17,22 @@ def source(relative):
 
 
 @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+def layout_macros(template):
+    """The macros the management templates import at the top (management_layout.html, form_modal.html)."""
+    layout = template.environment.get_template("platform/components/management_layout.html").module
+    modal = template.environment.get_template("platform/components/form_modal.html").module
+    return {"page_header": layout.page_header, "surface": layout.surface, "form_modal": modal.form_modal}
+
+
 class MoneyBrowserTests(unittest.TestCase):
     # Reuse the existing isolated Chromium runner; no second process/cleanup engine.
     run_browser = browser.SharedImageComponentTests.run_component_script
 
     def test_md_form_common_money_discount_and_comma_free_multipart(self):
         template = Environment(loader=FileSystemLoader(ROOT / "templates")).get_template("platform/master_group.html")
-        context = template.new_context({"mg_entity": "md", "mg_title": "MD Master"})
+        # The content block uses the page's top-level macro imports (page_header, surface); a block rendered alone
+        # receives them through the context, as tools.test_agency_activation_browser does.
+        context = template.new_context({"mg_entity": "md", "mg_title": "MD Master", **layout_macros(template)})
         markup = "".join(template.blocks["content"](context))
         markup = re.sub(r"<script\b[^>]*>.*?</script>", "", markup, flags=re.DOTALL)
         setup = (
@@ -55,14 +64,25 @@ document.addEventListener=function(type,listener,...args){
   if(type==='DOMContentLoaded')ready=listener;else add.call(this,type,listener,...args);
 };
 """
+        # The common page parts the MD page loads before master_group.js (platform_base.html / master_group.html).
+        for common in ("awsum-toast", "option-group", "master-detail", "date", "code-input", "barcode-input", "confirm-modal",
+                       "lookup-modal", "page-actions"):
+            script += f"\n(0,eval)({json.dumps(source(f'static/js/{common}.js'))});\n"
         script += f"\n(0,eval)({json.dumps(source('static/js/master_group.js'))});\n"
         script += r"""
 document.addEventListener=add;
 (async()=>{
   await ready();
-  document.querySelector('[data-act="edit"]').click();await tick();
-  assert(document.querySelectorAll('input[data-awsum-money]').length===5,'five MD money fields');
-  assert(find('retail_price').value==='2,500.50'&&find('cost').value==='1,000.00','initial presentation');
+  // MD Master is a Master-Detail screen: selecting the row opens its form (no row Edit button).
+  for(let i=0;i<100&&!document.querySelector('#mgBody [data-row-select]');i++)await tick();
+  document.querySelector('#mgBody [data-row-select]').click();
+  for(let i=0;i<100&&!(find('retail_price')&&find('retail_price').value);i++)await tick();
+  // Money inputs of the current MD screen: Price + P1-P3 on the form, Cost / Price in the MD Detail editor
+  // (Cost moved from the MD form to MD Detail in the approved MD Master step).
+  const moneyIds=[...document.querySelectorAll('input[data-awsum-money]')].map(e=>e.id).sort().join();
+  assert(moneyIds==='mgDetailCost,mgDetailPrice,mgf_p1_price,mgf_p2_price,mgf_p3_price,mgf_retail_price','MD money fields: '+moneyIds);
+  assert(find('cost').type==='hidden'&&!find('cost').hasAttribute('data-awsum-money'),'Cost is a hidden carrier of the default MD Detail Cost, not a form money input');
+  assert(find('retail_price').value==='2,500.50','initial presentation');
   assert(find('p1_price').value==='2,187.94'&&find('p2_price').value==='1,000,000.00','level presentation');
   assert(!find('p1_discount_pct').hasAttribute('data-awsum-money'),'percentage is not money');
   find('retail_price').dispatchEvent(new Event('focus'));
@@ -72,19 +92,19 @@ document.addEventListener=add;
   find('retail_price').dispatchEvent(new Event('blur'));
   assert(find('retail_price').value==='1,000,000.00','blur grouping');
   assert(find('p1_price').value==='875,000.00','exact live discount calculation');
-  find('cost').value='1,23';
-  find('cost').dispatchEvent(new Event('input',{bubbles:true}));
+  find('p2_price').value='1,23';
+  find('p2_price').dispatchEvent(new Event('input',{bubbles:true}));
   document.getElementById('mgForm').dispatchEvent(new Event('submit',{cancelable:true}));
   await tick();
   assert(writes.length===0,'invalid grouping blocks request');
   assert(document.getElementById('mgFormError').textContent.includes('monetary'),'visible form error');
-  find('cost').value='1,000.50';
-  find('cost').dispatchEvent(new Event('input',{bubbles:true}));
+  find('p2_price').value='1,000.50';
+  find('p2_price').dispatchEvent(new Event('input',{bubbles:true}));
   document.getElementById('mgForm').dispatchEvent(new Event('submit',{cancelable:true}));
   await tick();
   assert(writes.length===1,'one mock parent Save');
-  assert(writes[0].retail_price==='1000000.00'&&writes[0].cost==='1000.50','comma-free decimal payload');
-  assert(writes[0].p1_price==='875000.00'&&writes[0].p2_price==='1000000.00','all levels normalized');
+  assert(writes[0].retail_price==='1000000.00'&&writes[0].p2_price==='1000.50','comma-free decimal payload');
+  assert(writes[0].p1_price==='875000.00','all levels normalized');
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
 """
@@ -93,7 +113,8 @@ document.addEventListener=add;
     def test_current_metadata_controls_serialization_dirty_state_and_sorting(self):
         template = source("templates/platform/master_management.html")
         rendered_template = Environment(loader=FileSystemLoader(ROOT / "templates")).get_template("platform/master_management.html")
-        context = rendered_template.new_context({"active_module": "pricing-plan", "brand_icon_path": ""})
+        context = rendered_template.new_context({"active_module": "pricing-plan", "brand_icon_path": "",
+                                                 **layout_macros(rendered_template)})
         rendered = "".join(rendered_template.blocks["content"](context))
         scripts = [body for attributes, body in re.findall(r"<script\b([^>]*)>(.*?)</script>", rendered, re.DOTALL)
                    if "application/json" not in attributes]

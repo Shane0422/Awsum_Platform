@@ -39,11 +39,12 @@ class BusinessCodeTests(unittest.TestCase):
             "merchant": (self.db.get(Merchant, 1).c_merchant_code, self.db.get(Merchant, 1).c_logo_url),
             "store": (self.db.get(Store, 2).c_store_code, self.db.get(Store, 2).i_merchant_id),
         }
+        # A new Merchant is registered Inactive (Primary Contact first, then Active: platform_store activation rule).
         cases = (
             ("/platform/agency", {"company_name": "JSON Agency", "agency_type_id": 1}, "AGT", False),
             ("/platform/agency/with-image", {"company_name": "Image Agency", "agency_type_id": 1}, "AGT", True),
-            ("/platform/merchant", {"merchant_name": "JSON Merchant", "primary_agency_id": 1, "business_type": "Test"}, "MER", False),
-            ("/platform/merchant/with-image", {"merchant_name": "Image Merchant", "primary_agency_id": 1, "business_type": "Test"}, "MER", True),
+            ("/platform/merchant", {"merchant_name": "JSON Merchant", "primary_agency_id": 1, "business_type": "Test", "status": "inactive"}, "MER", False),
+            ("/platform/merchant/with-image", {"merchant_name": "Image Merchant", "primary_agency_id": 1, "business_type": "Test", "status": "inactive"}, "MER", True),
             ("/platform/store", {"store_name": "Store", "merchant_id": 1, "installed_by_agency_id": 1}, "STR", False),
             ("/platform/store/with-image", {"store_name": "Image Store", "merchant_id": 1, "installed_by_agency_id": 1}, "STR", True),
             ("/platform/merchant/1/stores", {"store_name": "Linked Store"}, "STR", False),

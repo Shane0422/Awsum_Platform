@@ -15,11 +15,13 @@ class AgencyActivationBrowserTests(unittest.TestCase):
     def test_registration_reuses_email_preview_recipient_edit_and_retry(self):
         component = (browser.ROOT / "static" / "js" / "store_devices_panel.js").read_text(encoding="utf-8")
         template = (browser.ROOT / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
-        function = re.search(r"  async function openAgencyRegistrationEmail\(.*?\n  }\n", template, re.DOTALL).group()
+        # One Registration Email for Agency / Merchant / Store: openRegistrationEmail(ownerType, ownerId).
+        function = re.search(r"  async function openRegistrationEmail\(.*?\n  }\n", template, re.DOTALL).group()
         script = (
             "window.bootstrap={Modal:class{show(){}dispose(){}}};\n"
             f"(0,eval)({json.dumps(component)});\n"
-            "const apiBase='/platform';const parseApiError=text=>JSON.parse(text).detail;const masterEditModalElement=null;const agencyRegistrationPasswords=new Map();\n"
+            "const apiBase='/platform';const parseApiError=text=>JSON.parse(text).detail;const masterEditModalElement=null;"
+            "const registrationPasswords=new Map();const closeMasterEditModal=()=>{};\n"
             f"{function}\n"
         )
         script += r"""
@@ -39,7 +41,7 @@ window.fetch=async(path,options)=>{
     recipient:payload.recipient||'primary@example.test',message:'Registration completed\nLogin Email: primary@example.test\nInitial Password: Awsum@5858'}));
 };
 (async()=>{
-  await openAgencyRegistrationEmail(1);
+  await openRegistrationEmail('AGENCY',1);
   await wait(()=>!find('sdEmailSend').disabled);
   assert(find('sdEmailTo').value==='primary@example.test','default To Email is Primary Contact');
   assert(find('sdEmailSubject').readOnly&&find('sdEmailMessage').readOnly,'required content cannot be removed');
@@ -57,13 +59,13 @@ window.fetch=async(path,options)=>{
   assert(sendRequest.payload.recipient==='alternate@example.test','changed To affects only send payload');
   assert(sendRequest.payload.temporary_password==='','resend resolves initial password server-side without a save');
   assert(!('email' in sendRequest.payload)&&!('login_email' in sendRequest.payload),'contact/login email is never submitted for update');
-  assert(requests.every(r=>r.path.includes('/registration-email')),'no Contact/User update request');
+  assert(requests.every(r=>r.path.startsWith('/platform/registration-email/AGENCY/1')),'no Contact/User update request');
   failSend=false;find('sdEmailSend').click();
   await wait(()=>find('sdEmailBody').textContent.includes('alternate@example.test'));
   assert(sends===2,'explicit retry after failure');
   find('sdEmailModal').dispatchEvent(new Event('hidden.bs.modal'));
   assert(!find('sdEmailModal'),'password-bearing dialog removed on close');
-  await openAgencyRegistrationEmail(1);
+  await openRegistrationEmail('AGENCY',1);
   await wait(()=>!find('sdEmailSend').disabled);
   assert(find('sdEmailTo').value==='primary@example.test','reopening resets To to Primary Contact');
   assert(sends===2,'reopening for resend does not send');
@@ -99,7 +101,7 @@ window.fetch=async(path,options)=>{
         functions = "\n".join(re.search(
             rf"  function {name}\([^\n]*\) \{{.*?\n  \}}", template, re.DOTALL).group()
             for name in ("createField", "createContactManagerPanel", "createImageFormLayout",
-                         "renderForm", "clearForm", "syncAgencyEmailButton"))
+                         "renderForm", "clearForm", "syncRegistrationEmailButtons", "bindRegistrationEmailButton"))
         config = re.search(r"    agency: (\{.*?\n    \}),\n    license:", template, re.DOTALL).group(1)
         script = (
             f"const style=document.createElement('style');style.textContent={json.dumps(bootstrap_css + styles)};document.head.appendChild(style);\n"
@@ -110,7 +112,8 @@ window.fetch=async(path,options)=>{
             f"const config={config};\n"
             "const masterFormModal=document.getElementById('uploader'),masterForm=null;\n"
             "const selectedMasterId={value:''};let selectedOriginalRecord=null;\n"
-            "const agencyRegistrationPasswords=new Map();let previewOpens=0;const openAgencyRegistrationEmail=async()=>{previewOpens++;};\n"
+            "const CONTACT_OWNER_TYPES={agency:'AGENCY',merchant:'MERCHANT',store:'STORE'};let savingStoreImage=false;\n"
+            "let previewOpens=0,previewOwner=null;const openRegistrationEmail=async(type,id)=>{previewOpens++;previewOwner=type+':'+id;};\n"
             "const CONTACT_ROLE_OPTIONS=[['PRIMARY','Primary Contact']];\n"
             "const noop=()=>{},resetContactDrafts=noop;\n"
             "const bindUsDatePickers=noop,bindBrandLogoUploadHandlers=noop,refreshOrgLogoPreview=noop,\n"
@@ -133,12 +136,12 @@ window.fetch=async(path,options)=>{
   assert(button.closest('.awsum-modal-action').classList.contains('d-none'),'unsaved Agency has no email button');
   assert(!!document.getElementById('businessContactManager'),'existing Contacts component reused');
   assert(!!document.getElementById('bc_email'),'existing Business Contact email editor reused');
-  selectedMasterId.value='1';selectedOriginalRecord={has_agency_admin:false};syncAgencyEmailButton();
+  selectedMasterId.value='1';selectedOriginalRecord={has_agency_admin:false};syncRegistrationEmailButtons();
   assert(!button.closest('.awsum-modal-action').classList.contains('d-none')&&!button.disabled,'saved Agency without Admin keeps action enabled');
   assert(document.getElementById(button.id+'Reason').textContent==='','no stale disabled reason');
   button.click();await new Promise(resolve=>setTimeout(resolve,20));
-  assert(previewOpens===1,'missing Admin metadata still requests current account check');
-  selectedOriginalRecord.has_agency_admin=true;syncAgencyEmailButton();
+  assert(previewOpens===1&&previewOwner==='AGENCY:1','missing Admin metadata still requests current account check');
+  selectedOriginalRecord.has_agency_admin=true;syncRegistrationEmailButtons();
   assert(!button.disabled&&button.textContent==='Registration Email','saved Admin shows Registration Email');
   assert(button.closest('.modal-footer'),'Registration Email is in actual Edit footer, not the scrollable form');
   const cancel=document.getElementById('btnModalCancel'),del=document.getElementById('btnModalDelete'),save=document.getElementById('btnModalSave');
@@ -149,7 +152,7 @@ window.fetch=async(path,options)=>{
   assert(previewOpens===2,'button opens Preview independently');
   button.click();await new Promise(resolve=>setTimeout(resolve,20));
   assert(previewOpens===3,'button can reopen Preview later');
-  selectedOriginalRecord={};syncAgencyEmailButton();assert(!button.disabled,'missing list metadata does not disable Edit action');
+  selectedOriginalRecord={};syncRegistrationEmailButtons();assert(!button.disabled,'missing list metadata does not disable Edit action');
   clearForm();assert(button.closest('.awsum-modal-action').classList.contains('d-none'),'new record clears email availability');
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
@@ -159,9 +162,13 @@ window.fetch=async(path,options)=>{
     def test_agency_save_never_opens_preview_or_displays_password(self):
         template = (browser.ROOT / "templates" / "platform" / "master_management.html").read_text(encoding="utf-8")
         function = re.search(r"  async function saveItem\(.*?\n  }\n", template, re.DOTALL).group()
+        # saveItem() keys the page-memory password by owner (registrationPasswords, "AGENCY:1") through contactOwner().
+        owner = re.search(r"  function contactOwner\(.*?\n  }\n", template, re.DOTALL).group()
         script = (
             "const activeModule='agency',isListCentricModule=true,agencyModalMode='edit',toastLabel='Agency';\n"
-            "const selectedMasterId={value:'1'},agencyRegistrationPasswords=new Map();let lastSavedId=null;\n"
+            "const selectedMasterId={value:'1'},registrationPasswords=new Map();let lastSavedId=null;\n"
+            "const CONTACT_OWNER_TYPES={agency:'AGENCY',merchant:'MERCHANT',store:'STORE'},pendingContactActivations=new Set();\n"
+            f"{owner}\n"
             "let savingStoreImage=false;const getStoreLogoUploader=()=>null,getOrganizationLogoUploader=()=>null;\n"
             "const noop=()=>{},isFormDirty=()=>true,usesPremiumModal=()=>true,getFormData=()=>({status:'active'}),\n"
             "validateAgencyForm=()=>[],showMasterModalError=noop,getItemUrl=id=>'/platform/agency/'+id,\n"
@@ -171,7 +178,7 @@ window.fetch=async(path,options)=>{
         script += r"""
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 let requests=[],alerts=[],previewOpens=0;
-const openAgencyRegistrationEmail=async()=>{previewOpens++;};
+const openRegistrationEmail=async()=>{previewOpens++;};
 window.AwsumToast={success:m=>alerts.push(m),warning:m=>alerts.push(m),error:m=>alerts.push(m),message:(action,label)=>label+' '+action+'.'};
 window.fetch=async(path,options)=>{
   requests.push({path,options});
@@ -182,7 +189,7 @@ window.fetch=async(path,options)=>{
   assert(requests.length===1&&requests[0].path==='/platform/agency/1','Save only writes Agency');
   assert(previewOpens===0,'Save never opens Email Preview');
   assert(alerts.join('')==='Agency updated. Agency Admin User created.','Save result (Common Toast) contains no password');
-  assert(agencyRegistrationPasswords.get('1')==='RandomTest!LongPassword','random fallback kept only in page memory for later Preview');
+  assert(registrationPasswords.get('AGENCY:1')==='RandomTest!LongPassword'&&registrationPasswords.size===1,'random fallback kept only in page memory for later Preview');
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
 """

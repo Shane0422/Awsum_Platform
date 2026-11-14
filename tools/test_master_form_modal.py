@@ -39,7 +39,7 @@ if(activeModule!=='agency')config.tabs=[{id:'overview',title:'Basic Information'
 const CONTACT_OWNER_TYPES={};
 const noop=()=>{},bindUsDatePickers=noop,refreshMerchantLogoPreview=noop,refreshStoreLogoPreview=noop,
 refreshContactManager=noop,initMerchantStorePanelHandlers=noop,loadMerchantStoresForSelectedMerchant=noop,
-syncAgencyEmailButton=noop,refreshOrgLogoPreview=noop,bindScopedStoreSelect=noop,applyEditFieldRules=noop;
+syncRegistrationEmailButtons=noop,bindRegistrationEmailButton=noop,refreshOrgLogoPreview=noop,bindScopedStoreSelect=noop,applyEditFieldRules=noop;
 const createIdField=()=>{const el=document.createElement('input');el.type='hidden';return el;};
 const createContactManagerPanel=()=>{const el=document.createElement('div');el.className='col-12';el.textContent='Contact manager';return el;};
 const createField=field=>{
@@ -120,7 +120,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
         ).group() for name in (
             "usesPremiumModal", "applyAgencyModalState", "showMasterModalError",
             "getMasterEditModalInstance", "openMasterEditModal", "closeMasterEditModal",
-            "syncAgencyEmailButton", "saveItem", "deleteItem",
+            "syncRegistrationEmailButtons", "contactOwner", "saveItem", "deleteItem",
         ))
         handlers = "\n".join(re.search(
             rf"  if \({name}\) \{{\n    {name}\.addEventListener.*?\n  \}}", source, re.DOTALL,
@@ -139,13 +139,18 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
         setup = r"""
 const activeModule=MODULE,isListCentricModule=true,config={};
 const activeLabel={singular:MODULE[0].toUpperCase()+MODULE.slice(1)};
+const toastLabel=activeLabel.singular;
 const masterEditModalElement=document.getElementById('masterEditModal');
 const masterEditModalTitle=document.getElementById('masterEditModalTitle');
 const masterFormModal=document.getElementById('masterFormModal');
 const btnModalSave=document.getElementById('btnModalSave'),btnModalDelete=document.getElementById('btnModalDelete'),btnModalCancel=document.getElementById('btnModalCancel');
 const selectedMasterId={value:''};let selectedOriginalRecord=null,agencyModalMode='create',lastSavedId=null;
 const AGENCY_PLUS_ICON='',AGENCY_CHECK_ICON='',FIELD_ICONS={building:'',store:''};
-const agencyRegistrationPasswords=new Map(),noop=()=>{};
+const registrationPasswords=new Map(),pendingContactActivations=new Set(),noop=()=>{};
+const CONTACT_OWNER_TYPES={agency:'AGENCY',merchant:'MERCHANT',store:'STORE'};
+// The Common modal path (inlineMasterEditor = null): Store and the other list-centric modules edit in this modal.
+// Agency / Merchant now edit in the inline Master-Detail panel (MASTER_DETAIL), which this test does not cover.
+const inlineMasterEditor=null;
 let validationErrors=[],confirmDelete=true,requests=[];
 let savingStoreImage=false;
 const getStoreLogoUploader=()=>null;
@@ -157,6 +162,9 @@ getItemUrl=id=>'/existing/'+MODULE+(id?'/'+id:''),parseApiError=text=>text,
 showCenteredConfirm=async()=>confirmDelete,clearForm=()=>{selectedMasterId.value='';};
 window.fetch=async(path,options)=>{requests.push({path,method:options.method,body:options.body});return new Response(JSON.stringify({id:1}));};
 window.alert=message=>{throw Error('Unexpected alert: '+message);};
+// Save / Delete results go through the Common Toast: success is expected, a warning / error is not.
+window.AwsumToast={success:noop,info:noop,done:noop,message:(action,label)=>label+' '+action+'.',
+  warning:message=>{throw Error('Unexpected warning: '+message);},error:message=>{throw Error('Unexpected error: '+message);}};
 """
         setup += functions + "\n" + handlers + r"""
 window.probe={
@@ -165,7 +173,7 @@ window.probe={
     selectedOriginalRecord={has_agency_admin:true};
     masterFormModal.innerHTML='<div style="height:1800px">Existing module form content</div>';
     openMasterEditModal(mode);
-    if(activeModule==='agency')syncAgencyEmailButton();
+    if(activeModule==='agency')syncRegistrationEmailButtons();
   },
   errors(value){validationErrors=value;},confirm(value){confirmDelete=value;},
   requests,select(){selectedMasterId.value='1';}

@@ -38,7 +38,7 @@ class PlatformAdminTemplateTests(unittest.TestCase):
         ]:
             with self.subTest(page=filename, module=module):
                 html = render_admin(filename, page, module)
-                self.assertEqual(html.count('href="/static/css/awsum-list.css?v=3"'), 1)
+                self.assertEqual(html.count('href="/static/css/awsum-list.css?v=7"'), 1)
                 self.assertIn('class="platform-view awsum-list awsum-admin"', html)
                 self.assertGreater(html.rfind('href="/static/css/awsum-list.css'), html.rfind("</style>"))
                 if filename == "master_management.html":
@@ -47,7 +47,7 @@ class PlatformAdminTemplateTests(unittest.TestCase):
                                     "masterForm", "masterEditModal"):
                         self.assertIn(f'id="{control}"', html)
                 if filename == "system_settings.html":
-                    self.assertEqual(html.count('role="tab"'), 4)
+                    self.assertEqual(html.count('role="tab"'), 5)  # Company, Storage, Email, General, Security
                 if filename != "merchants_tree.html":
                     self.assertIn('awsum-page-header', html)
                     self.assertIn('awsum-filter-card', html)
@@ -104,7 +104,9 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
       assert(!!(header.compareDocumentPosition(filters)&4)&&!!(filters.compareDocumentPosition(content)&4),'header then filters then content');
     }
     if(fixture.filename==='master_management.html'){
+      // storeDevicesPanel: the page's Store Devices panel object (window.AwsumStoreDevices on Platform Admin).
       win.eval("const activeModule="+JSON.stringify(fixture.module)+";const isListCentricModule=true;"+
+        "const storeDevicesPanel={init(){},clear(){}};"+
         "const masterListCol=document.getElementById('masterListCol'),masterEditorCol=document.getElementById('masterEditorCol'),masterListToolbar=document.getElementById('masterListToolbar');"+
         layout+";applyMasterLayoutMode();");
       assert(doc.getElementById('masterEditorCol').classList.contains('d-none'),'existing list-centric editor visibility');
@@ -151,7 +153,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
       assert(!doc.getElementById('storeToolsArea').contains(doc.getElementById('masterListHead')),'store page header stays above filter card');
     }
     if(fixture.filename==='system_settings.html'){
-      assert(root.querySelectorAll('[role="tab"]').length===4,'all settings tabs preserved');
+      assert(root.querySelectorAll('[role="tab"]').length===5,'all settings tabs preserved (Company, Storage, Email, General, Security)');
       const activeTab=win.getComputedStyle(root.querySelector('.nav-link.active'));
       assert(activeTab.backgroundColor==='rgb(255, 255, 255)'&&activeTab.color==='rgb(16, 46, 104)'&&activeTab.boxShadow.includes('rgb(18, 99, 235)'),'shared active tab');
     }

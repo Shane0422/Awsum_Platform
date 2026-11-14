@@ -44,7 +44,9 @@ class StorageInitializationTests(unittest.TestCase):
         self.addCleanup(auth.stop)
         self.request = SimpleNamespace()
         self.agency_payload = {"contact_name": "Contact", "company_name": "Agency", "agency_type_id": 1}
-        self.merchant_payload = {"merchant_name": "New Merchant", "primary_agency_id": 1, "business_type": "Retail"}
+        # Registered Inactive: a Merchant becomes Active only after an active Primary Contact (activation rule).
+        self.merchant_payload = {"merchant_name": "New Merchant", "primary_agency_id": 1, "business_type": "Retail",
+                                 "status": "inactive"}
         self.store_payload = {"store_name": "New Store", "merchant_id": 1, "installed_by_agency_id": 1}
 
     def roots(self, owner):

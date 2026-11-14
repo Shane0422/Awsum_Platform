@@ -265,7 +265,7 @@ class StoreLogoBrowserTests(unittest.TestCase):
         ).group() for name in (
             "getStoreLogoUploader", "getOrganizationLogoUploader", "refreshOrgLogoPreview",
             "refreshStoreLogoPreview", "refreshMerchantStoreModalLogoPreview",
-            "snapshotFormState", "isFormDirty", "getItemUrl", "saveItem", "saveMerchantLinkedStore",
+            "snapshotFormState", "isFormDirty", "getItemUrl", "contactOwner", "saveItem", "saveMerchantLinkedStore",
         ))
         setup = r"""
 let activeModule='store';
@@ -280,9 +280,14 @@ const validateAgencyForm=validateStoreForm,validateMerchantForm=validateStoreFor
 let error='',requests=[],failNext=false;
 const showMasterModalError=message=>{error=message;},parseApiError=value=>value;
 const setBaselineSnapshot=()=>{},updateListCentricActionButtons=()=>{},notifyStorageWarning=()=>{};
-const agencyRegistrationPasswords=new Map();
+const registrationPasswords=new Map(),pendingContactActivations=new Set();
+const CONTACT_OWNER_TYPES={agency:'AGENCY',merchant:'MERCHANT',store:'STORE'};
 const showCenteredConfirm=async()=>true;
 window.alert=message=>{error=message;};
+// Save results and failures go through the Common Toast; a warning / error is recorded like the earlier alert.
+const toastLabel='Store';
+window.AwsumToast={success:()=>{},info:()=>{},done:()=>{},message:(action,label)=>label+' '+action+'.',
+  warning:message=>{error=message;},error:message=>{error=message;}};
 window.fetch=async(path,options)=>{
  requests.push({path,method:options.method,body:options.body});
  if(failNext){failNext=false;return new Response('Save failed',{status:409});}
