@@ -329,9 +329,12 @@ const errorText=find=>find('masterModalError').classList.contains('d-none')?'':f
   assert(created.merchant_name==='Delta Market'&&created.primary_agency_id==='10'&&!('id' in created&&created.id),'create payload: '+JSON.stringify(created));
   await wait(()=>body.querySelector('tr[data-row-select="4"]'),'new row listed');
   await wait(()=>body.querySelector('tr[data-row-select="4"]').classList.contains('selected')&&field('merchant_name').value==='Delta Market','new Merchant selected after save');
-  // The new record stays open; the next save updates it (PUT). (Current behaviour: the header still reads
-  // "Add Merchant" / "Create Merchant" until another record is opened; reported, not changed here.)
-  assert(!modal.hidden,'the new record stays open');
+  // The new record opens through the Edit lifecycle (no Add / Create labels left), and the next save updates it (PUT).
+  const editState=(noun)=>({title:find('masterEditModalTitle').textContent.trim(),save:find('btnModalSave').textContent.trim(),
+    del:win.getComputedStyle(find('btnModalDelete')).display!=='none',create:modal.classList.contains('is-create'),hidden:modal.hidden});
+  await wait(()=>editState().save==='Save Changes','Edit labels after create');
+  const st=editState();  // the Edit title carries the saved record's meta, as when a saved record is opened
+  assert(st.title.startsWith('Edit Merchant')&&st.title.includes('ID: 4')&&st.save==='Save Changes'&&st.del&&!st.create&&!st.hidden,'new Merchant in the Edit state: '+JSON.stringify(st));
   set(win,field('merchant_name'),'Delta Market 2');const beforeEdit=win.requests.length;find('btnModalSave').click();
   await wait(()=>win.requests.slice(beforeEdit).some(r=>r.method==='PUT'&&/^\/platform\/merchant\/4(\/with-image)?$/.test(r.path)),'next save updates the new record');
   assert(!win.requests.slice(beforeEdit).some(r=>r.method==='POST'&&r.path.startsWith('/platform/merchant')),'no second create');
@@ -366,6 +369,9 @@ const errorText=find=>find('masterModalError').classList.contains('d-none')?'':f
   find('btnModalSave').click();
   await wait(()=>win.requests.some(r=>r.method==='POST'&&/^\/platform\/agency(\/with-image)?$/.test(r.path)),'agency POST');
   await wait(()=>body.querySelector('tr[data-row-select="13"]')&&body.querySelector('tr[data-row-select="13"]').classList.contains('selected')&&field('company_name').value==='West Agency','new Agency selected after save');
+  await wait(()=>find('btnModalSave').textContent.trim()==='Save Changes','Agency Edit labels after create');
+  assert(find('masterEditModalTitle').textContent.trim().startsWith('Edit Agency')&&!modal.classList.contains('is-create')&&!modal.hidden
+    &&win.getComputedStyle(find('btnModalDelete')).display!=='none','new Agency in the Edit state: '+find('masterEditModalTitle').textContent);
   await checkLayout(frame,doc,win,'agency after create');
   frame.remove();
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});

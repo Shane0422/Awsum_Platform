@@ -3842,6 +3842,12 @@
     hide() {
       if (!releaseMasterDetailForm()) return;
       if (selectedMasterId.value && selectedOriginalRecord) {
+        // A record was just created: open it through the same lifecycle as selecting a saved record
+        // (Edit title, Save Changes, Delete / Deactivate), instead of keeping the Add / Create state.
+        if (agencyModalMode === 'create') {
+          openSelectedMasterEditFromList();
+          return;
+        }
         refreshStoreLogoPreview(selectedOriginalRecord);
         showMasterDetailForm(true);
       } else {
