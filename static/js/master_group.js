@@ -995,15 +995,16 @@
     const ids = row
       ? `<div class="col-12 mg-record-code"><span class="text-muted small">Employee Code</span> <span class="mg-code fw-semibold" id="mgEmpCode">${esc(row.code)}</span> <span class="text-muted small">(issued automatically, not editable)</span></div>`
       : '<div class="col-12 text-muted small" id="mgEmpCodeNote">The Employee Code is issued automatically when the employee is created.</div>';
-    const info = field('first_name', 'First Name', input('first_name', 'text', 'maxlength="100" autocomplete="off"'))
+    // Personal Information: First | Last Name, Display Name | Birthday (common date input, not in the future) | Gender
+    // (fixed list from /options), Email | Phone. The common field markup and Bootstrap grid widths only.
+    const personal = section('Personal Information', field('first_name', 'First Name', input('first_name', 'text', 'maxlength="100" autocomplete="off"'))
       + field('last_name', 'Last Name', input('last_name', 'text', 'maxlength="100" autocomplete="off"'), { help: 'Enter a First Name or a Last Name.' })
-      + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.' })
-      + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
-      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' });
-    // Personal Information: Birthday (common date input, not in the future) + Gender (fixed list from /options), optional.
-    const personal = section('Personal Information', field('birth_date', 'Birthday', dateInput('birth_date', 'Birthday', 'data-date-max="today" data-date-max-message="Birthday cannot be in the future."'))
-      + field('gender', 'Gender', select('gender')), 'Optional.', 'id="mgEmpPersonal"');
-    // Job Information (top of GENERAL): Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
+      + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.', col: 'col-md-5' })
+      + field('birth_date', 'Birthday', dateInput('birth_date', 'Birthday', 'data-date-max="today" data-date-max-message="Birthday cannot be in the future."'), { col: 'col-md-4' })
+      + field('gender', 'Gender', select('gender'), { col: 'col-md-3' })
+      + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' })
+      + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"')), '', 'id="mgEmpPersonal"');
+    // Job Information (first section of GENERAL, beside the photo like the MD form): Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
     const job = section('Job Information', field('job_grade_code_id', 'Job Grade', select('job_grade_code_id'))
       + field('job_title_code_id', 'Job Title', select('job_title_code_id')),
       'Optional. Job Grades and Titles are managed in Master Group &gt; Common Maintenance.', 'id="mgEmpJob"');
@@ -1091,9 +1092,9 @@
     const background = section('Remark', field('background_remark', 'Remark', `<textarea class="form-control" id="mgf_background_remark" name="background_remark" rows="3" maxlength="4000"></textarea>`, { col: 'col-12' }),
       'Overall background notes (separate from each entry\'s remark).', 'id="mgEmpBackgroundRemark"');
     const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
-          <div class="mg-md-fields">${ids}${section('', info)}</div>
+          <div class="mg-md-fields">${ids}${job}${personal}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>${job}${employment}${personal}${audit}${termination}`],
+        </div>${employment}${audit}${termination}`],
       ['Address', 'ADDRESS', address],
       ['Terminal', 'STORE TERMINAL ACCESS', `${posAccess}${asg}`],
       ['Portal', 'PORTAL ACCESS', portalAccess],

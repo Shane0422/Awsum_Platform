@@ -660,6 +660,13 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  $('mgMdToggle').click();
  await wait(()=>win.requests.some(r=>/reactivate/.test(r.path))&&$('mgf_status').value==='active','rehired');await pause(200);
  assert(term()==='|'&&$('mgf_hire_date').value==='03-01-2027'&&$('mgEmpTermDate').value==='','after rehire: '+term());
+ // narrow screens: the common Bootstrap grid stacks the General fields; nothing overlaps or scrolls sideways
+ for(const width of [760,420]){frame.style.width=width+'px';await pause(300);
+   const pane=$('mgEmpPaneGeneral'),t=id=>$(id).getBoundingClientRect().top;
+   const right=pane.getBoundingClientRect().right,out=[...pane.querySelectorAll('input:not([type=hidden]),select,textarea,button')].filter(e=>e.offsetParent&&e.getBoundingClientRect().right>right+1);
+   assert(!out.length&&doc.documentElement.scrollWidth<=doc.documentElement.clientWidth+1,'no sideways scroll / overflowing control at '+width+': '+out.map(e=>e.id).join());
+   assert(t('mgf_display_name')<t('mgf_birth_date')&&t('mgf_birth_date')<t('mgf_gender')&&t('mgf_email')<t('mgf_phone')&&t('mgf_hire_date')<t('mgf_termination_date'),'stacked at '+width);}
+ frame.style.width='1400px';await pause(200);
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});

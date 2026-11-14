@@ -473,8 +473,12 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const genderSel=$('mgf_gender');
  assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female'&&genderSel.value==='FEMALE','Gender list (Male / Female / not selected) and saved value');
  const after=(a,b)=>$(a).compareDocumentPosition($(b))&win.Node.DOCUMENT_POSITION_FOLLOWING;
- assert(after('mgEmpJob','mgEmpEmployment')&&after('mgEmpEmployment','mgEmpPersonal'),'Job, then Employment, then Personal Information');
- assert(after('mgImageUploader','mgEmpJob')&&!doc.querySelector('.mg-md-fields').contains($('mgf_status')),'Job Information right below the top block; Status moved');
+ // STEP D-2: Job, Personal (both beside the photo, as in the MD form), Employment, Audit, Terminate Employee
+ const heads=[...$('mgEmpPaneGeneral').querySelectorAll('.pm-section-head h3')].map(h=>h.textContent.trim());
+ assert(heads.join('|')==='Job Information|Personal Information|Employment Information|Terminate Employee','GENERAL sections: '+heads);
+ assert(after('mgEmpJob','mgEmpPersonal')&&after('mgEmpPersonal','mgEmpEmployment')&&after('mgEmpEmployment','mgEmpAudit')&&after('mgEmpAudit','mgEmpTerminate'),'section order');
+ const fields=doc.querySelector('.mg-md-fields');
+ assert(fields.contains($('mgEmpCode'))&&fields.contains($('mgEmpJob'))&&fields.contains($('mgEmpPersonal'))&&!fields.contains($('mgf_status')),'Job + Personal in the common top block, Status in Employment');
  assert(!/1990|Female|03\/15/.test($('mgBody').textContent),'Birthday / Gender never in the list display');
  // Employment Information (GENERAL): Hire Date moved here + Job Grade / Job Title (Common codes, optional).
  assert(/^Employment Information/.test($('mgEmpEmployment').querySelector('h3').textContent),'Employment Information section');
@@ -484,6 +488,15 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(top('mgf_job_grade_code_id')===top('mgf_job_title_code_id'),'Job Grade and Job Title on one row');
  assert(['mgf_hire_date','mgf_termination_date','mgf_status','mgf_termination_reason'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Termination Date, Status, Termination Reason');
  assert(top('mgf_hire_date')===top('mgf_termination_date')&&top('mgf_status')===top('mgf_termination_reason')&&top('mgf_status')>top('mgf_hire_date'),'Hire | Termination Date, then Status | Termination Reason');
+ // Personal Information rows: First | Last, Display (5) | Birthday (4) | Gender (3), Email | Phone (6 | 6)
+ const colOf=id=>$(id).closest('[data-field-wrap]').className;
+ assert(top('mgf_first_name')===top('mgf_last_name')&&colOf('mgf_first_name')==='col-md-6'&&colOf('mgf_last_name')==='col-md-6','First | Last Name');
+ assert(top('mgf_display_name')===top('mgf_birth_date')&&top('mgf_birth_date')===top('mgf_gender')&&top('mgf_display_name')>top('mgf_first_name'),'Display Name | Birthday | Gender on one row');
+ assert([colOf('mgf_display_name'),colOf('mgf_birth_date'),colOf('mgf_gender')].join()==='col-md-5,col-md-4,col-md-3','5:4:3');
+ const w=id=>$(id).closest('[data-field-wrap]').getBoundingClientRect().width;
+ assert(w('mgf_display_name')>w('mgf_birth_date')&&w('mgf_birth_date')>w('mgf_gender'),'Gender the narrowest');
+ assert(top('mgf_email')===top('mgf_phone')&&top('mgf_email')>top('mgf_gender')&&$('mgf_email').getBoundingClientRect().left<$('mgf_phone').getBoundingClientRect().left&&colOf('mgf_email')==='col-md-6','Email | Phone');
+ assert(top('mgf_job_grade_code_id')<top('mgf_first_name'),'Job Information above Personal Information');
  assert(!doc.querySelector('.mg-md-fields').contains($('mgf_hire_date'))&&$('mgf_hire_date').value==='11-01-2026','Hire Date moved, value kept (MM-DD-YYYY)');
  const gradeSel=$('mgf_job_grade_code_id'),titleSel=$('mgf_job_title_code_id'),txt=s=>s.options[s.selectedIndex].text;
  assert(gradeSel.options[0].value===''&&gradeSel.options[0].text==='None'&&gradeSel.options.length===9,'8 active Grades + None');
