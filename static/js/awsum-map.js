@@ -1,0 +1,136 @@
+/*
+ * AWSUM Common Map (Employee address now; Merchant / Store / Agency forms reuse it the same way).
+ * One implementation of "Show Map" for an address form: each screen passes its field ids and the map config URL of
+ * its scope (GET {apiBase}/map-config -> { enabled, embed_key }: backend.services.maps through the scope's router).
+ * Privacy: nothing is sent to Google until the user clicks Show Map; Address Line 2 is never part of the map query;
+ * Hide / Reset remove the map frame. Without an Embed key (or if the config cannot be read) only the
+ * "Open in Google Maps" link is shown. Saving and the rest of the form never depend on the map.
+ */
+(function (global) {
+  'use strict';
+
+  const EMBED_URL = 'https://www.google.com/maps/embed/v1/place';
+  const SEARCH_URL = 'https://www.google.com/maps/search/';
+  const INCOMPLETE_MESSAGE = 'Enter Address Line 1 and a ZIP Code (or City and State) to show the map.';
+  const NO_KEY_MESSAGE = 'Map preview is not set up. Use Open in Google Maps.';
+  const configs = {}; // config URL -> Promise of { enabled, embedKey }, read once per page
+
+  const clean = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+
+  // parts: { line1, city, state, zip, country }. Address Line 2 (unit / apartment) is never part of a map query.
+  function formatAddress(parts) {
+    const p = parts || {};
+    const region = [clean(p.state), clean(p.zip)].filter(Boolean).join(' ');
+    return [clean(p.line1), clean(p.city), region, clean(p.country)].filter(Boolean).join(', ');
+  }
+
+  // Enough to find the place: Address Line 1 plus a ZIP Code, or plus City and State.
+  function isComplete(parts) {
+    const p = parts || {};
+    return !!clean(p.line1) && (!!clean(p.zip) || (!!clean(p.city) && !!clean(p.state)));
+  }
+
+  function loadConfig(url) {
+    if (!url) return Promise.resolve({ enabled: false, embedKey: '' });
+    if (!configs[url]) {
+      configs[url] = fetch(url, { credentials: 'same-origin' })
+        .then((res) => (res.ok ? res.json() : {}))
+        .then((data) => ({ enabled: !!(data && data.enabled && data.embed_key), embedKey: (data && data.embed_key) || '' }))
+        .catch(() => {
+          delete configs[url]; // a network failure is retried on the next Show Map
+          return { enabled: false, embedKey: '' };
+        });
+    }
+    return configs[url];
+  }
+
+  // container: element or id; options: { fields: { line1, city, state, zip, country } (ids), configUrl }.
+  // Field ids, not elements, so a re-rendered form is always read fresh. Any edit of those fields resets the map.
+  function create(container, options) {
+    const root = typeof container === 'string' ? document.getElementById(container) : container;
+    const fields = (options && options.fields) || {};
+    root.innerHTML = `<div class="d-flex flex-wrap align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-map-toggle>Show Map</button>
+        <span class="small text-muted" data-map-message role="status"></span></div>
+      <div class="mt-2 d-none" data-map-panel>
+        <div class="ratio ratio-21x9 border rounded" data-map-frame></div>
+        <a class="small d-inline-block mt-1" data-map-link target="_blank" rel="noopener noreferrer">Open in Google Maps</a></div>`;
+    const part = (name) => root.querySelector(`[data-map-${name}]`);
+    const button = part('toggle');
+    let address = null;   // set by setAddress(); otherwise the current field values are read
+    let visible = false;
+    let token = 0;        // a Hide / Reset during the config read cancels that Show
+
+    const message = (text) => { part('message').textContent = text || ''; };
+    const readFields = () => {
+      const value = (key) => { const el = fields[key] && document.getElementById(fields[key]); return el ? el.value : ''; };
+      return { line1: value('line1'), city: value('city'), state: value('state'), zip: value('zip'), country: value('country') };
+    };
+
+    function hide() {
+      token += 1;
+      part('frame').innerHTML = '';   // removes the iframe: no further map request
+      part('frame').classList.remove('d-none');
+      part('panel').classList.add('d-none');
+      part('link').removeAttribute('href');
+      button.textContent = 'Show Map';
+      visible = false;
+    }
+
+    async function show(next) {
+      const parts = next || address || readFields();
+      if (!isComplete(parts)) {
+        hide();
+        message(INCOMPLETE_MESSAGE);
+        return false;
+      }
+      const query = formatAddress(parts);
+      const mine = ++token;
+      message('');
+      visible = true;
+      button.textContent = 'Hide Map';
+      part('link').href = `${SEARCH_URL}?api=1&query=${encodeURIComponent(query)}`;
+      part('panel').classList.remove('d-none');
+      const config = await loadConfig(options && options.configUrl);
+      if (mine !== token) return false;
+      const frame = part('frame');
+      frame.innerHTML = '';
+      if (!config.enabled) {
+        frame.classList.add('d-none');
+        message(NO_KEY_MESSAGE);
+        return true;
+      }
+      frame.classList.remove('d-none');
+      const iframe = document.createElement('iframe');
+      iframe.title = 'Map';
+      iframe.loading = 'lazy';
+      iframe.allowFullscreen = true;
+      iframe.src = `${EMBED_URL}?key=${encodeURIComponent(config.embedKey)}&q=${encodeURIComponent(query)}`;
+      frame.appendChild(iframe);
+      return true;
+    }
+
+    function reset() {
+      address = null;
+      hide();
+      message('');
+    }
+
+    function setAddress(next) {
+      address = next || null;
+      if (visible) show();
+    }
+
+    button.addEventListener('click', () => (visible ? hide() : show()));
+    Object.values(fields).forEach((id) => {
+      const el = id && document.getElementById(id);
+      if (!el) return;
+      // Typing and the common ZIP autofill (which fires 'input' on City / State / Country) both reset the map.
+      ['input', 'change'].forEach((type) => el.addEventListener(type, () => { if (visible || part('message').textContent) reset(); }));
+    });
+
+    return { show, hide, reset, setAddress, isVisible: () => visible };
+  }
+
+  global.AwsumMap = { create, formatAddress, isComplete };
+})(window);

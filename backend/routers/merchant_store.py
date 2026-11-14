@@ -52,6 +52,7 @@ from backend.services.branding import resolve_branding
 from backend.services.business_contact import BusinessContactService
 from backend.services.features import FEATURES, REASON_TEXT, REGISTRY, resolve_features
 from backend.services.images import image_mutation_form
+from backend.services.maps import map_client_config
 from backend.services.merchant_features import business_option_defs
 from backend.services.store_item_features import store_option_enabled
 
@@ -282,6 +283,15 @@ def merchant_zip_lookup(zip_code: str, request: Request, db: Session = Depends(g
     # The Store form's Address ZIP autofill (the same common lookup as Platform; read only, no Store data).
     _merchant_scope(request, db, "read")
     return JSONResponse(lookup_zip(zip_code))
+
+
+@router.get(f"{API}/map-config")
+def merchant_map_config(request: Request, db: Session = Depends(get_db)):
+    # The common Show Map of an address form (static/js/awsum-map.js): any signed-in Portal user (the common Merchant /
+    # Store login + active Merchant scope, no screen permission: it carries no tenant data); returns only enabled + the
+    # browser Embed key, never a server key, another setting or any address. Address data keeps its own permissions.
+    resolve_app_scope(request, db, get_current_user(request, db))
+    return _set_no_cache_headers(JSONResponse(map_client_config()))
 
 
 # ---- Business Contacts (Primary Contact): the common service, owner = a Store of this Merchant ----

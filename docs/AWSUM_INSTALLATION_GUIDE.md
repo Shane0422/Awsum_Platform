@@ -286,6 +286,9 @@ Required/relevant configuration:
 * `AWSUM_TRUSTED_PROXY_CIDRS`: only real trusted proxy networks, when deployed
   behind a proxy; do not trust arbitrary forwarded headers.
 * `AWSUM_GEOIP_DATABASE_PATH`: optional local GeoIP database location, if used.
+* `AWSUM_GOOGLE_MAPS_EMBED_KEY`: optional Google Maps Embed API key for the
+  common Show Map of address forms (`static/js/awsum-map.js`, Employee ADDRESS
+  now). See "Google Maps Embed key" below.
 * Any current session, application-mode, service and optional client settings:
   inspect current implementation/deployment configuration before setting them.
   Do not invent an `AWSUM_ENV` switch or assume `--reload` configures production.
@@ -293,6 +296,47 @@ Required/relevant configuration:
 Remove retired `AWSUM_DATA_ROOT`. Ensure stale process/service environment values
 do not override the new `.env`. Align any saved System Settings path; the
 environment override is authoritative when set.
+
+### Google Maps Embed key (`AWSUM_GOOGLE_MAPS_EMBED_KEY`)
+
+The common Show Map embeds Google Maps in an iframe. Never write a real key in
+code, documents, tests, logs or the database; put it only in the protected
+`.env` or the service environment:
+
+```text
+AWSUM_GOOGLE_MAPS_EMBED_KEY=<your Maps Embed key>
+```
+
+1. **Google Cloud project and billing:** create or choose a Google Cloud project
+   and link a billing account. Google requires billing even though Maps Embed
+   requests are currently no-charge with unlimited usage; check the current
+   Google Maps Platform pricing before go-live.
+2. **Enable the API:** APIs & Services > Library > enable **Maps Embed API**.
+3. **Create the key:** APIs & Services > Credentials > Create credentials >
+   API key.
+4. **Application restriction - HTTP referrers:** allow only the AWSUM web
+   addresses, for example `https://<production-domain>/*` and, for development,
+   `http://localhost:8000/*` and `http://127.0.0.1:8000/*`. This key is a browser
+   key by design (it is part of the map iframe URL), so these restrictions, not
+   secrecy, protect it.
+5. **API restriction:** restrict the key to **Maps Embed API** only.
+6. Set the variable and restart the application. `GET /merchant/api/map-config`
+   (signed-in Portal users only) then returns `enabled: true` with this key, and
+   nothing else.
+
+**Without a key** (unset or empty) the map is disabled: Show Map shows only an
+**Open in Google Maps** link (Google Maps URLs, no key) for the current address.
+If the map cannot load (an invalid or restricted key, an outage), Google's message
+stays inside the map frame and the link still works; saving and the rest of the
+form are never affected.
+
+**Privacy:** an address is sent to Google only when a user clicks Show Map, and
+Address Line 2 is never included. Mention this in the privacy notice.
+
+**Keep future keys separate:** a later Routes / Distance feature (distance,
+travel time) must use its own server-side key with IP and Routes API
+restrictions. Never reuse the Embed key for it, and never return a server key to
+the browser.
 
 Current application startup loads the root `.env`; not every standalone
 database utility loads every local setting. Export required DB settings into the

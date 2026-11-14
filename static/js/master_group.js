@@ -1022,7 +1022,8 @@
       + field('state', 'State', input('state', 'text', 'maxlength="50"'))
       + field('address_line1', 'Address Line 1', input('address_line1', 'text', 'maxlength="200" placeholder="Street address"'), { col: 'col-12' })
       + field('address_line2', 'Address Line 2', input('address_line2', 'text', 'maxlength="200"'), { col: 'col-12' })
-      + field('country', 'Country', input('country', 'text', 'maxlength="100" placeholder="United States"')),
+      + field('country', 'Country', input('country', 'text', 'maxlength="100" placeholder="United States"'))
+      + '<div class="col-12" id="mgEmpMap"></div>', // the common Show Map (static/js/awsum-map.js), current values
       'Optional. Enter a US ZIP Code to fill City and State.', 'id="mgEmpAddress"');
     // POS Access: one POS Login ID per Merchant (all its Stores); PIN set / reset only (never shown).
     const posAccess = section('POS Login', `<div class="col-md-6" data-field-wrap="pos_login_enabled"><label class="form-check mt-md-4 mb-0"><input class="form-check-input" id="mgf_pos_login_enabled" type="checkbox"> Enable POS Login</label></div>`
@@ -1817,6 +1818,11 @@
       if (row && row.read_only) $('mgImageUploader').querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
       bindAssignmentEvents();
       bindLoginAccessEvents();
+      // Common Map: built hidden with every form (so a new selection starts reset); address edits reset it too.
+      if (window.AwsumMap) {
+        AwsumMap.create($('mgEmpMap'), { configUrl: '/merchant/api/map-config',
+          fields: { line1: 'mgf_address_line1', city: 'mgf_city', state: 'mgf_state', zip: 'mgf_zip', country: 'mgf_country' } });
+      }
       loadAssignments(row);
       employeeGrids.forEach((grid) => grid.mount(row));
       if (row && row.status === 'terminated' && f('hire_date')) { // the Hire Date input of the rehire (Reactivate)

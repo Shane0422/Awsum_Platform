@@ -411,6 +411,8 @@ class EmployeeMasterTests(unittest.TestCase):
                 f"window.__list={json.dumps(listing)};window.__options={json.dumps(options)};window.__asg={json.dumps(asg)};"
                 + r"""
 window.requests=[];window.bootstrap=window.bootstrap||{};
+// Map frames record their URL instead of loading it: nothing reaches Google from this test.
+Object.defineProperty(HTMLIFrameElement.prototype,'src',{configurable:true,set(v){this.dataset.testSrc=v;},get(){return this.dataset.testSrc||'';}});
 const J=b=>new Response(JSON.stringify(b),{headers:{'Content-Type':'application/json'}});
 window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  requests.push({path:url.pathname,search:url.search,method:options.method||'GET',body:options.body});
@@ -418,6 +420,8 @@ window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  if(url.pathname.endsWith('/assignments'))return J(__asg);
  if(/\/records\//.test(url.pathname))return J({items:[],can_add:true,read_only_message:null}); // HISTORY / BACKGROUND lists
  if(url.pathname==='/merchant/api/master-group/employee')return J(__list);
+ if(url.pathname==='/merchant/api/map-config')return J({enabled:true,embed_key:'FAKE-KEY'}); // a mock Embed key
+ if(url.pathname.startsWith('/merchant/api/zip-lookup/'))return J({found:true,city:'Reston',state:'VA',country:'United States'});
  if(window.__fail&&options.method==='PUT'){const body=__fail;window.__fail=null;
    return new Response(JSON.stringify(body),{status:422,headers:{'Content-Type':'application/json'}});}
  return J({item:__list.items[0]});};""")
@@ -622,6 +626,43 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgPortalPassword').value===''&&$('mgPortalConfirm').value===''&&/leave empty to keep/.test($('mgPortalPasswordLabel').textContent)&&$('mgPortalConfirmLabel').textContent==='Confirm New Password','reset inputs empty, labelled New Password');
  assert(!$('mgPortalPassword').name&&!$('mgPortalConfirm').name,'password inputs are not part of the Employee Save');
  assert($('mgf_created_by').value==='—'&&$('mgf_updated_by').value==='—'&&$('mgf_updated_at').value==='—','no value: em dash');
+ // Common Map (ADDRESS, static/js/awsum-map.js): hidden, nothing requested before Show Map; the current (unsaved)
+ // values without Address Line 2; an address edit, the ZIP autofill and another selection reset it; Save never sends it.
+ const mapBtn=()=>$('mgEmpMap').querySelector('[data-map-toggle]'),mapLink=()=>$('mgEmpMap').querySelector('[data-map-link]');
+ const mapCalls=()=>win.requests.filter(r=>r.path==='/merchant/api/map-config').length;
+ assert(mapCalls()===0,'no map request before Show Map');
+ assert($('mgEmpAddress').contains($('mgEmpMap'))&&top('mgEmpMap')>top('mgf_country')&&mapBtn().textContent==='Show Map'&&$('mgEmpMap').querySelector('[data-map-panel]').classList.contains('d-none'),'Show Map below the address, map hidden');
+ $('mgEmpTabAddress').click();await pause(250);
+ $('mgf_address_line1').value='';mapBtn().click();await pause(50);
+ assert(/Enter Address Line 1/.test($('mgEmpMap').textContent)&&mapCalls()===0,'incomplete address: hint, no request');
+ const hiddenH=frameH(),hiddenSave=saveTop();
+ $('mgf_address_line1').value='10 Main St';$('mgf_address_line2').value='Apt 7';mapBtn().click();
+ await wait(()=>mapBtn().textContent==='Hide Map'&&$('mgEmpMap').querySelector('iframe'),'map shown');
+ assert(new URL(mapLink().href).searchParams.get('query')==='10 Main St, Fairfax, VA 22031, United States'&&!/Apt/.test(mapLink().href),'current values, Line 2 excluded: '+mapLink().href);
+ const mapSrc=new URL($('mgEmpMap').querySelector('iframe').src);
+ assert(mapSrc.origin+mapSrc.pathname==='https://www.google.com/maps/embed/v1/place'&&mapSrc.searchParams.get('key')==='FAKE-KEY'&&mapSrc.searchParams.get('q')==='10 Main St, Fairfax, VA 22031, United States','mock key: Embed URL');
+ // The common Page Frame (one grid cell for every pane) grows with the map: nothing clipped, Save stays put.
+ const pf=$('mgEmpTabs').closest('.mg-md-pageframe').getBoundingClientRect(),box=$('mgEmpMap').querySelector('.ratio').getBoundingClientRect();
+ assert(box.height>150&&box.bottom<=pf.bottom+1&&box.right<=pf.right+1&&frameH()>hiddenH&&saveTop()===hiddenSave,'map inside the Page Frame: '+[box.height,box.bottom,pf.bottom,frameH(),hiddenH]);
+ assert(doc.documentElement.scrollWidth<=doc.documentElement.clientWidth,'no sideways scroll');
+ mapBtn().click();await pause(50);
+ assert(frameH()===hiddenH&&!$('mgEmpMap').querySelector('iframe'),'Hide: frame back to its height, map frame removed');
+ mapBtn().click();await wait(()=>$('mgEmpMap').querySelector('iframe'),'shown again (cached config)');
+ $('mgf_city').value='Vienna';$('mgf_city').dispatchEvent(new Event('input',{bubbles:true}));
+ assert(mapBtn().textContent==='Show Map'&&!mapLink().hasAttribute('href')&&!$('mgEmpMap').querySelector('iframe'),'address edit resets the map');
+ mapBtn().click();await wait(()=>mapBtn().textContent==='Hide Map','shown again');
+ const zip=$('mgf_zip');zip.dispatchEvent(new Event('focus'));zip.value='20190';zip.dispatchEvent(new Event('blur'));
+ await wait(()=>$('mgf_city').value==='Reston','common ZIP autofill');
+ assert(mapBtn().textContent==='Show Map','ZIP autofill (City / State) resets the map');
+ mapBtn().click();await wait(()=>mapBtn().textContent==='Hide Map','shown before switching');
+ assert(mapCalls()===1,'map config read once');
+ doc.querySelectorAll('#mgBody [data-row-select]')[1].click();await pause(150);
+ assert(mapBtn().textContent==='Show Map'&&$('mgEmpMap').querySelector('[data-map-panel]').classList.contains('d-none')&&$('mgEmpMap').querySelector('[data-map-message]').textContent==='','another employee: map reset');
+ doc.querySelector('#mgBody [data-row-select]').click();await pause(150);
+ $('mgf_address_line1').value='10 Main St';mapBtn().click();await wait(()=>mapBtn().textContent==='Hide Map','shown');
+ win.requests.length=0;$('mgSave').click();await wait(()=>win.requests.some(r=>r.method==='PUT'),'saved');
+ const mapSave=JSON.parse(win.requests.find(r=>r.method==='PUT').body.get('payload'));
+ assert(!Object.keys(mapSave).some(k=>/map/i.test(k))&&mapSave.address_line1==='10 Main St','Save sends the address fields only');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
