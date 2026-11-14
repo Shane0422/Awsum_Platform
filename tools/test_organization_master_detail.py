@@ -112,6 +112,24 @@ window.fetch=async(path,options={})=>{
   if(url.pathname==='/platform/merchants')return json(merchants);
   if(url.pathname==='/platform/agencies')return json(agencies);
   if(url.pathname.startsWith('/platform/zip-lookup/'))return json({city:'Atlanta',state:'GA',country:'United States'});
+  // One-shot server failure for the next Agency / Merchant save: window.__failNext={status,body,type}.
+  if(window.__failNext&&(method==='PUT'||method==='POST')&&/^\/platform\/(merchant|agency)(\/|$)/.test(url.pathname)){
+    const fail=window.__failNext;window.__failNext=null;
+    return new Response(fail.body,{status:fail.status,headers:{'Content-Type':fail.type||'application/json'}});
+  }
+  // Business Contacts (Common contact service API): window.__contacts['MERCHANT:1']=[...].
+  const contactsOf=/^\/platform\/business-contacts\/(AGENCY|MERCHANT)\/(\d+)$/.exec(url.pathname);
+  if(contactsOf){
+    window.__contacts=window.__contacts||{};const list=window.__contacts[contactsOf[1]+':'+contactsOf[2]]||(window.__contacts[contactsOf[1]+':'+contactsOf[2]]=[]);
+    if(method==='POST'){const p=JSON.parse(options.body);if(p.is_primary)list.forEach(c=>{c.is_primary=false;});
+      const c={...p,contact_id:900+list.length,status:'active'};list.push(c);return json(c);}
+    return json(list);
+  }
+  // Registration Email: preview, then send (mail-server acceptance only).
+  const email=/^\/platform\/registration-email\/(AGENCY|MERCHANT)\/(\d+)(\/preview)?$/.exec(url.pathname);
+  if(email){const p=options.body?JSON.parse(options.body):{};const recipient=p.recipient||'owner@example.test';
+    return json(email[3]?{html:'<p>Registration completed</p>',subject:'Registration',recipient,message:'Registration completed'}
+      :{accepted:true,recipient,message_id:'mock-registration'});}
   const saved=/\/platform\/(merchant|agency)(?:\/(\d+))?(?:\/with-image)?$/.exec(url.pathname);
   const table=saved&&saved[1]==='agency'?agencies:merchants;
   if(saved&&(method==='PUT'||method==='POST')){
@@ -221,6 +239,134 @@ const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await t
     frame.style.width=width+'px';await tick();
     assert(doc.documentElement.scrollWidth<=width+1,'no page overflow at '+width);
   }
+  frame.remove();
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
+"""
+        self.run_browser(script)
+
+    def test_inline_create_server_errors_unsaved_switch_contacts_email_and_narrow_layout(self):
+        """The inline Agency / Merchant panel beyond the basic flow: POST create keeps the new record selected; server
+        errors (400 / 409 / 500) stay in the panel; switching rows with unsaved edits (current behaviour: discarded,
+        nothing sent); Business Contacts and Registration Email in the panel; below 992px the panels stack and the
+        actions stay usable; the existing panel geometry (header actions, own scroll, equal height) still holds."""
+        pages = {module: module_page(module) for module in ("merchant", "agency")}
+        script = f"const pages={json.dumps(pages).replace('</', '<' + chr(92) + '/')};\n" + LAYOUT_CHECKS + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=(ms=40)=>new Promise(resolve=>setTimeout(resolve,ms));
+const wait=async(check,label)=>{for(let i=0;i<150;i++){try{if(check())return;}catch(e){}await tick();}throw Error('Timed out: '+label);};
+const open=async(module)=>{
+  const frame=document.createElement('iframe');frame.style.cssText='border:0;width:1440px;height:900px';frame.srcdoc=pages[module];
+  const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),field=name=>find('field_'+name);
+  return {frame,doc,win,find,field,body:find('masterListBody'),modal:find('masterEditModal')};
+};
+const set=(win,el,value)=>{el.value=value;el.dispatchEvent(new win.Event('input',{bubbles:true}));el.dispatchEvent(new win.Event('change',{bubbles:true}));};
+const payloadOf=(win,request)=>request.body instanceof win.FormData?JSON.parse(request.body.get('payload')||'{}'):JSON.parse(request.body||'{}');
+const errorText=find=>find('masterModalError').classList.contains('d-none')?'':find('masterModalError').textContent.trim();
+(async()=>{
+  // ---------------- Merchant ----------------
+  let {frame,doc,win,find,field,body,modal}=await open('merchant');
+  win.__contacts={'MERCHANT:1':[{contact_id:801,contact_role:'PRIMARY',first_name:'Jane',last_name:'Primary',email:'jane@example.test',phone:'404-555-0101',is_primary:true,status:'active'}]};
+  await wait(()=>body.textContent.includes('Alpha Mart'),'merchant list');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>field('merchant_name').value==='Alpha Mart','merchant 1');
+  // Server errors stay in the panel; nothing else changes (400 rule text, 409 duplicate, 500 non-JSON).
+  for(const [status,bodyText,type,expected] of [
+    [400,JSON.stringify({detail:'Save the Merchant as Inactive, add an active Primary Contact, then activate it.'}),'application/json','Save the Merchant as Inactive, add an active Primary Contact, then activate it.'],
+    [409,JSON.stringify({detail:'A merchant with this name already exists.'}),'application/json','A merchant with this name already exists.'],
+    [500,'Internal Server Error','text/plain','Something went wrong. Please try again.']]){
+    win.__failNext={status,body:bodyText,type};
+    set(win,field('merchant_name'),'Alpha Mart '+status);
+    const before=win.requests.length;find('btnModalSave').click();
+    await wait(()=>errorText(find)!=='','error '+status);
+    assert(errorText(find)===expected,status+' shown in the panel: '+errorText(find));
+    assert(!modal.hidden&&field('merchant_name').value==='Alpha Mart '+status&&body.querySelector('tr[data-row-select="1"]').classList.contains('selected'),status+': form and selection kept');
+    assert(win.requests.slice(before).filter(r=>r.method==='PUT').length===1&&!body.textContent.includes('Alpha Mart '+status),status+': one request, list unchanged');
+    find('btnModalCancel').click();await tick();
+    assert(field('merchant_name').value==='Alpha Mart',status+': Cancel restores the saved value');
+  }
+  // Unsaved edits + another row (current behaviour): the other record opens, nothing is sent, the edit is discarded.
+  set(win,field('merchant_name'),'Unsaved Name');
+  const beforeSwitch=win.requests.length;
+  body.querySelector('tr[data-row-select="3"]').click();
+  await wait(()=>field('merchant_name').value==='Gamma Shop','switched with unsaved edits');
+  assert(!win.requests.slice(beforeSwitch).some(r=>r.method==='PUT'||r.method==='POST'),'unsaved edits are not saved by switching');
+  body.querySelector('tr[data-row-select="1"]').click();
+  await wait(()=>field('merchant_name').value==='Alpha Mart','back: saved value, edit discarded');
+  // Business Contacts in the panel (Contact tab): list, add through the Common contact API, refreshed list.
+  [...modal.querySelectorAll('.merchant-tab-btn')].find(b=>b.textContent.trim()==='Contact').click();await tick();
+  await wait(()=>find('businessContactList').textContent.includes('Jane Primary'),'contacts listed');
+  assert(find('businessContactList').getBoundingClientRect().width>0,'Contact tab shows the contact list');
+  assert(find('businessContactList').querySelector('.badge')&&find('businessContactList').textContent.includes('Primary'),'primary contact marked');
+  find('btnAddBusinessContact').click();await tick();
+  assert(!find('businessContactEditor').classList.contains('d-none'),'contact editor in the panel');
+  set(win,find('bc_first_name'),'Sam');set(win,find('bc_last_name'),'Second');set(win,find('bc_email'),'sam@example.test');
+  find('bc_is_primary').checked=false;const beforeContact=win.requests.length;find('btnSaveBusinessContact').click();
+  await wait(()=>win.requests.some(r=>r.method==='POST'&&r.path==='/platform/business-contacts/MERCHANT/1'),'contact POST');
+  const contactPost=payloadOf(win,win.requests.find(r=>r.method==='POST'&&r.path==='/platform/business-contacts/MERCHANT/1'));
+  assert(contactPost.first_name==='Sam'&&contactPost.email==='sam@example.test'&&contactPost.is_primary===false,'contact payload: '+JSON.stringify(contactPost));
+  await wait(()=>find('businessContactList').textContent.includes('Sam Second'),'contacts refreshed');
+  assert(!win.requests.slice(beforeContact).some(r=>(r.method==='PUT'||r.method==='POST')&&r.path.startsWith('/platform/merchant')),'the contact save writes no Merchant record');
+  // Registration Email from the panel: preview first (never sends), then an explicit send.
+  const emailButton=find('btnContactRegistrationEmail');
+  assert(emailButton&&!emailButton.disabled&&emailButton.getBoundingClientRect().width>0,'Registration Email available for the saved Merchant');
+  emailButton.click();
+  await wait(()=>find('sdEmailSend')&&!find('sdEmailSend').disabled,'email preview');
+  assert(win.requests.some(r=>r.path==='/platform/registration-email/MERCHANT/1/preview')&&!win.requests.some(r=>r.path==='/platform/registration-email/MERCHANT/1'),'preview only');
+  assert(find('sdEmailTo').value==='owner@example.test','recipient from the preview');
+  find('sdEmailSend').click();
+  await wait(()=>win.requests.some(r=>r.path==='/platform/registration-email/MERCHANT/1'),'email send');
+  find('sdEmailModal').dispatchEvent(new win.Event('hidden.bs.modal'));await tick();
+  // POST create: the new Merchant is saved through the existing create API and stays selected.
+  find('btnListAdd').click();await wait(()=>field('merchant_name').value==='','create form');
+  set(win,field('merchant_name'),'Delta Market');set(win,field('primary_agency_id'),'10');set(win,field('business_type'),'Retail');
+  set(win,field('status'),'inactive');
+  find('btnModalSave').click();
+  await wait(()=>win.requests.some(r=>r.method==='POST'&&/^\/platform\/merchant(\/with-image)?$/.test(r.path)),'create POST');
+  const created=payloadOf(win,win.requests.find(r=>r.method==='POST'&&/^\/platform\/merchant(\/with-image)?$/.test(r.path)));
+  assert(created.merchant_name==='Delta Market'&&created.primary_agency_id==='10'&&!('id' in created&&created.id),'create payload: '+JSON.stringify(created));
+  await wait(()=>body.querySelector('tr[data-row-select="4"]'),'new row listed');
+  await wait(()=>body.querySelector('tr[data-row-select="4"]').classList.contains('selected')&&field('merchant_name').value==='Delta Market','new Merchant selected after save');
+  // The new record stays open; the next save updates it (PUT). (Current behaviour: the header still reads
+  // "Add Merchant" / "Create Merchant" until another record is opened; reported, not changed here.)
+  assert(!modal.hidden,'the new record stays open');
+  set(win,field('merchant_name'),'Delta Market 2');const beforeEdit=win.requests.length;find('btnModalSave').click();
+  await wait(()=>win.requests.slice(beforeEdit).some(r=>r.method==='PUT'&&/^\/platform\/merchant\/4(\/with-image)?$/.test(r.path)),'next save updates the new record');
+  assert(!win.requests.slice(beforeEdit).some(r=>r.method==='POST'&&r.path.startsWith('/platform/merchant')),'no second create');
+  await wait(()=>body.textContent.includes('Delta Market 2'),'list refreshed after the update');
+  // The existing panel geometry still holds after these flows (header actions, own scroll, equal height).
+  await checkLayout(frame,doc,win,'merchant after create');
+  // Below 992px: list and panel stack, the panel actions stay visible, inside the screen and clickable.
+  for(const width of [991,768,420]){
+    frame.style.width=width+'px';frame.style.height='900px';win.scrollTo(0,0);await tick(120);
+    const list=doc.querySelector('.mg-md-list-panel').getBoundingClientRect(),panel=doc.querySelector('.mg-md-form-panel').getBoundingClientRect();
+    assert(panel.top>=list.bottom-1&&Math.abs(panel.left-list.left)<2,width+'px: panels stacked: '+[list.bottom,panel.top]);
+    assert(doc.documentElement.scrollWidth<=width+1,width+'px: no sideways scroll');
+    for(const id of ['btnModalCancel','btnModalSave']){
+      const button=find(id);button.scrollIntoView({block:'center'});await tick(60);
+      const r=button.getBoundingClientRect(),hit=doc.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+      assert(r.width>0&&r.left>=0&&r.right<=width+1&&(hit===button||button.contains(hit)),width+'px: '+id+' visible and clickable');
+    }
+  }
+  frame.remove();
+  // ---------------- Agency ----------------
+  ({frame,doc,win,find,field,body,modal}=await open('agency'));
+  await wait(()=>body.textContent.includes('North Agency'),'agency list');
+  body.querySelector('tr[data-row-select="10"]').click();
+  await wait(()=>field('company_name').value==='North Agency','agency 10');
+  win.__failNext={status:409,body:JSON.stringify({detail:'An agency with this company name already exists.'})};
+  set(win,field('company_name'),'North Agency Copy');find('btnModalSave').click();
+  await wait(()=>errorText(find)!=='','agency 409');
+  assert(errorText(find)==='An agency with this company name already exists.'&&!modal.hidden,'agency server error in the panel');
+  find('btnModalCancel').click();await tick();
+  find('btnListAdd').click();await wait(()=>field('company_name').value==='','agency create form');
+  set(win,field('company_name'),'West Agency');set(win,field('agency_type_id'),'1');set(win,field('status'),'inactive');
+  find('btnModalSave').click();
+  await wait(()=>win.requests.some(r=>r.method==='POST'&&/^\/platform\/agency(\/with-image)?$/.test(r.path)),'agency POST');
+  await wait(()=>body.querySelector('tr[data-row-select="13"]')&&body.querySelector('tr[data-row-select="13"]').classList.contains('selected')&&field('company_name').value==='West Agency','new Agency selected after save');
+  await checkLayout(frame,doc,win,'agency after create');
   frame.remove();
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});});
