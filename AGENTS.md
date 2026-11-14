@@ -25,5 +25,10 @@
   Never create `backend/static` or put server assets in `frontend`.
 - Before Store Server, Offline Operation, Sync, Local DB, Device Role or Device
   License work, read [AWSUM STORE SERVER ARCHITECTURE](docs/AWSUM_STORE_SERVER_ARCHITECTURE.md).
+- Before adding or changing any management form, list, Master or its API, read
+  [AWSUM FORM DEVELOPMENT STANDARD](docs/AWSUM_FORM_DEVELOPMENT_STANDARD.md) and
+  reuse the parts in [AWSUM COMMON COMPONENT INVENTORY](docs/AWSUM_COMMON_COMPONENT_INVENTORY.md).
+  New Merchant / Store Masters use the Master Group engine; never create a new
+  form engine or a screen-specific copy of a common function.
 - Do not introduce an architecture conflicting with these authoritative
   standards without explicit approval.

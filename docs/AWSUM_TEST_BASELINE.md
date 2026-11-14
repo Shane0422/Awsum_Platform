@@ -7,11 +7,38 @@ Full suite (`.venv/Scripts/python -m unittest $(ls tools/test_*.py | sed 's#/#.#
 A new failure is anything not listed here. These are pre-existing and not caused by STEP 2 / STEP 3-3C; none is in the
 Merchant MD, Feature, Location or Store Item Feature modules. They are tracked separately and are not fixed yet.
 
-## Unstable (flaky) browser test
+**Current count (2026-11-14, Common Framework P0, base `cbdb362`): 710 tests, 27 failures, 10 errors, 11 skipped.**
+The failure / error list is exactly the list below; the 27th failure is the flaky MD browser test (section
+"Unstable"). New tests since the first record pass.
+
+## Classification (Common Framework P0, 2026-11-14)
+
+Recorded from the failure messages of the 2026-11-14 full run. Nothing was fixed and no expected result was changed;
+each group needs its own approved step. "Stale test" means the application changed on purpose and the test still
+expects the earlier version; the fix is to update the test to the approved behaviour after review, not to change
+the application.
+
+| Group | Count | Tests | Message | Cause |
+|---|---|---|---|---|
+| S1. Stale test: stylesheet version | 19 failures | `test_platform_admin_ui...test_every_management_module_reuses_single_shared_stylesheet` (all subtests) | `0 != 1` | the test looks for `awsum-list.css?v=3`; the bases now load `?v=7` (`platform_base.html`) / `?v=8` (`master_group.html`) |
+| S2. Stale test: extracted functions | 3 errors + 4 failures | `test_agency_activation_browser` (2 errors, 1 failure), `test_master_form_modal` (1 error, 1 failure), `test_store_logo...test_both_store_forms_use_common_pending_preview_cancel_and_save`, `test_platform_admin_ui...test_shared_visuals_and_preserved_layouts` | `'NoneType' object has no attribute 'group'`; `ReferenceError: contactOwner / bindRegistrationEmailButton is not defined`; `storeDevicesPanel.init is not a function` | these tests copy single functions out of `master_management.html` by regex; functions were renamed (`openAgencyRegistrationEmail` -> `openRegistrationEmail`) or gained new helpers / panel APIs the copied set does not include |
+| S3. Stale test: template harness | 2 errors | `test_money_browser` (2) | `'page_header' is undefined` | the test renders a template without the `management_layout.html` macro import that the page now uses |
+| R1. Business rule changed | 3 errors + 2 failures | `test_storage_initialization` (3), `test_business_codes...(url='/platform/merchant', '/platform/merchant/with-image')` (2) | `400: Save the Merchant as Inactive, add an active Primary Contact, then activate it.` | the tests create an Active Merchant directly; the registration rule now requires Inactive -> Primary Contact -> Active |
+| R2. Login flow changed (needs review) | 2 errors + 1 failure | `test_branding...test_every_context_preserves_its_entry_on_logout_and_termination (agency, merchant)`, `test_branding...test_platform_login_logout_and_nonplatform_endpoints_remain_restricted` | `401: A valid authenticated login context is required.`; `303 != 400` (Store login without an operation DB) | session / login-context rules changed after the tests were written; whether the test or the behaviour is right must be confirmed before changing either |
+| F. Flaky | 1 failure | `test_master_group_ui...test_md_store_item_features_off_hide_fields_and_keep_saved_values` | `Timed out waiting for UI update` | timing; see "Unstable" |
+
+Totals: S1 19 + S2 7 + S3 2 + R1 5 + R2 3 + F 1 = 37 = 27 failures + 10 errors (the flaky test is one of the
+27 failures). No group touches Employee, Map, Master Group CRUD or the Split Layout standard.
+
+## Unstable (flaky) browser tests
 
 - `tools.test_master_group_ui.MasterGroupListBrowserTests.test_md_store_item_features_off_hide_fields_and_keep_saved_values`
   fails intermittently in the full suite (timing) and passes when run alone (2/2 on 2026-11-12). Rerun it in isolation
-  before treating it as a regression.
+  before treating it as a regression. It also fails alone at times on committed code (1/6 at `5c16192`, 2026-11-13;
+  1/2 on 2026-11-14); the message is always "Timed out waiting for UI update".
+- `tools.test_image_components.SharedImageComponentTests.test_local_preview_validation_cancel_form_payload_and_avatar_fallback`
+  has failed intermittently in earlier full runs (avatar fallback timing) and passes when rerun; it passed in the
+  2026-11-14 run.
 
 ## Failures (26)
 
