@@ -357,6 +357,34 @@
   const select = (name, extra) => `<select class="form-select" id="mgf_${name}" name="${name}" ${extra || ''}></select>`;
   const textarea = (name) => `<textarea class="form-control" id="mgf_${name}" name="${name}" rows="2"></textarea>`;
   const activeField = () => field('active', 'Status', select('active'), { col: 'col-md-6' });
+  // ---- Common Form Definition (Common Framework P1-a): a form described as data, drawn by the helpers above. ----
+  // Field: { name, label, type: 'text' | 'decimal' | 'select' | 'textarea', max, required, help, col (default col-md-6) }.
+  // name is the payload key and the key of the server's field errors (FieldErrors), so fillForm(), collect() and
+  // showFieldErrors() work unchanged. The server stays the authority for every rule (max / required only mirror it).
+  // An entity listed in FORM_FIELDS is drawn from its definition; the others keep their formHtml() case.
+  const COMMON_FIELDS = {
+    active: { name: 'active', label: 'Status', type: 'select' },
+    notes: { name: 'notes', label: 'Notes', type: 'textarea', col: 'col-12' },
+  };
+  const FORM_FIELDS = {
+    tax: [
+      { name: 'name', label: 'Tax Name', type: 'text', max: 100, required: true },
+      { name: 'rate', label: 'Tax Rate (%)', type: 'decimal', required: true, help: '0 is allowed. Up to 4 decimal places.' },
+      COMMON_FIELDS.active,
+      COMMON_FIELDS.notes,
+    ],
+  };
+  function controlFromDef(def) {
+    switch (def.type) {
+      case 'text': return input(def.name, 'text', def.max ? `maxlength="${def.max}"` : '');
+      case 'decimal': return input(def.name, 'text', 'inputmode="decimal"');
+      case 'select': return select(def.name);
+      case 'textarea': return textarea(def.name);
+      default: throw new Error(`Unknown field type "${def.type}" (${def.name}).`);
+    }
+  }
+  const fieldFromDef = (def) => field(def.name, def.label, controlFromDef(def), { col: def.col || 'col-md-6', required: def.required, help: def.help });
+  const formFromDefinition = (defs) => defs.map(fieldFromDef).join('');
   // Location Code placeholder by Area (an example only; the format is never enforced).
   // ---- Location Master: one range form for new locations (Zone + two From/To ranges -> every combination) ----
   // Sales Floor S01-B01-C01 (Bay, Shelf); Warehouse W01-R01-C01 (Rack, Level). From = To creates one code.
@@ -524,12 +552,9 @@
   }
 
   function formHtml() {
+    if (FORM_FIELDS[entity]) return formFromDefinition(FORM_FIELDS[entity]);
     const notes = field('notes', 'Notes', textarea('notes'), { col: 'col-12' });
     switch (entity) {
-      case 'tax':
-        return field('name', 'Tax Name', input('name', 'text', 'maxlength="100"'), { required: true })
-          + field('rate', 'Tax Rate (%)', input('rate', 'text', 'inputmode="decimal"'), { required: true, help: '0 is allowed. Up to 4 decimal places.' })
-          + activeField() + notes;
       case 'category1':
         return field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
           + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
