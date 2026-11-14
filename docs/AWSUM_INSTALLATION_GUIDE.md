@@ -325,9 +325,13 @@ AWSUM_GOOGLE_MAPS_EMBED_KEY=<your Maps Embed key>
    nothing else.
 
 **Without a key** (unset or empty) the map inside AWSUM is disabled: Show Map
-points to the separate **Open in Google Maps** button, which always works without
-a key (Google Maps URLs, a new tab with `noopener,noreferrer`, the current
-address). If the map cannot load (an invalid or restricted key, an outage),
+opens no map box and stays as it is, and a hint points to the separate **Open in
+Google Maps** button, which always works without a key (Google Maps URLs, a new
+tab with `noopener,noreferrer`, the current address). If the map settings cannot
+be read (for example HTTP 404 after code was updated without restarting the
+application, HTTP 500, or a network error) the hint says so with the reason and
+the next Show Map reads them again. The map box is 380px high and as wide as the
+form. If the map cannot load (an invalid or restricted key, an outage),
 Google's message stays inside the map frame and the button still works; saving
 and the rest of the form are never affected.
 

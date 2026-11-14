@@ -23,7 +23,7 @@ FAKE_KEY = "FAKE-embed-key/for+tests"
 class CommonMapSourceTests(unittest.TestCase):
     def test_employee_form_uses_the_common_module_without_a_key_in_code(self):
         group = (ROOT / "templates" / "platform" / "master_group.html").read_text(encoding="utf-8")
-        self.assertIn('<script src="/static/js/awsum-map.js?v=2"></script>{% endif %}', group)  # Employee page only
+        self.assertIn('<script src="/static/js/awsum-map.js?v=3"></script>{% endif %}', group)  # Employee page only
         js = (ROOT / "static" / "js" / "master_group.js").read_text(encoding="utf-8")
         self.assertIn("AwsumMap.create($('mgEmpMap'), { configUrl: '/merchant/api/map-config'", js)
         self.assertNotIn("google.com/maps", js)                     # the map URLs live only in the module
@@ -99,6 +99,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const calls=[],opened=[];let release;
  window.open=(url,target,features)=>{opened.push({url,target,features});return null;};const gate=new Promise(r=>{release=r;});
  window.fetch=async(path)=>{calls.push(path);if(path==='/slow/map-config')await gate;
+   if(path==='/net/map-config')throw new TypeError('Failed to fetch');
+   if(path==='/e404/map-config'||path==='/e500/map-config')return new Response('{}',{status:Number(path.slice(2,5)),headers:{'Content-Type':'application/json'}});
    const body=path==='/key/map-config'||path==='/slow/map-config'?{enabled:true,embed_key:KEY}:{enabled:false,embed_key:''};
    return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});};
  const fields={line1:'l1',city:'c',state:'s',zip:'z',country:'n'};
@@ -118,34 +120,47 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  $('z').value='22031';$('z').dispatchEvent(new Event('input',{bubbles:true}));
  assert(msg.textContent==='','editing clears the hint');
  $('l1').value='12 A&B St #5 / Rear?';$('l2').value='Apt 9 SECRET-UNIT';$('c').value='Fairfax';$('s').value='VA';$('n').value='United States';
- btn.click();await pause(30);
- assert(map.isVisible()&&btn.textContent==='Hide Map'&&!panel.classList.contains('d-none'),'shown');
+ btn.click();
+ assert(/Loading map/.test(msg.textContent)&&btn.textContent==='Show Map'&&panel.classList.contains('d-none'),'config read: hint only, no empty box');
+ await pause(30);
  assert(calls.join()==='/none/map-config','config read on Show Map only');
- assert(!$('m1').querySelector('iframe')&&/not set up/.test(msg.textContent),'no key: no map frame, hint');
+ assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none')&&!$('m1').querySelector('iframe'),'no key: Show Map stays, no empty map box');
+ assert(msg.textContent==='Map preview is not set up. Use Open in Google Maps.','no key: hint');
  ext.click();
  const tab=opened[0]||{},href=tab.url||'',u=new URL(href);
  assert(opened.length===1&&href.startsWith('https://www.google.com/maps/search/?api=1&query=')&&tab.target==='_blank'&&tab.features==='noopener,noreferrer','new tab, official URL, noopener,noreferrer: '+JSON.stringify(tab));
  assert(u.searchParams.get('query')==='12 A&B St #5 / Rear?, Fairfax, VA 22031, United States'&&!/[&#?]B|#5/.test(href.split('query=')[1]),'query safely encoded: '+href);
  assert(!href.includes('SECRET-UNIT')&&!href.includes('Apt'),'Address Line 2 excluded');
- assert(map.isVisible()&&calls.length===1,'the external tab leaves the inside map as it is and reads no config');
- btn.click();
- assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none'),'Hide');
+ assert(!map.isVisible()&&calls.length===1&&msg.textContent==='','the external tab reads no config (hint cleared)');
  // Without any Show Map and without a key: the external button still works with the current values.
  const plain=AwsumMap.create('m2',{fields});
  $('m2').querySelector('[data-map-external]').click();
  assert(opened.length===2&&new URL(opened[1].url).searchParams.get('query')==='12 A&B St #5 / Rear?, Fairfax, VA 22031, United States'&&!plain.isVisible(),'external button needs no key and no config');
  btn.click();await pause(20);
- assert(calls.length===1,'config read once per page');
+ assert(calls.length===1&&/not set up/.test(msg.textContent),'config (no key) read once per page');
  // Address edits reset (typing, and the ZIP autofill's input events on City / State / Country).
  $('c').value='Vienna';$('c').dispatchEvent(new Event('input',{bubbles:true}));
- assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none'),'City edit resets');
+ assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none')&&msg.textContent==='','City edit resets the hint');
  btn.click();await pause(20);$('n').dispatchEvent(new Event('change',{bubbles:true}));
- assert(!map.isVisible(),'Country change resets');
+ assert(!map.isVisible()&&msg.textContent==='','Country change resets');
+ // A config read that fails (HTTP 404 / 500, network) is told apart from "no key", opens no box and is read again.
+ for(const [url,reason] of [['/e404/map-config','HTTP 404'],['/e500/map-config','HTTP 500'],['/net/map-config','network error']]){
+   const bad=AwsumMap.create('m2',{configUrl:url,fields}),b=$('m2').querySelector('[data-map-toggle]'),m=$('m2').querySelector('[data-map-message]');
+   const before=calls.length;b.click();await pause(30);
+   assert(!bad.isVisible()&&b.textContent==='Show Map'&&$('m2').querySelector('[data-map-panel]').classList.contains('d-none')&&!$('m2').querySelector('iframe'),url+': no map box');
+   assert(m.textContent===`Map settings could not be loaded (${reason}). Try again or use Open in Google Maps.`&&!/not set up/.test(m.textContent),url+': '+m.textContent);
+   b.click();await pause(30);
+   assert(calls.length===before+2,url+': a failed read is not kept, the next Show Map reads again');
+   $('m2').querySelector('[data-map-external]').click();
+   assert(new URL(opened[opened.length-1].url).searchParams.get('query')==='12 A&B St #5 / Rear?, Vienna, VA 22031, United States',url+': Open in Google Maps still works');
+ }
  // Embed key: the map frame with the encoded key and address; Hide / Reset remove it.
  const keyed=AwsumMap.create($('m2'),{configUrl:'/key/map-config',fields});
  $('m2').querySelector('[data-map-toggle]').click();await pause(30);
  const iframe=$('m2').querySelector('iframe');
- assert(iframe&&iframe.closest('.ratio')&&iframe.title==='Map','map frame in the common Bootstrap ratio box');
+ const box=iframe&&iframe.closest('[data-map-frame]');
+ assert(iframe&&box&&iframe.title==='Map'&&box.style.height==='380px'&&box.getBoundingClientRect().height===380&&!iframe.closest('.ratio'),'map frame in the common 380px box');
+ assert($('m2').querySelector('[data-map-toggle]').textContent==='Hide Map'&&keyed.isVisible(),'key: Hide Map');
  const src=new URL(iframe.src);
  assert(iframe.src.startsWith('https://www.google.com/maps/embed/v1/place?key=')&&src.searchParams.get('key')===KEY&&src.searchParams.get('q')==='12 A&B St #5 / Rear?, Vienna, VA 22031, United States','embed URL: '+iframe.src);
  assert(!iframe.src.includes(KEY)&&!iframe.src.includes('SECRET-UNIT'),'key encoded, Line 2 excluded');

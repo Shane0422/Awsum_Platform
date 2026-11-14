@@ -4,8 +4,10 @@
  * its scope (GET {apiBase}/map-config -> { enabled, embed_key }: backend.services.maps through the scope's router).
  * Two actions: Show / Hide Map (the map inside AWSUM) and Open in Google Maps (a new browser tab, Google Maps URLs,
  * no key needed). Privacy: nothing is sent to Google until the user clicks one of them; Address Line 2 is never part
- * of a map query; Hide / Reset remove the map frame. Without an Embed key (or if the config cannot be read) Show Map
- * points to Open in Google Maps. Saving and the rest of the form never depend on the map.
+ * of a map query; Hide / Reset remove the map frame. The map box is 380px high and as wide as the form. It opens only
+ * once the config says a key is set: without an Embed key, or when the config cannot be read (HTTP error / network),
+ * Show Map stays as it is and a hint (different for each case) points to Open in Google Maps. Saving and the rest of
+ * the form never depend on the map.
  */
 (function (global) {
   'use strict';
@@ -14,7 +16,16 @@
   const SEARCH_URL = 'https://www.google.com/maps/search/';
   const INCOMPLETE_MESSAGE = 'Enter Address Line 1 and a ZIP Code (or City and State) to show the map.';
   const NO_KEY_MESSAGE = 'Map preview is not set up. Use Open in Google Maps.';
-  const configs = {}; // config URL -> Promise of { enabled, embedKey }, read once per page
+  const LOADING_MESSAGE = 'Loading map...';
+  const MAP_HEIGHT = 380; // px, every address form; the width follows the form content
+  const configs = {}; // config URL -> Promise of { state, embedKey, status }; a read answer is kept for the page
+
+  // The hint when the map cannot be shown: no key (a set-up choice) versus a config read that failed.
+  function configMessage(config) {
+    if (config.state === 'off') return NO_KEY_MESSAGE;
+    const reason = config.status ? `HTTP ${config.status}` : 'network error';
+    return `Map settings could not be loaded (${reason}). Try again or use Open in Google Maps.`;
+  }
 
   const clean = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
 
@@ -31,15 +42,23 @@
     return !!clean(p.line1) && (!!clean(p.zip) || (!!clean(p.city) && !!clean(p.state)));
   }
 
+  // state: 'ready' (key set), 'off' (no key) or 'error' (HTTP error with its status, or network / bad answer: status 0).
+  // Only an answer is kept; an error is read again on the next Show Map.
   function loadConfig(url) {
-    if (!url) return Promise.resolve({ enabled: false, embedKey: '' });
+    if (!url) return Promise.resolve({ state: 'off', embedKey: '', status: 0 });
     if (!configs[url]) {
       configs[url] = fetch(url, { credentials: 'same-origin' })
-        .then((res) => (res.ok ? res.json() : {}))
-        .then((data) => ({ enabled: !!(data && data.enabled && data.embed_key), embedKey: (data && data.embed_key) || '' }))
-        .catch(() => {
-          delete configs[url]; // a network failure is retried on the next Show Map
-          return { enabled: false, embedKey: '' };
+        .then((res) => {
+          if (!res.ok) return { state: 'error', embedKey: '', status: res.status };
+          return res.json().then((data) => {
+            const key = (data && data.enabled && data.embed_key) || '';
+            return { state: key ? 'ready' : 'off', embedKey: key, status: res.status };
+          });
+        })
+        .catch(() => ({ state: 'error', embedKey: '', status: 0 }))
+        .then((config) => {
+          if (config.state === 'error') delete configs[url];
+          return config;
         });
     }
     return configs[url];
@@ -54,7 +73,7 @@
         <button type="button" class="btn btn-sm btn-outline-primary" data-map-toggle>Show Map</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-map-external>Open in Google Maps</button>
         <span class="small text-muted" data-map-message role="status"></span></div>
-      <div class="mt-2 d-none" data-map-panel><div class="ratio ratio-21x9 border rounded" data-map-frame></div></div>`;
+      <div class="mt-2 d-none" data-map-panel><div class="w-100 border rounded overflow-hidden" data-map-frame style="height:${MAP_HEIGHT}px"></div></div>`;
     const part = (name) => root.querySelector(`[data-map-${name}]`);
     const button = part('toggle');
     let address = null;   // set by setAddress(); otherwise the current field values are read
@@ -70,7 +89,6 @@
     function hide() {
       token += 1;
       part('frame').innerHTML = '';   // removes the iframe: no further map request
-      part('frame').classList.remove('d-none');
       part('panel').classList.add('d-none');
       button.textContent = 'Show Map';
       visible = false;
@@ -85,21 +103,22 @@
       }
       const query = formatAddress(parts);
       const mine = ++token;
-      message('');
-      visible = true;
-      button.textContent = 'Hide Map';
-      part('panel').classList.remove('d-none');
+      if (!visible) message(LOADING_MESSAGE); // a redraw of an open map keeps it open while the config is read
       const config = await loadConfig(options && options.configUrl);
       if (mine !== token) return false;
       const frame = part('frame');
       frame.innerHTML = '';
-      if (!config.enabled) {
-        frame.classList.add('d-none');
-        message(NO_KEY_MESSAGE);
-        return true;
+      if (config.state !== 'ready') {
+        hide();                          // no empty map box: Show Map stays, only the hint
+        message(configMessage(config));
+        return false;
       }
-      frame.classList.remove('d-none');
+      message('');
+      visible = true;
+      button.textContent = 'Hide Map';
+      part('panel').classList.remove('d-none');
       const iframe = document.createElement('iframe');
+      iframe.className = 'd-block w-100 h-100 border-0';
       iframe.title = 'Map';
       iframe.loading = 'lazy';
       iframe.allowFullscreen = true;

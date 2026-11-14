@@ -644,8 +644,9 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const mapSrc=new URL($('mgEmpMap').querySelector('iframe').src);
  assert(mapSrc.origin+mapSrc.pathname==='https://www.google.com/maps/embed/v1/place'&&mapSrc.searchParams.get('key')==='FAKE-KEY'&&mapSrc.searchParams.get('q')==='10 Main St, Fairfax, VA 22031, United States','mock key: Embed URL');
  // The common Page Frame (one grid cell for every pane) grows with the map: nothing clipped, Save stays put.
- const pf=$('mgEmpTabs').closest('.mg-md-pageframe').getBoundingClientRect(),box=$('mgEmpMap').querySelector('.ratio').getBoundingClientRect();
- assert(box.height>150&&box.bottom<=pf.bottom+1&&box.right<=pf.right+1&&frameH()>hiddenH&&saveTop()===hiddenSave,'map inside the Page Frame: '+[box.height,box.bottom,pf.bottom,frameH(),hiddenH]);
+ const pf=$('mgEmpTabs').closest('.mg-md-pageframe').getBoundingClientRect(),box=$('mgEmpMap').querySelector('[data-map-frame]').getBoundingClientRect(),sec=$('mgEmpAddress').getBoundingClientRect();
+ assert(Math.round(box.height)===380&&box.width<=sec.width+1&&box.left>=sec.left-1,'map 380px high, within the form width: '+[box.height,box.width,sec.width]);
+ assert(box.bottom<=pf.bottom+1&&box.right<=pf.right+1&&frameH()>hiddenH&&saveTop()===hiddenSave,'map inside the Page Frame: '+[box.height,box.bottom,pf.bottom,frameH(),hiddenH]);
  assert(doc.documentElement.scrollWidth<=doc.documentElement.clientWidth,'no sideways scroll');
  // Equal Height (Global UI Standard): the list card follows the taller form (map open), and every tab keeps it.
  const eq=(m)=>{const a=doc.querySelector('.mg-md-list-panel').getBoundingClientRect(),c=doc.querySelector('.mg-md-form-panel').getBoundingClientRect();
