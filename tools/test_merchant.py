@@ -15,6 +15,7 @@ from backend.models_admin.merchant import Merchant
 from backend.models_admin.store import Store
 from backend.routers import platform_store
 from backend.services.business_contact import BusinessContactService, OWNER_MODELS
+from tools import test_image_components as browser
 from tools import test_master_images
 
 
@@ -63,6 +64,85 @@ class MerchantTests(unittest.TestCase):
         self.assertEqual(bad.status_code, 400)
         with self.factory() as db:
             self.assertEqual(db.get(Merchant, identity).c_merchant_name, "Renamed Merchant")
+
+    def test_new_merchant_defaults_inactive_then_activates_with_primary_contact(self):
+        """Registration: a new Merchant starts Inactive (API default, like Agency / Store); Active needs an active
+        Primary Contact and then creates the Merchant Admin once. Existing Merchants keep their Status on edit."""
+        from backend.models_admin.platform_user import MERCHANT_ADMIN_ROLE_NAME, PlatformUser
+        from backend.models_admin.role import Role
+        with self.factory() as db:
+            db.add(Role(c_name=MERCHANT_ADMIN_ROLE_NAME, c_status="active"))
+            db.commit()
+        payload = {key: value for key, value in self.payload.items() if key != "status"}
+        created = self.client.post("/platform/merchant", json=payload)  # no status: the default applies
+        self.assertEqual(created.status_code, 200, created.text)
+        identity = created.json()["id"]
+        self.assertNotIn("merchant_user_created", created.json())
+        admins = lambda db: db.query(PlatformUser).filter(PlatformUser.i_merchant_id == identity).count()  # noqa: E731
+        with self.factory() as db:
+            self.assertEqual(db.get(Merchant, identity).c_status, "inactive")
+            self.assertEqual(admins(db), 0)
+        # Active without an active Primary Contact is refused and nothing changes.
+        refused = self.client.put(f"/platform/merchant/{identity}", json={"status": "active"})
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("Save the Merchant as Inactive, add an active Primary Contact", refused.json()["detail"])
+        with self.factory() as db:
+            self.assertEqual((db.get(Merchant, identity).c_status, admins(db)), ("inactive", 0))
+            BusinessContactService(db).create_contact("MERCHANT", identity, {
+                "first_name": "Mia", "last_name": "Owner", "email": "mia.owner@example.test",
+                "phone": "404-555-0123", "is_primary": True})
+        activated = self.client.put(f"/platform/merchant/{identity}", json={"status": "active"})
+        self.assertEqual(activated.status_code, 200, activated.text)
+        self.assertTrue(activated.json()["merchant_user_created"])
+        again = self.client.put(f"/platform/merchant/{identity}", json={"notes": "Edited later"})
+        self.assertEqual(again.status_code, 200, again.text)
+        with self.factory() as db:
+            self.assertEqual((db.get(Merchant, identity).c_status, admins(db)), ("active", 1))  # edit keeps Active
+        # An explicit "active" on create is still checked by the activation rule; explicit "inactive" is kept.
+        direct = self.client.post("/platform/merchant", json={**payload, "merchant_name": "Direct Active", "status": "active"})
+        self.assertEqual(direct.status_code, 400, direct.text)
+        explicit = self.client.post("/platform/merchant", json={**payload, "merchant_name": "Explicit Inactive", "status": "inactive"})
+        self.assertEqual(explicit.status_code, 200, explicit.text)
+        # Existing Merchants: an edit without status keeps the saved Status (Active with its Admin, and Inactive).
+        for merchant_id, expected in ((identity, "active"), (explicit.json()["id"], "inactive")):
+            edit = self.client.put(f"/platform/merchant/{merchant_id}", json={"notes": "Status untouched"})
+            self.assertEqual(edit.status_code, 200, edit.text)
+            with self.factory() as db:
+                self.assertEqual(db.get(Merchant, merchant_id).c_status, expected)
+
+    @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+    def test_add_merchant_form_defaults_to_inactive(self):
+        """Platform Admin Merchants: Add opens the form with Status Inactive (the registration rule), the POST sends
+        it; an existing Merchant still shows its saved Status."""
+        from tools import test_organization_master_detail as org_md
+        page = org_md.module_page("merchant")
+        script = "const page=" + json.dumps(page).replace("</", "<\\/") + ";\n" + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+const tick=(ms=40)=>new Promise(r=>setTimeout(r,ms));
+const wait=async(f,m)=>{for(let i=0;i<120;i++){try{if(f())return;}catch(e){}await tick();}throw Error('timeout: '+m);};
+(async()=>{
+  const frame=document.createElement('iframe');frame.style.cssText='width:1440px;height:900px;border:0';frame.srcdoc=page;
+  const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,$=id=>doc.getElementById(id);
+  await wait(()=>doc.querySelector('#masterListBody tr[data-row-select]'),'merchant list');
+  doc.querySelector('#masterListBody tr[data-row-select="1"]').click();
+  await wait(()=>$('field_merchant_name')&&$('field_merchant_name').value==='Alpha Mart','existing merchant');
+  assert($('field_status').value==='active','existing Merchant shows its saved Status');
+  $('btnListAdd').click();
+  await wait(()=>$('field_merchant_name')&&$('field_merchant_name').value==='','add form');
+  assert($('field_status').value==='inactive','new Merchant starts Inactive');
+  $('field_merchant_name').value='New Corner Store';$('field_merchant_name').dispatchEvent(new win.Event('input',{bubbles:true}));
+  $('field_primary_agency_id').value='10';$('field_primary_agency_id').dispatchEvent(new win.Event('change',{bubbles:true}));
+  $('field_business_type').value='Retail';$('field_business_type').dispatchEvent(new win.Event('change',{bubbles:true}));
+  $('btnModalSave').click();
+  await wait(()=>win.requests.some(r=>r.method==='POST'&&/\/platform\/merchant/.test(r.path)),'create request: '+(($('masterModalError')||{}).textContent||''));
+  const post=win.requests.find(r=>r.method==='POST'&&/\/platform\/merchant/.test(r.path));
+  const body=post.body instanceof win.FormData?JSON.parse(post.body.get('payload')):JSON.parse(post.body);
+  assert(body.status==='inactive'&&body.merchant_name==='New Corner Store','POST sends Inactive: '+JSON.stringify(body));
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
+"""
+        browser.SharedImageComponentTests.run_component_script(self, script)
 
     def test_store_relation_and_existing_delete_policy(self):
         identity = self.create()

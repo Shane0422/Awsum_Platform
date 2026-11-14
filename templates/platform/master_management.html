@@ -8256,7 +8256,7 @@
       if (!input) return;
       if (field.layer) { setFeatureLayerField(field, input, null); return; }
       if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'user' || activeModule === 'merchant' || activeModule === 'agency' || activeModule === 'agency-type' || activeModule === 'license' || activeModule === 'pricing-plan' || activeModule === 'payment-method' || activeModule === 'role' || activeModule === 'business-type' || activeModule === 'device-category' || activeModule === 'device-type') && field.name === 'status') {
-        input.value = (activeModule === 'agency' || activeModule === 'store') ? 'inactive' : 'active'; // new Agency / Store: Inactive
+        input.value = (activeModule === 'agency' || activeModule === 'merchant' || activeModule === 'store') ? 'inactive' : 'active'; // new Agency / Merchant / Store: Inactive
       } else if (activeModule === 'session' && field.name === 'status') {
         input.value = 'active';
       } else if ((activeModule === 'store' || activeModule === 'merchant' || activeModule === 'agency') && field.default !== undefined) {

@@ -4347,7 +4347,9 @@ def _create_merchant(payload: dict, request: Request, db: Session, *, image_data
     agency_id = _merchant_resolve_agency(db, payload.get("primary_agency_id"))
     business_type_id = _merchant_resolve_business_type(db, payload.get("business_type"))
     email = _merchant_validate_email(payload)
-    status_value = _normalize_status(payload.get("status"), {"active", "inactive"}) or "active"
+    # A new Merchant starts Inactive (like Agency / Store): add an active Primary Contact, then save it Active to
+    # create the Merchant Admin (_activate_organization). An explicit "active" is still checked by that rule.
+    status_value = _normalize_status(payload.get("status"), {"active", "inactive"}) or "inactive"
     if db.query(Merchant.i_merchant_id).filter(func.lower(Merchant.c_merchant_name) == name.lower()).first():
         raise HTTPException(status_code=409, detail="A merchant with this name already exists.")
 
