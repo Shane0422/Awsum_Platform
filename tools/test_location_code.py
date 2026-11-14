@@ -69,7 +69,9 @@ class CodeInputAdoptionTests(unittest.TestCase):
         self.assertIn("input(key, 'text', 'maxlength=\"50\" readonly')", client)
         self.assertNotIn("input(key, 'text', 'maxlength=\"50\" data-awsum-code')", client)
         self.assertIn("input('zone', 'text', 'maxlength=\"10\" data-awsum-code')", client)
-        self.assertIn("AwsumCodeInput.bindAll($('mgFields'))", client)
+        # Bound through the Common Control binding (bindControls) that openForm runs on the form (P1-b2).
+        self.assertIn("if (window.AwsumCodeInput) AwsumCodeInput.bindAll(container);", client)
+        self.assertIn("bindControls($('mgFields'));", client)
         self.assertNotIn("text-transform:uppercase", client)  # no screen-only CSS capitals
 
 

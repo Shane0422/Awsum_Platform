@@ -353,22 +353,27 @@
       ${opts && opts.help ? `<div class="form-text">${opts.help}</div>` : ''}
     </div>`;
   }
-  // Control markup. attrs = the identity attributes: the main form uses id + name (collected by Save, formAttrs);
-  // the Common Child Grid uses its own id + data-cg-field (no name: never part of the main Save).
-  const formAttrs = (name) => `id="mgf_${name}" name="${name}"`;
+  // <common-controls> Common Control Renderer with its value / binding / check helpers (Common Framework P1-b1, P1-b2).
+  // Identity: the main form uses id + name (collected by Save: formIdent); the Common Child Grid uses its own id +
+  // data-cg-field (no name: never part of the main Save). Every type reuses an existing common component:
+  // date = AwsumDateInput, money = AwsumMoneyInput (+ AwsumMoneyKeypad button), code = AwsumCodeInput,
+  // option = AwsumOptionGroup; number / text / decimal / select / textarea / year are plain Bootstrap controls.
+  const formIdent = (name) => ({ id: `mgf_${name}`, name });
+  const attrsOf = (ident) => (ident.cgField ? `id="${ident.id}" data-cg-field="${ident.cgField}"` : `id="${ident.id}" name="${ident.name}"`);
   const numClass = (type, extra) => (type === 'number' || /inputmode="decimal"/.test(extra || '') ? ' pm-num' : '');
-  const inputTag = (attrs, type, extra) => `<input class="form-control${numClass(type, extra)}" ${attrs} type="${type}" ${extra || ''}>`;
-  const selectTag = (attrs, extra) => `<select class="form-select" ${attrs} ${extra || ''}></select>`;
-  const textareaTag = (attrs, rows, max) => `<textarea class="form-control" ${attrs} rows="${rows || 2}"${max ? ` maxlength="${max}"` : ''}></textarea>`;
-  const input = (name, type, extra) => inputTag(formAttrs(name), type, extra);
-  const select = (name, extra) => selectTag(formAttrs(name), extra);
-  const textarea = (name) => textareaTag(formAttrs(name), 2);
+  const inputTag = (ident, type, extra) => `<input class="form-control${numClass(type, extra)}" ${attrsOf(ident)} type="${type}" ${extra || ''}>`;
+  const selectTag = (ident, extra) => `<select class="form-select" ${attrsOf(ident)} ${extra || ''}></select>`;
+  const textareaTag = (ident, rows, max, extra) => `<textarea class="form-control" ${attrsOf(ident)} rows="${rows || 2}"${max ? ` maxlength="${max}"` : ''}${extra ? ` ${extra}` : ''}></textarea>`;
+  const input = (name, type, extra) => inputTag(formIdent(name), type, extra);
+  const select = (name, extra) => selectTag(formIdent(name), extra);
+  const textarea = (name) => textareaTag(formIdent(name), 2);
   const activeField = () => field('active', 'Status', select('active'), { col: 'col-md-6' });
   // ---- Common Form Definition (Common Framework P1-a): a form described as data, drawn by the helpers above. ----
-  // Field: { name, label, type (controlHtml), max, rows, required, help, col (default col-md-6) }.
-  // name is the payload key and the key of the server's field errors (FieldErrors), so fillForm(), collect() and
-  // showFieldErrors() work unchanged. The server stays the authority for every rule (max / required only mirror it).
-  // An entity listed in FORM_FIELDS is drawn from its definition; the others keep their formHtml() case.
+  // Field: { name, label, type (controlHtml), max, rows, min, step, required, readonly, options, clearable, multiple,
+  // help, col (default col-md-6) }. name is the payload key and the key of the server's field errors (FieldErrors),
+  // so fillForm(), collect() and showFieldErrors() work unchanged. The server stays the authority for every rule
+  // (max / min / required only mirror it). An entity listed in FORM_FIELDS is drawn from its definition; the others
+  // keep their formHtml() case.
   const COMMON_FIELDS = {
     active: { name: 'active', label: 'Status', type: 'select' },
     notes: { name: 'notes', label: 'Notes', type: 'textarea', col: 'col-12' },
@@ -381,24 +386,92 @@
       COMMON_FIELDS.notes,
     ],
   };
-  // Common Control Renderer (Common Framework P1-b1): the one control per field type for the main form
-  // (FORM_FIELDS, attrs = formAttrs) and the Common Child Grid (attrs = its id + data-cg-field).
-  // type: 'text' (default) | 'decimal' | 'select' | 'textarea' | 'date' (Common Date) | 'year'.
-  // limits: the caller's default maxlength per type when the field has no max (Child Grid: text 200, textarea 4000).
-  function controlHtml(def, attrs, limits) {
-    const max = def.max || (limits && limits[def.type || 'text']);
-    switch (def.type || 'text') {
-      case 'text': return inputTag(attrs, 'text', max ? `maxlength="${max}"` : '');
-      case 'decimal': return inputTag(attrs, 'text', 'inputmode="decimal"');
-      case 'select': return selectTag(attrs);
-      case 'textarea': return textareaTag(attrs, def.rows, max);
-      case 'date': return inputTag(attrs, 'text', `data-awsum-date data-date-label="${esc(def.label)}"${def.required ? ' data-date-required="true"' : ''}`);
-      case 'year': return inputTag(attrs, 'text', 'inputmode="numeric" maxlength="4" placeholder="YYYY"');
+  // Common Control Renderer: the one control per field type for the main form (FORM_FIELDS, formIdent) and the Common
+  // Child Grid (its id + data-cg-field). limits: the caller's default maxlength per type when the field has no max
+  // (Child Grid: text 200, textarea 4000). readonly: inputs readonly (still sent); select / option disabled (not sent).
+  // Types: text (default) | decimal | number (min, max, step) | select | textarea | year
+  //   | date   AwsumDateInput: MM-DD-YYYY on screen, ISO in the payload; required / min / max as its data-date-* rules
+  //   | money  AwsumMoneyInput (cents-based entry, comma-free decimal payload) with the AwsumMoneyKeypad "$" button;
+  //            min (default 0) / max as data-money-*, required = an amount must be entered
+  //   | code   AwsumCodeInput: upper case while typing, trimmed on change (the server applies the same rule)
+  //   | option AwsumOptionGroup: options [{ value, label }] or (state.options) => [...]; clearable, multiple
+  function controlHtml(def, ident, limits) {
+    const type = def.type || 'text';
+    const max = def.max || (limits && limits[type]);
+    const ro = def.readonly ? ' readonly' : '';
+    switch (type) {
+      case 'text': return inputTag(ident, 'text', `${max ? `maxlength="${max}"` : ''}${ro}`);
+      case 'decimal': return inputTag(ident, 'text', `inputmode="decimal"${ro}`);
+      case 'number': return inputTag(ident, 'number', [def.min != null ? `min="${def.min}"` : '', def.max != null ? `max="${def.max}"` : '',
+        `step="${def.step || 1}"`].filter(Boolean).join(' ') + ro);
+      case 'select': return selectTag(ident, def.readonly ? 'disabled' : '');
+      case 'textarea': return textareaTag(ident, def.rows, max, ro.trim());
+      case 'year': return inputTag(ident, 'text', `inputmode="numeric" maxlength="4" placeholder="YYYY"${ro}`);
+      case 'date': return inputTag(ident, 'text', `data-awsum-date data-date-label="${esc(def.label)}"${def.required ? ' data-date-required="true"' : ''}`
+        + `${def.min ? ` data-date-min="${esc(def.min)}"` : ''}${def.max ? ` data-date-max="${esc(def.max)}"` : ''}${ro}`);
+      case 'money': return `<div class="input-group">${MONEY_KEYPAD_BUTTON}${inputTag(ident, 'text', `data-awsum-money data-money-min="${esc(def.min != null ? def.min : 0)}"`
+        + `${def.max != null ? ` data-money-max="${esc(def.max)}"` : ''}${def.required ? ' required' : ''} inputmode="decimal" autocomplete="off"${ro}`)}</div>`;
+      case 'code': return inputTag(ident, 'text', `${max ? `maxlength="${max}" ` : ''}data-awsum-code${ro}`);
+      case 'option': {
+        const options = typeof def.options === 'function' ? def.options(state.options || {}) : (def.options || []);
+        const group = AwsumOptionGroup.html({ id: ident.id, name: ident.name || ident.id, options, required: !!def.required, ariaLabel: def.label,
+          clearable: !!def.clearable, multiple: !!def.multiple, disabled: !!def.readonly });
+        // The Child Grid finds its controls by data-cg-field (the radio name stays the unique id there).
+        return ident.cgField ? group.replace('data-awsum-option-group', `data-awsum-option-group data-cg-field="${ident.cgField}"`) : group;
+      }
       default: throw new Error(`Unknown field type "${def.type}" (${def.name}).`);
     }
   }
-  const fieldFromDef = (def) => field(def.name, def.label, controlHtml(def, formAttrs(def.name)), { col: def.col || 'col-md-6', required: def.required, help: def.help });
+  const fieldFromDef = (def) => field(def.name, def.label, controlHtml(def, formIdent(def.name)), { col: def.col || 'col-md-6', required: def.required, help: def.help });
   const formFromDefinition = (defs) => defs.map(fieldFromDef).join('');
+  // Common component binding for a rendered form / editor: each component's own bindAll (bound once per element:
+  // the components keep a WeakMap / WeakSet, so a repeated call or a re-render never adds a second listener).
+  function bindControls(container) {
+    AwsumMoneyInput.refreshAll(container);
+    if (window.AwsumDateInput) AwsumDateInput.bindAll(container);
+    if (window.AwsumBarcodeInput) AwsumBarcodeInput.bindAll(container);
+    if (window.AwsumCodeInput) AwsumCodeInput.bindAll(container); // Location Codes: upper case while typing
+    if (window.AwsumOptionGroup) AwsumOptionGroup.bindAll(container);
+  }
+  const isOptionGroup = (el) => el.hasAttribute('data-awsum-option-group');
+  // The API value of one control: option = AwsumOptionGroup value ('' / array), money = comma-free decimal (throws a
+  // TypeError when invalid, reported by Save), date = ISO (or the typed text, refused by the server), others = text.
+  function controlValue(el) {
+    if (isOptionGroup(el)) return AwsumOptionGroup.getValue(el);
+    if (el.hasAttribute('data-awsum-money')) return AwsumMoneyInput.getValue(el);
+    if (el.hasAttribute('data-awsum-date')) return AwsumDateInput.getValue(el);
+    return el.value;
+  }
+  // Shows an API value in one control through its component (null / undefined = empty).
+  function setControlValue(el, value) {
+    if (isOptionGroup(el)) AwsumOptionGroup.setValue(el, value == null ? (el.hasAttribute('data-option-multiple') ? [] : '') : value);
+    else if (el.hasAttribute('data-awsum-money')) AwsumMoneyInput.setValue(el, value == null ? '' : value);
+    else if (el.hasAttribute('data-awsum-date')) AwsumDateInput.setValue(el, value || '');
+    else el.value = value == null ? '' : value;
+  }
+  // Enables / disables one control (an option group through its component).
+  function setControlDisabled(el, disabled) {
+    if (isOptionGroup(el)) AwsumOptionGroup.setDisabled(el, disabled);
+    else el.disabled = disabled;
+  }
+  // Client checks of the components before a Save: Common Date (format / range / required) and money (format /
+  // required). Returns { field name: message } for the screen's error display; the server checks everything again.
+  function checkControls(container) {
+    const errors = {};
+    const nameOf = (el) => el.name || el.dataset.cgField || el.id;
+    container.querySelectorAll('input[data-awsum-date]').forEach((el) => {
+      if (!el.disabled && window.AwsumDateInput && !AwsumDateInput.check(el)) {
+        const wrap = el.closest('[data-field-wrap]');
+        const box = wrap && wrap.querySelector('.invalid-feedback');
+        errors[nameOf(el)] = (box && box.textContent) || 'Enter a valid date.';
+      }
+    });
+    container.querySelectorAll('input[data-awsum-money]').forEach((el) => {
+      if (!el.disabled && !AwsumMoneyInput.validate(el)) errors[nameOf(el)] = el.validationMessage;
+    });
+    return errors;
+  }
+  // </common-controls>
   // Location Code placeholder by Area (an example only; the format is never enforced).
   // ---- Location Master: one range form for new locations (Zone + two From/To ranges -> every combination) ----
   // Sales Floor S01-B01-C01 (Bay, Shelf); Warehouse W01-R01-C01 (Rack, Level). From = To creates one code.
@@ -800,7 +873,7 @@
   const CHILD_GRID_LIMITS = { text: 200, textarea: 4000 }; // default maxlength of a Child Grid field without max
   function childGrid(cfg) {
     const ctl = (fld) => `mgCg_${cfg.kind}_${fld.name}`;
-    const control = (fld) => controlHtml(fld, `id="${ctl(fld)}" data-cg-field="${fld.name}"`, CHILD_GRID_LIMITS);
+    const control = (fld) => controlHtml(fld, { id: ctl(fld), cgField: fld.name }, CHILD_GRID_LIMITS);
     const cols = cfg.columns.length + 1;
     const html = `<section class="col-12 pm-section mg-cg" id="mgCg${cfg.kind}" data-cg="${cfg.kind}">
         <div class="pm-section-head d-flex justify-content-between align-items-center">
@@ -868,14 +941,13 @@
     function openEditor(item) {
       grid.editingId = item ? item.id : null;
       const editor = $in('[data-cg-editor]');
-      AwsumDateInput.bindAll(editor);
+      bindControls(editor);
       cfg.fields.forEach((fld) => {
         const input = el(fld.name);
-        input.disabled = false; // a read-only form pass may have disabled it; the server decides what may be saved
+        setControlDisabled(input, false); // a read-only form pass may have disabled it; the server decides what may be saved
         const value = item ? item[fld.name] : (fld.default ? fld.default() : '');
         if (fld.type === 'select') fillSelect(input, fld.options(item ? value : null), value == null ? '' : value, fld.blank);
-        else if (fld.type === 'date') AwsumDateInput.setValue(input, value || '');
-        else input.value = value == null ? '' : value;
+        else setControlValue(input, value);
       });
       cfg.fields.filter((fld) => fld.minFrom).forEach((fld) => syncMin(fld));
       editor.querySelectorAll('button').forEach((b) => { b.disabled = false; });
@@ -896,10 +968,12 @@
       const editor = $in('[data-cg-editor]');
       const dates = cfg.fields.filter((fld) => fld.type === 'date');
       if (!dates.every((fld) => AwsumDateInput.check(el(fld.name)))) return;
+      const invalid = checkControls(editor); // money format / required (dates were checked above)
+      if (Object.keys(invalid).length) { accessErrors(editor, invalid); return; }
       const body = {};
       cfg.fields.forEach((fld) => {
-        const input = el(fld.name);
-        body[fld.name] = fld.type === 'date' ? AwsumDateInput.getValue(input) : input.value.trim();
+        const value = controlValue(el(fld.name));
+        body[fld.name] = typeof value === 'string' ? value.trim() : value;
       });
       const button = $in('[data-cg-act="save"]');
       button.disabled = true;
@@ -1822,10 +1896,7 @@
         `<div class="col-12 mg-record-code"><span class="text-muted small">Code</span> <span class="mg-code fw-semibold">${esc(row.code)}</span> <span class="text-muted small">(${codeNote})</span>${systemCode}</div>`);
     }
     fillForm(row);
-    AwsumMoneyInput.refreshAll($('mgFields'));
-    if (window.AwsumBarcodeInput) AwsumBarcodeInput.bindAll($('mgFields'));
-    if (window.AwsumCodeInput) AwsumCodeInput.bindAll($('mgFields')); // Location Codes: upper case while typing
-    if (window.AwsumOptionGroup) AwsumOptionGroup.bindAll($('mgFields'));
+    bindControls($('mgFields'));
     applyItemFeatures($('mgFields'));
     if (row && row.read_only) { // read-only Common Group (COLOR): view only; the server refuses writes too
       $('mgFields').querySelectorAll('input, select, textarea, button:not([data-bs-toggle="tab"])').forEach((el) => { el.disabled = true; });
@@ -2090,12 +2161,12 @@
     $('mgFields').querySelectorAll('[name]').forEach((el) => {
       if (el.disabled || el.type === 'radio' || el.type === 'checkbox') return; // option groups are read below
       if (el.closest('[data-item-feature-off]')) return; // OFF feature: keep the saved value
-      payload[el.name] = el.hasAttribute('data-awsum-money') ? AwsumMoneyInput.getValue(el)
-        : el.hasAttribute('data-awsum-date') ? AwsumDateInput.getValue(el) : el.value;
+      payload[el.name] = controlValue(el);
     });
     $('mgFields').querySelectorAll('[data-awsum-option-group]').forEach((group) => {
       if (group.closest('[data-item-feature-off]')) return; // OFF feature: keep the saved value
-      payload[group.dataset.name] = AwsumOptionGroup.getValue(group);
+      if (group.hasAttribute('data-cg-field')) return; // a Common Child Grid control: saved by its grid, never here
+      payload[group.dataset.name] = controlValue(group);
     });
     ['active', 'license_required', 'serial_required'].forEach((k) => {
       if (k in payload) payload[k] = payload[k] === 'true';
@@ -2153,6 +2224,10 @@
     clearErrors();
     let reopen = null; // Common Maintenance: show the saved record (its Code is fixed) after a create
     try {
+      if (FORM_FIELDS[entity]) { // a definition form: the common components' client checks first (Common Date, money)
+        const invalid = checkControls($('mgFields'));
+        if (Object.keys(invalid).length) throw Object.assign(new Error('Please check the highlighted fields.'), { errors: invalid });
+      }
       let body = collect();
       if (entity === 'employee') body.pos_login_enabled = f('pos_login_enabled').checked; // checkbox (collect skips it)
       const editing = state.editing;

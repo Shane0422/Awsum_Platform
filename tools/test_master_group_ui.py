@@ -53,7 +53,7 @@ class MasterGroupListTemplateTests(unittest.TestCase):
                 self.assertIn("mg-page awsum-list", html)
                 self.assertIn(f'data-entity="{entity}"', html)
                 self.assertIn(f"Add {title}</button>", html)
-                self.assertIn('src="/static/js/master_group.js?v=98"', html)
+                self.assertIn('src="/static/js/master_group.js?v=99"', html)
                 if entity in SPLIT:
                     self.assertIn('class="mg-md-workspace"', html)
                     self.assertIn('class="mg-md-form"', html)

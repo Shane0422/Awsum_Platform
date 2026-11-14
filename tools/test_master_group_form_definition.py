@@ -225,14 +225,126 @@ window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');const m
 const assert=(ok,m)=>{if(!ok)throw Error(m);};
 (async()=>{
   const got=await captureGrids();
+  // HISTORY Add defaults the Record Date to today: the fixture holds "{today}" there (MM-DD-YYYY of the run day).
+  const d=new Date(),today=[d.getMonth()+1,d.getDate()].map(n=>String(n).padStart(2,'0')).join('-')+'-'+d.getFullYear();
   for(const kind of KINDS)for(const part of ['list','add','addValues','edit','editValues']){
-    const a=JSON.stringify(got[kind][part]),b=JSON.stringify(FIXTURE[kind][part]);
+    const a=JSON.stringify(got[kind][part]),b=JSON.stringify(FIXTURE[kind][part]).split('{today}').join(today);
     assert(a===b,`${kind} ${part} differs:\n${a}\n---\n${b}`);
   }
   assert(JSON.stringify(got.savedHistory)===JSON.stringify(FIXTURE.savedHistory),'history save payload: '+JSON.stringify(got.savedHistory));
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
 """))
+
+
+def common_controls_source():
+    """The shipped Common Control Renderer: the <common-controls> block of master_group.js plus the two constants it
+    uses (esc, MONEY_KEYPAD_BUTTON). Taken by its markers, so the test always runs the code the page runs."""
+    source = (browser.ROOT / "static" / "js" / "master_group.js").read_text(encoding="utf-8")
+    block = source[source.index("  // <common-controls>"):source.index("  // </common-controls>")]
+    constants = [re.search(rf"^  const {name} = .*$", source, re.MULTILINE).group() for name in ("esc", "MONEY_KEYPAD_BUTTON")]
+    return "\n".join(constants) + "\n" + block
+
+
+@unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+class FieldTypeRendererTests(unittest.TestCase):
+    """Common Framework P1-b2: number / date / money / code / option from a Field Definition, in the main form identity
+    (id + name) and the Common Child Grid identity (id + data-cg-field), initialized by bindControls() through the
+    existing AwsumDateInput / AwsumMoneyInput / AwsumCodeInput / AwsumOptionGroup."""
+    run_browser = browser.SharedImageComponentTests.run_component_script
+
+    def test_field_types_render_bind_fill_collect_check_and_bind_once(self):
+        components = "\n".join((browser.ROOT / "static" / "js" / f"{name}.js").read_text(encoding="utf-8")
+                               for name in ("money", "money-keypad", "date", "code-input", "option-group"))
+        harness = ("const makeControls=(state)=>{" + common_controls_source()
+                   + "\nreturn {controlHtml,bindControls,controlValue,setControlValue,setControlDisabled,checkControls,formIdent};};")
+        script = components + "\n" + harness + "\n" + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+// Listener registrations per element: a second binding of the same control would show up here.
+const listeners=new WeakMap();const addListener=EventTarget.prototype.addEventListener;
+EventTarget.prototype.addEventListener=function(type,fn,opts){listeners.set(this,(listeners.get(this)||0)+1);return addListener.call(this,type,fn,opts);};
+const count=el=>listeners.get(el)||0;
+const OPTS=[{value:'A',label:'Alpha'},{value:'B',label:'Beta'},{value:'C',label:'Gamma'}];
+const DEFS=[
+  {name:'qty',label:'Quantity',type:'number',min:0,max:999,step:1},
+  {name:'start_date',label:'Start Date',type:'date',required:true,max:'2030-12-31'},
+  {name:'price',label:'Price',type:'money',required:true},
+  {name:'zone',label:'Zone',type:'code',max:10},
+  {name:'level',label:'Level',type:'option',options:(o)=>o.levels,clearable:true},
+  {name:'tags',label:'Tags',type:'option',options:OPTS,multiple:true},
+];
+const C=makeControls({options:{levels:OPTS}});
+const box=document.createElement('div');document.body.appendChild(box);
+const identity=(mode,d)=>mode==='form'?C.formIdent(d.name):{id:`mgCg_t_${d.name}`,cgField:d.name};
+const render=(mode,defs=DEFS)=>{box.innerHTML=defs.map(d=>`<div data-field-wrap="${d.name}">${C.controlHtml(d,identity(mode,d))}<div class="invalid-feedback" data-error-for="${d.name}"></div></div>`).join('');};
+const get=(mode,name)=>mode==='form'?box.querySelector('#mgf_'+name):box.querySelector(`[data-cg-field="${name}"]`);
+const values=mode=>Object.fromEntries(DEFS.map(d=>[d.name,C.controlValue(get(mode,d.name))]));
+const type=(el,text)=>{el.value=text;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
+(async()=>{
+ for(const mode of ['form','grid']){
+  const g=n=>get(mode,n);
+  // 1. Add rendering: the existing component markup and the identity rule of each place.
+  render(mode);
+  assert(g('qty').type==='number'&&g('qty').classList.contains('pm-num')&&g('qty').min==='0'&&g('qty').max==='999'&&g('qty').step==='1',mode+' number');
+  assert(g('start_date').hasAttribute('data-awsum-date')&&g('start_date').dataset.dateRequired==='true'&&g('start_date').dataset.dateMax==='2030-12-31',mode+' date');
+  assert(g('price').closest('.input-group').querySelector('[data-money-keypad]')&&g('price').dataset.moneyMin==='0'&&g('price').required,mode+' money with the keypad button');
+  assert(g('zone').hasAttribute('data-awsum-code')&&g('zone').maxLength===10,mode+' code');
+  assert(g('level').getAttribute('role')==='radiogroup'&&g('level').querySelectorAll('input[type=radio]').length===3&&g('level').querySelector('.awsum-option-clear'),mode+' option');
+  assert(g('tags').hasAttribute('data-option-multiple')&&g('tags').querySelectorAll('input[type=checkbox]').length===3,mode+' multiple option');
+  const named=[...box.querySelectorAll('[name]')].filter(el=>el.type!=='radio'&&el.type!=='checkbox');
+  if(mode==='form')assert(named.map(el=>el.name).join()==='qty,start_date,price,zone'&&g('level').dataset.name==='level','form: id + name (collected by Save)');
+  else assert(named.length===0&&g('level').dataset.cgField==='level'&&g('level').querySelector('input').name==='mgCg_t_level','grid: data-cg-field, no field name (never part of the main Save)');
+  // 2. Initialization through the existing components (bindControls = their bindAll).
+  C.bindControls(box);
+  assert(g('start_date').closest('.awsum-date-group')&&g('start_date').closest('.awsum-date-group').querySelector('.awsum-date-trigger')&&g('start_date').placeholder==='MM-DD-YYYY',mode+' AwsumDateInput bound');
+  assert(g('price').classList.contains('text-end')&&g('price').inputMode==='decimal',mode+' AwsumMoneyInput bound');
+  assert(g('zone').autocapitalize==='characters',mode+' AwsumCodeInput bound');
+  // 3. Edit: values shown through the components.
+  const row={qty:5,start_date:'2026-03-01',price:'1234.5',zone:'AB-1',level:'B',tags:['A','C']};
+  DEFS.forEach(d=>C.setControlValue(g(d.name),row[d.name]));
+  assert(g('qty').value==='5'&&g('start_date').value==='03-01-2026'&&g('price').value==='1,234.50'&&g('zone').value==='AB-1',mode+' filled: '+[g('start_date').value,g('price').value]);
+  assert(JSON.stringify(values(mode))==='{"qty":"5","start_date":"2026-03-01","price":"1234.50","zone":"AB-1","level":"B","tags":["A","C"]}',mode+' payload of the saved values: '+JSON.stringify(values(mode)));
+  // 4. Changes: Code upper case while typing, money cents entry + grouping on blur, date mask + ISO, option clicks.
+  type(g('zone'),'k01-s01');assert(g('zone').value==='K01-S01',mode+' code upper case');
+  g('price').dispatchEvent(new Event('focus'));type(g('price'),'2500.5');g('price').dispatchEvent(new Event('blur'));
+  assert(g('price').value==='2,500.50',mode+' money grouping: '+g('price').value);
+  type(g('start_date'),'04152026');g('start_date').dispatchEvent(new Event('blur'));assert(g('start_date').value==='04-15-2026',mode+' date mask: '+g('start_date').value);
+  g('level').querySelector('input[value="C"]').click();g('tags').querySelector('input[value="B"]').click();type(g('qty'),'7');
+  assert(JSON.stringify(values(mode))==='{"qty":"7","start_date":"2026-04-15","price":"2500.50","zone":"K01-S01","level":"C","tags":["A","B","C"]}',mode+' changed payload: '+JSON.stringify(values(mode)));
+  assert(Object.keys(C.checkControls(box)).length===0,mode+' valid values pass the checks');
+  // 5. Validation: Common Date required / range and money format, keyed by the field name for the error display.
+  C.setControlValue(g('start_date'),null);type(g('price'),'1,23');
+  let errors=C.checkControls(box);
+  assert(Object.keys(errors).sort().join()==='price,start_date'&&/Start Date/.test(errors.start_date)&&/monetary/.test(errors.price),mode+' errors: '+JSON.stringify(errors));
+  let threw=false;try{C.controlValue(g('price'));}catch(e){threw=e instanceof TypeError;}assert(threw,mode+' invalid money never reaches the payload');
+  C.setControlValue(g('start_date'),'2031-01-01');errors=C.checkControls(box);assert(errors.start_date,mode+' date after max refused');
+  C.setControlValue(g('start_date'),'2030-12-31');C.setControlValue(g('price'),'0');assert(Object.keys(C.checkControls(box)).length===0,mode+' fixed');
+  // 6. Reset: empty values through the components; the option group's own Clear button.
+  DEFS.forEach(d=>C.setControlValue(g(d.name),null));
+  // (Price is required: an empty required amount is invalid for AwsumMoneyInput, so only its display is read here.)
+  const reset=Object.fromEntries(DEFS.filter(d=>d.name!=='price').map(d=>[d.name,C.controlValue(g(d.name))]));
+  assert(JSON.stringify(reset)==='{"qty":"","start_date":"","zone":"","level":"","tags":[]}'&&g('price').value==='',mode+' reset: '+JSON.stringify(reset));
+  C.setControlValue(g('level'),'A');g('level').querySelector('[data-option-clear]').click();assert(C.controlValue(g('level'))==='',mode+' option Clear');
+  // 7. Bound once: repeated bindControls adds no listener; a re-render binds the new controls exactly once again.
+  const ids=DEFS.map(d=>d.name),first=ids.map(n=>count(g(n)));
+  C.bindControls(box);C.bindControls(box);
+  assert(JSON.stringify(ids.map(n=>count(g(n))))===JSON.stringify(first),mode+' repeated bindControls: '+first+' / '+ids.map(n=>count(g(n))));
+  const typing=[];g('zone').addEventListener('input',()=>typing.push(g('zone').value));type(g('zone'),'ab');
+  assert(typing.length===1&&typing[0]==='AB',mode+' one Code handler: '+typing);
+  render(mode);C.bindControls(box);C.bindControls(box);
+  assert(JSON.stringify(ids.map(n=>count(g(n))))===JSON.stringify(first),mode+' re-rendered controls bound once: '+ids.map(n=>count(g(n))));
+  // 8. Read only: inputs readonly (still sent), option groups disabled; the date picker does not open.
+  render(mode,DEFS.map(d=>({...d,readonly:true})));C.bindControls(box);
+  assert(['qty','start_date','price','zone'].every(n=>g(n).readOnly),mode+' readonly inputs');
+  assert(['level','tags'].every(n=>[...g(n).querySelectorAll('input')].every(i=>i.disabled))&&g('level').classList.contains('is-disabled'),mode+' readonly options');
+  g('start_date').closest('.awsum-date-group').querySelector('.awsum-date-trigger').click();
+  const picker=document.querySelector('.awsum-date-picker');assert(!picker||picker.classList.contains('is-hidden'),mode+' no picker on a readonly date');
+  C.setControlDisabled(g('level'),false);assert([...g('level').querySelectorAll('input')].every(i=>!i.disabled),mode+' option enabled again');
+ }
+ document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
+"""
+        self.run_browser(script)
 
 
 if __name__ == "__main__":
