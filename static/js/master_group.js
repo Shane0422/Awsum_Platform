@@ -377,11 +377,18 @@
   const COMMON_FIELDS = {
     active: { name: 'active', label: 'Status', type: 'select' },
     notes: { name: 'notes', label: 'Notes', type: 'textarea', col: 'col-12' },
+    display_order: { name: 'display_order', label: 'Display Order', type: 'number', min: 0, step: 1 },
   };
   const FORM_FIELDS = {
     tax: [
       { name: 'name', label: 'Tax Name', type: 'text', max: 100, required: true },
       { name: 'rate', label: 'Tax Rate (%)', type: 'decimal', required: true, help: '0 is allowed. Up to 4 decimal places.' },
+      COMMON_FIELDS.active,
+      COMMON_FIELDS.notes,
+    ],
+    category1: [
+      { name: 'name', label: 'Name', type: 'text', max: 100, required: true },
+      COMMON_FIELDS.display_order,
       COMMON_FIELDS.active,
       COMMON_FIELDS.notes,
     ],
@@ -642,10 +649,6 @@
     if (FORM_FIELDS[entity]) return formFromDefinition(FORM_FIELDS[entity]);
     const notes = field('notes', 'Notes', textarea('notes'), { col: 'col-12' });
     switch (entity) {
-      case 'category1':
-        return field('name', 'Name', input('name', 'text', 'maxlength="100"'), { required: true })
-          + field('display_order', 'Display Order', input('display_order', 'number', 'min="0" step="1"'))
-          + activeField() + notes;
       case 'item_kind':
         // System Code: entered once on create (the IKC number is issued separately) and never changed.
         return (state.editing ? '' : field('system_code', 'System Code', input('system_code', 'text', 'maxlength="30" data-awsum-code'), { required: true, help: 'Program logic key (A-Z, 0-9, _). Cannot be changed later. Not selectable on MD Master until its program logic is defined.' }))

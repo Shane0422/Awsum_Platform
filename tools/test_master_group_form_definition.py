@@ -131,6 +131,110 @@ const assert=(ok,m)=>{if(!ok)throw Error(m);};
         self.run_browser(script)
 
 
+CATEGORY1_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "master_group_category1_form.json"
+
+# Category I (P1-b3a) on the real page script with a mocked API; 422 for an out-of-range Display Order is the
+# server's own message (master_group._int), so the field-error path is the real one.
+CATEGORY1_MOCK_JS = r"""
+window.requests=[];
+window.bootstrap={Modal:class{show(){}hide(){}}};
+window.AwsumConfirm={show:async()=>({confirmed:true,choice:null})};
+const rows=[{id:1,code:'C100001',name:'Food',display_order:0,active:true,notes:'Main group',in_use:false},
+            {id:2,code:'C100002',name:'Hardware',display_order:20,active:false,notes:'',in_use:false},
+            {id:3,code:'C100003',name:'Locked',display_order:5,active:true,notes:'',in_use:false,read_only:true,read_only_message:'View only.'}];
+window.fetch=async(path,options={})=>{
+  const url=new URL(path,'http://127.0.0.1'),method=options.method||'GET';
+  const payload=options.body?JSON.parse(options.body):null;
+  requests.push({path:url.pathname,method,payload});
+  if(url.pathname.endsWith('/options'))return new Response(JSON.stringify({stores:[],taxes:[],category1:rows}));
+  if(method==='PUT'||method==='POST'){
+    const order=Number(payload&&payload.display_order);
+    if(payload&&payload.display_order!==''&&(order<0||order>1000000))return new Response(JSON.stringify({detail:'Please check the highlighted fields.',
+      errors:{display_order:'Display Order must be between 0 and 1000000.'}}),{status:422});
+    const item={...(rows.find(r=>url.pathname.endsWith('/'+r.id))||{id:99,code:'C100099'}),...payload};
+    return new Response(JSON.stringify({item}),{status:method==='POST'?201:200});
+  }
+  return new Response(JSON.stringify({items:rows,total:rows.length,page:1,pages:1,sort:'display_order',direction:'asc'}));
+};
+"""
+
+
+def category1_page():
+    js = "\n".join((browser.ROOT / "static" / "js" / f"{name}.js").read_text(encoding="utf-8")
+                   for name in ("money", "option-group", "master-detail", "master_group"))
+    html = render_list("category1", "Category I")
+    html = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", html, flags=re.DOTALL)
+    html = re.sub(r"<link\b[^>]*>", "", html).replace("</head>", toast_head(), 1)
+    return html.replace("</body>", f"<script>{CATEGORY1_MOCK_JS}\n{js}</script></body>")
+
+
+OPEN_CATEGORY1_JS = r"""
+const tick=()=>new Promise(r=>setTimeout(r,40));
+const wait=async(check,label)=>{for(let i=0;i<100;i++){try{if(check())return;}catch(e){}await tick();}throw Error('Timed out: '+label);};
+async function openCategory1(){
+  const frame=document.createElement('iframe');frame.style.cssText='border:0;width:1280px;height:800px';frame.srcdoc=PAGE;
+  const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),f=n=>find('mgf_'+n);
+  await wait(()=>find('mgBody').textContent.includes('Food'),'list');
+  find('mgAddBtn').click();
+  await wait(()=>f('name')&&f('display_order')&&f('active').options.length,'add form');
+  const create=canon(find('mgFields'));
+  const addValues={name:f('name').value,display_order:f('display_order').value,active:f('active').value,notes:f('notes').value};
+  doc.querySelector('#mgBody [data-row-select="1"]').click();
+  await wait(()=>f('name').value==='Food','edit form');
+  const edit=canon(find('mgFields'));
+  const values={name:f('name').value,display_order:f('display_order').value,active:f('active').value,notes:f('notes').value};
+  return {frame,doc,win,find,f,create,edit,addValues,values};
+}
+"""
+
+
+@unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+class Category1FormDefinitionBrowserTests(unittest.TestCase):
+    """Common Framework P1-b3a: Category I from FORM_FIELDS.category1 keeps the earlier hand-written form's DOM
+    (tools/fixtures/master_group_category1_form.json, captured before the change), values, payloads, the server's
+    Display Order field error and the read-only state."""
+    run_browser = browser.SharedImageComponentTests.run_component_script
+
+    def test_category1_form_from_definition_keeps_dom_values_payload_errors_and_read_only(self):
+        fixture = json.loads(CATEGORY1_FIXTURE.read_text(encoding="utf-8"))
+        script = (f"const PAGE={json.dumps(category1_page())};\nconst FIXTURE={json.dumps(fixture)};\n".replace("</", "<\\/")
+                  + CANON_JS + OPEN_CATEGORY1_JS + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+(async()=>{
+  const {doc,win,find,f,create,edit,addValues,values}=await openCategory1();
+  assert(create===FIXTURE.create,'Add form DOM differs:\n'+create+'\n---\n'+FIXTURE.create);
+  assert(edit===FIXTURE.edit,'Edit form DOM differs:\n'+edit+'\n---\n'+FIXTURE.edit);
+  assert(JSON.stringify(addValues)===JSON.stringify(FIXTURE.addValues),'Add values: '+JSON.stringify(addValues));
+  assert(JSON.stringify(values)===JSON.stringify(FIXTURE.values),'Edit values (Display Order 0 shown as 0): '+JSON.stringify(values));
+  const lastWrite=()=>win.requests.filter(r=>r.method==='PUT'||r.method==='POST').pop();
+  // Update payload: the same keys; Display Order 0 is sent as typed.
+  find('mgSave').click();
+  await wait(()=>lastWrite(),'update');
+  const put=lastWrite();
+  assert(put.method==='PUT'&&put.path.endsWith('/category1/1')&&JSON.stringify(put.payload)===JSON.stringify({name:'Food',display_order:'0',active:true,notes:'Main group'}),'update payload: '+JSON.stringify(put));
+  // Out-of-range Display Order: the server's field error in the Display Order slot.
+  doc.querySelector('#mgBody [data-row-select="1"]').click();await wait(()=>f('display_order').value==='0','reopen');
+  f('display_order').value='1000001';find('mgSave').click();
+  await wait(()=>f('display_order').classList.contains('is-invalid'),'range error');
+  assert(find('mgFields').querySelector('[data-error-for="display_order"]').textContent==='Display Order must be between 0 and 1000000.','range message in its slot');
+  assert(!f('name').classList.contains('is-invalid'),'only Display Order marked');
+  // Create payload: POST, no code, Display Order 0.
+  find('mgAddBtn').click();await wait(()=>f('name')&&f('name').value==='','add again');
+  f('name').value='Drinks';f('display_order').value='0';find('mgSave').click();
+  await wait(()=>lastWrite().method==='POST','create');
+  const post=lastWrite();
+  assert(post.path.endsWith('/category1')&&JSON.stringify(post.payload)===JSON.stringify({name:'Drinks',display_order:'0',active:true,notes:''}),'create payload: '+JSON.stringify(post.payload));
+  // Read-only row: inputs and Save disabled.
+  doc.querySelector('#mgBody [data-row-select="3"]').click();
+  await wait(()=>f('name')&&f('name').value==='Locked','read-only row');
+  assert([...find('mgFields').querySelectorAll('input, select, textarea')].every(el=>el.disabled)&&find('mgSave').disabled,'read-only: inputs and Save disabled');
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
+""")
+        self.run_browser(script)
+
+
 CHILD_GRID_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "master_group_child_grid.json"
 GRID_KINDS = ("history", "education", "experience", "certification", "skill")
 
