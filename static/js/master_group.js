@@ -353,12 +353,19 @@
       ${opts && opts.help ? `<div class="form-text">${opts.help}</div>` : ''}
     </div>`;
   }
-  const input = (name, type, extra) => `<input class="form-control${type === 'number' || /inputmode="decimal"/.test(extra || '') ? ' pm-num' : ''}" id="mgf_${name}" name="${name}" type="${type}" ${extra || ''}>`;
-  const select = (name, extra) => `<select class="form-select" id="mgf_${name}" name="${name}" ${extra || ''}></select>`;
-  const textarea = (name) => `<textarea class="form-control" id="mgf_${name}" name="${name}" rows="2"></textarea>`;
+  // Control markup. attrs = the identity attributes: the main form uses id + name (collected by Save, formAttrs);
+  // the Common Child Grid uses its own id + data-cg-field (no name: never part of the main Save).
+  const formAttrs = (name) => `id="mgf_${name}" name="${name}"`;
+  const numClass = (type, extra) => (type === 'number' || /inputmode="decimal"/.test(extra || '') ? ' pm-num' : '');
+  const inputTag = (attrs, type, extra) => `<input class="form-control${numClass(type, extra)}" ${attrs} type="${type}" ${extra || ''}>`;
+  const selectTag = (attrs, extra) => `<select class="form-select" ${attrs} ${extra || ''}></select>`;
+  const textareaTag = (attrs, rows, max) => `<textarea class="form-control" ${attrs} rows="${rows || 2}"${max ? ` maxlength="${max}"` : ''}></textarea>`;
+  const input = (name, type, extra) => inputTag(formAttrs(name), type, extra);
+  const select = (name, extra) => selectTag(formAttrs(name), extra);
+  const textarea = (name) => textareaTag(formAttrs(name), 2);
   const activeField = () => field('active', 'Status', select('active'), { col: 'col-md-6' });
   // ---- Common Form Definition (Common Framework P1-a): a form described as data, drawn by the helpers above. ----
-  // Field: { name, label, type: 'text' | 'decimal' | 'select' | 'textarea', max, required, help, col (default col-md-6) }.
+  // Field: { name, label, type (controlHtml), max, rows, required, help, col (default col-md-6) }.
   // name is the payload key and the key of the server's field errors (FieldErrors), so fillForm(), collect() and
   // showFieldErrors() work unchanged. The server stays the authority for every rule (max / required only mirror it).
   // An entity listed in FORM_FIELDS is drawn from its definition; the others keep their formHtml() case.
@@ -374,16 +381,23 @@
       COMMON_FIELDS.notes,
     ],
   };
-  function controlFromDef(def) {
-    switch (def.type) {
-      case 'text': return input(def.name, 'text', def.max ? `maxlength="${def.max}"` : '');
-      case 'decimal': return input(def.name, 'text', 'inputmode="decimal"');
-      case 'select': return select(def.name);
-      case 'textarea': return textarea(def.name);
+  // Common Control Renderer (Common Framework P1-b1): the one control per field type for the main form
+  // (FORM_FIELDS, attrs = formAttrs) and the Common Child Grid (attrs = its id + data-cg-field).
+  // type: 'text' (default) | 'decimal' | 'select' | 'textarea' | 'date' (Common Date) | 'year'.
+  // limits: the caller's default maxlength per type when the field has no max (Child Grid: text 200, textarea 4000).
+  function controlHtml(def, attrs, limits) {
+    const max = def.max || (limits && limits[def.type || 'text']);
+    switch (def.type || 'text') {
+      case 'text': return inputTag(attrs, 'text', max ? `maxlength="${max}"` : '');
+      case 'decimal': return inputTag(attrs, 'text', 'inputmode="decimal"');
+      case 'select': return selectTag(attrs);
+      case 'textarea': return textareaTag(attrs, def.rows, max);
+      case 'date': return inputTag(attrs, 'text', `data-awsum-date data-date-label="${esc(def.label)}"${def.required ? ' data-date-required="true"' : ''}`);
+      case 'year': return inputTag(attrs, 'text', 'inputmode="numeric" maxlength="4" placeholder="YYYY"');
       default: throw new Error(`Unknown field type "${def.type}" (${def.name}).`);
     }
   }
-  const fieldFromDef = (def) => field(def.name, def.label, controlFromDef(def), { col: def.col || 'col-md-6', required: def.required, help: def.help });
+  const fieldFromDef = (def) => field(def.name, def.label, controlHtml(def, formAttrs(def.name)), { col: def.col || 'col-md-6', required: def.required, help: def.help });
   const formFromDefinition = (defs) => defs.map(fieldFromDef).join('');
   // Location Code placeholder by Area (an example only; the format is never enforced).
   // ---- Location Master: one range form for new locations (Zone + two From/To ranges -> every combination) ----
@@ -783,16 +797,10 @@
   // (accessErrors). Its controls have no name attribute, so the main Save never collects them. The server decides
   // every permission (can_add / can_edit / can_delete); the grid only follows it. ----
   const childGrids = {};
+  const CHILD_GRID_LIMITS = { text: 200, textarea: 4000 }; // default maxlength of a Child Grid field without max
   function childGrid(cfg) {
     const ctl = (fld) => `mgCg_${cfg.kind}_${fld.name}`;
-    const control = (fld) => {
-      const attrs = `id="${ctl(fld)}" data-cg-field="${fld.name}"`;
-      if (fld.type === 'textarea') return `<textarea class="form-control" ${attrs} rows="${fld.rows || 2}" maxlength="${fld.max || 4000}"></textarea>`;
-      if (fld.type === 'select') return `<select class="form-select" ${attrs}></select>`;
-      if (fld.type === 'date') return `<input class="form-control" ${attrs} type="text" data-awsum-date data-date-label="${esc(fld.label)}"${fld.required ? ' data-date-required="true"' : ''}>`;
-      if (fld.type === 'year') return `<input class="form-control" ${attrs} type="text" inputmode="numeric" maxlength="4" placeholder="YYYY">`;
-      return `<input class="form-control" ${attrs} type="text" maxlength="${fld.max || 200}">`;
-    };
+    const control = (fld) => controlHtml(fld, `id="${ctl(fld)}" data-cg-field="${fld.name}"`, CHILD_GRID_LIMITS);
     const cols = cfg.columns.length + 1;
     const html = `<section class="col-12 pm-section mg-cg" id="mgCg${cfg.kind}" data-cg="${cfg.kind}">
         <div class="pm-section-head d-flex justify-content-between align-items-center">

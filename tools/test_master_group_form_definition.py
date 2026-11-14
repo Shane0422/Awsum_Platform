@@ -11,7 +11,10 @@ import re
 import unittest
 from pathlib import Path
 
+from tools import test_employee_master as employee_master
+from tools import test_employee_records as employee_records
 from tools import test_image_components as browser
+from tools import test_merchant_store_management as store_management
 from tools.test_master_group_ui import render_list, toast_head
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "master_group_tax_form.json"
@@ -126,6 +129,110 @@ const assert=(ok,m)=>{if(!ok)throw Error(m);};
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
 """)
         self.run_browser(script)
+
+
+CHILD_GRID_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "master_group_child_grid.json"
+GRID_KINDS = ("history", "education", "experience", "certification", "skill")
+
+
+def _fixed_timestamps(value):
+    """Record lists with fixed timestamps, so the rendered rows (Created ... / Edited ...) are the same every run."""
+    if isinstance(value, dict):
+        return {k: ("2026-11-13T10:00:00" if k.endswith("_at") and v else _fixed_timestamps(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_fixed_timestamps(v) for v in value]
+    return value
+
+
+# Opens the Employee screen and returns, per Common Child Grid: the section DOM (rows), the DOM with the Add
+# editor open, the DOM and values with the Edit editor open, and the payload of one Add save.
+GRID_JS = r"""
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const waitFor=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}await pause(40);}throw Error('timeout: '+m);};
+async function captureGrids(){
+  const frame=document.createElement('iframe');frame.style.cssText='width:1400px;height:1000px;border:0';frame.srcdoc=PAGE;
+  const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
+  const doc=frame.contentDocument,win=frame.contentWindow,$=id=>doc.getElementById(id);
+  await waitFor(()=>doc.querySelector('#mgBody [data-row-select]'),'employees');
+  doc.querySelector('#mgBody [data-row-select]').click();
+  await waitFor(()=>doc.querySelector('#mgCghistory [data-cg-row]')&&doc.querySelector('#mgCgeducation [data-cg-row]'),'records');
+  const out={};
+  for(const kind of KINDS){
+    const sec=$('mgCg'+kind),act=a=>sec.querySelector(`[data-cg-act="${a}"]`),editor=sec.querySelector('[data-cg-editor]');
+    const values=()=>Object.fromEntries([...sec.querySelectorAll('[data-cg-field]')].map(el=>[el.dataset.cgField,el.value]));
+    const r={list:canon(sec)};
+    act('add').click();await waitFor(()=>!editor.classList.contains('d-none'),kind+' add');
+    r.add=canon(sec);r.addValues=values();
+    act('cancel').click();await waitFor(()=>editor.classList.contains('d-none'),kind+' cancel');
+    const edit=sec.querySelector('[data-cg-act="edit"]');
+    if(edit){edit.click();await waitFor(()=>!editor.classList.contains('d-none'),kind+' edit');
+      r.edit=canon(sec);r.editValues=values();
+      act('cancel').click();await waitFor(()=>editor.classList.contains('d-none'),kind+' cancel edit');}
+    out[kind]=r;
+  }
+  // One Add save per grid kind with fields (the editor's collect + Common Date value -> ISO payload).
+  const sec=$('mgCghistory');sec.querySelector('[data-cg-act="add"]').click();
+  await waitFor(()=>!sec.querySelector('[data-cg-editor]').classList.contains('d-none'),'history add 2');
+  const fld=n=>sec.querySelector(`[data-cg-field="${n}"]`);
+  win.AwsumDateInput.setValue(fld('record_date'),'2026-03-01');fld('subject').value='Coaching';fld('description').value='Line one';
+  const before=win.requests.length;sec.querySelector('[data-cg-act="save"]').click();
+  await waitFor(()=>win.requests.slice(before).some(q=>q.method==='POST'),'history save');
+  out.savedHistory=JSON.parse(win.requests.slice(before).find(q=>q.method==='POST').body);
+  return out;
+}
+"""
+
+
+@unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
+class ChildGridDomTests(employee_records.EmployeeRecordTestBase):
+    """Common Child Grid (Employee HISTORY + 4 BACKGROUND lists): the same DOM, editor values and payload as the
+    fixture tools/fixtures/master_group_child_grid.json, captured before the Common Control Renderer (P1-b1)."""
+
+    run_browser = employee_master.EmployeeMasterTests.run_browser
+
+    def grid_script(self, tail):
+        response = self.client.post(f"{employee_records.COMMON}?group=JOB_SKILL", json={"name": "Barista"})
+        self.assertEqual(response.status_code, 201, response.text)
+        code = response.json()["item"]
+        self.add("history", record_date="2026-02-01", subject="Older note", description="By this manager")
+        self.add("education", school="State University", degree="BS", graduation_year=2010, major="Math", remark="Honors")
+        self.add("experience", company="Acme", position="Clerk", start_date="2020-01-06", end_date="2021-02-01", description="Retail")
+        self.add("certification", name="Food Safety", issuer="County", issued_date="2025-05-01", expiration_date="2027-05-01")
+        self.add("skill", skill_code_id=code["id"], proficiency="EXPERT")
+        lists = _fixed_timestamps({kind: self.items(kind) for kind in GRID_KINDS})
+        current = self.client.get(employee_master.API, params={"active": "current"}).json()
+        options = self.client.get("/merchant/api/master-group/options").json()
+        mock = (f"window.__lists={json.dumps(lists)};window.__current={json.dumps(current)};window.__options={json.dumps(options)};" + r"""
+window.requests=[];window.bootstrap=window.bootstrap||{};
+const J=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'Content-Type':'application/json'}});
+window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');const method=options.method||'GET';
+ requests.push({path:url.pathname,method,body:options.body});
+ if(url.pathname.endsWith('/options'))return J(__options);
+ if(url.pathname.endsWith('/assignments'))return J({items:[]});
+ const rec=/\/records\/(\w+)(?:\/(\d+))?$/.exec(url.pathname);
+ if(rec){if(method==='GET')return J(__lists[rec[1]]);
+   const item=Object.assign({id:9001,created_by:'Pat Merchant',created_at:'2026-11-13T10:00:00',updated_by:null,updated_at:null,edited:false,can_edit:true,can_delete:true},JSON.parse(options.body||'{}'));
+   return J({item,message:'Saved.'},method==='POST'?201:200);}
+ if(url.pathname==='/merchant/api/master-group/employee')return J(__current);
+ return J({item:__current.items[0]});};""")
+        page = store_management.inline_page(self.client.get("/merchant/employee-group/employee-master").text, mock)
+        return (f"const PAGE={json.dumps(page)};\nconst KINDS={json.dumps(list(GRID_KINDS))};\n".replace("</", "<\\/")
+                + CANON_JS + GRID_JS + tail)
+
+    def test_child_grids_keep_dom_editor_values_and_payload(self):
+        fixture = json.loads(CHILD_GRID_FIXTURE.read_text(encoding="utf-8"))
+        self.run_browser(self.grid_script(f"const FIXTURE={json.dumps(fixture)};".replace("</", "<\\/") + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+(async()=>{
+  const got=await captureGrids();
+  for(const kind of KINDS)for(const part of ['list','add','addValues','edit','editValues']){
+    const a=JSON.stringify(got[kind][part]),b=JSON.stringify(FIXTURE[kind][part]);
+    assert(a===b,`${kind} ${part} differs:\n${a}\n---\n${b}`);
+  }
+  assert(JSON.stringify(got.savedHistory)===JSON.stringify(FIXTURE.savedHistory),'history save payload: '+JSON.stringify(got.savedHistory));
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack||String(e)});});
+"""))
 
 
 if __name__ == "__main__":
