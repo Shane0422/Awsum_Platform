@@ -998,17 +998,23 @@
     const info = field('first_name', 'First Name', input('first_name', 'text', 'maxlength="100" autocomplete="off"'))
       + field('last_name', 'Last Name', input('last_name', 'text', 'maxlength="100" autocomplete="off"'), { help: 'Enter a First Name or a Last Name.' })
       + field('display_name', 'Display Name', input('display_name', 'text', 'maxlength="40"'), { help: 'Name on POS and receipts.' })
-      + field('status', 'Status', select('status'))
       + field('phone', 'Phone', input('phone', 'tel', 'maxlength="40"'))
       + field('email', 'Email', input('email', 'email', 'maxlength="254"'), { help: 'Contact only. The Portal Login Email is set in Portal Access.' });
     // Personal Information: Birthday (common date input, not in the future) + Gender (fixed list from /options), optional.
     const personal = section('Personal Information', field('birth_date', 'Birthday', dateInput('birth_date', 'Birthday', 'data-date-max="today" data-date-max-message="Birthday cannot be in the future."'))
       + field('gender', 'Gender', select('gender')), 'Optional.', 'id="mgEmpPersonal"');
-    // Employment Information: Hire Date + Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
-    const employment = section('Employment Information', field('hire_date', 'Hire Date', dateInput('hire_date', 'Hire Date'))
-      + field('job_grade_code_id', 'Job Grade', select('job_grade_code_id'))
+    // Job Information (top of GENERAL): Job Grade / Job Title (Common Maintenance codes of this Merchant, optional).
+    const job = section('Job Information', field('job_grade_code_id', 'Job Grade', select('job_grade_code_id'))
       + field('job_title_code_id', 'Job Title', select('job_title_code_id')),
-      'Optional. Job Grades and Titles are managed in Master Group &gt; Common Maintenance.', 'id="mgEmpEmployment"');
+      'Optional. Job Grades and Titles are managed in Master Group &gt; Common Maintenance.', 'id="mgEmpJob"');
+    // Employment Information: Hire Date | Termination Date, Status | Termination Reason. The termination values are the
+    // saved ones, read only and unnamed (never part of Save): empty unless terminated; only Terminate sets them.
+    const shown = (name, control) => control.replace('<input ', `<input id="mgf_${name}" readonly tabindex="-1" `);
+    const employment = section('Employment Information', field('hire_date', 'Hire Date', dateInput('hire_date', 'Hire Date'))
+      + field('termination_date', 'Termination Date', shown('termination_date', '<input class="form-control" type="text" data-awsum-date data-date-label="Termination Date">'))
+      + field('status', 'Status', select('status'))
+      + field('termination_reason', 'Termination Reason', shown('termination_reason', '<input class="form-control" type="text">')),
+      'Termination Date and Reason are set by Terminate only.', 'id="mgEmpEmployment"');
     // Address: the common address fields and ZIP autofill (static/js/awsum-address.js), same order as the Store form.
     const address = section('Address', field('zip', 'ZIP Code', input('zip', 'text', 'maxlength="20" placeholder="12345 or 12345-6789" autocomplete="off"'))
       + field('city', 'City', input('city', 'text', 'maxlength="100"'))
@@ -1069,10 +1075,10 @@
         </div>
       </section>`;
     const termination = !row ? '' : row.status === 'terminated'
-      ? section('Termination', `<div class="col-12 small" id="mgEmpTerminated">Terminated on <strong>${esc(usDate(row.termination_date))}</strong>${row.termination_reason ? ` \u00b7 ${esc(row.termination_reason)}` : ''}. Store assignments ended; every record is kept. Reactivate to rehire (assignments are not restored).</div>`)
-      : section('Termination', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Termination Date</label><input class="form-control" id="mgEmpTermDate" type="text" data-awsum-date data-date-label="Termination Date"><div class="invalid-feedback"></div></div>
+      ? section('Termination', `<div class="col-12 small" id="mgEmpTerminated">Store assignments ended; every record is kept. Reactivate to rehire (assignments are not restored).</div>`)
+      : section('Terminate Employee', `<div class="col-md-4"><label class="form-label" for="mgEmpTermDate">Date to Terminate</label><input class="form-control" id="mgEmpTermDate" type="text" data-awsum-date data-date-label="Termination Date"><div class="invalid-feedback"></div></div>
           <div class="col-md-8"><label class="form-label" for="mgEmpTermReason">Reason</label><input class="form-control" id="mgEmpTermReason" type="text" maxlength="200"></div>
-          <div class="col-12 form-text">Terminate (top right) ends every Store assignment, Inactive Stores included, and removes POS access. Records are kept.</div>`);
+          <div class="col-12 form-text">Only for Terminate (top right): enter these when terminating the employee. Terminate ends every Store assignment, Inactive Stores included, and removes POS access. Records are kept.</div>`, '', 'id="mgEmpTerminate"');
     // Audit (read only, never saved: no name attribute): the common AuditMixin values of the response.
     const auditField = (name, text) => field(name, text,
       `<input class="form-control mg-record-code-input" id="mgf_${name}" type="text" readonly tabindex="-1" value="${EMPTY_VALUE}">`);
@@ -1087,7 +1093,7 @@
     const tabs = [['General', 'GENERAL', `<div class="col-12 mg-md-top">
           <div class="mg-md-fields">${ids}${section('', info)}</div>
           <div id="mgImageUploader" class="mg-image-panel"></div>
-        </div>${personal}${employment}${audit}${termination}`],
+        </div>${job}${employment}${personal}${audit}${termination}`],
       ['Address', 'ADDRESS', address],
       ['Terminal', 'STORE TERMINAL ACCESS', `${posAccess}${asg}`],
       ['Portal', 'PORTAL ACCESS', portalAccess],
@@ -1123,7 +1129,14 @@
     setOptions('gender', ((state.options && state.options.genders) || []).map((g) => [g.code, g.name]), row ? row.gender : null, 'Not specified');
     fillCommonCodeSelect(f('job_grade_code_id'), 'job_grade_codes', row ? row.job_grade_code_id : null);
     fillCommonCodeSelect(f('job_title_code_id'), 'job_title_codes', row ? row.job_title_code_id : null);
-    if ($('mgEmpTermDate')) AwsumDateInput.setValue($('mgEmpTermDate'), today());
+    // The saved termination values (empty unless terminated). The Terminate input starts empty: no default date.
+    if (f('termination_date')) {
+      AwsumDateInput.setValue(f('termination_date'), (row && row.termination_date) || '');
+      const trigger = f('termination_date').closest('.awsum-date-group');
+      if (trigger && trigger.querySelector('.awsum-date-trigger')) trigger.querySelector('.awsum-date-trigger').disabled = true;
+      f('termination_reason').value = (row && row.termination_reason) || '';
+    }
+    if ($('mgEmpTermDate')) AwsumDateInput.setValue($('mgEmpTermDate'), '');
     if (row) {
       [['created_by', row.created_by], ['updated_by', row.updated_by]].forEach(([key, name]) => { f(key).value = name || EMPTY_VALUE; });
       f('created_at').value = usDateTime(row.created_at);
@@ -1379,8 +1392,8 @@
       const date = $('mgEmpTermDate') ? AwsumDateInput.getValue($('mgEmpTermDate')) : '';
       if ($('mgEmpTermDate') && !AwsumDateInput.check($('mgEmpTermDate'))) { $('mgEmpTermDate').focus(); return null; }
       if (!date) {
-        showMessage('Enter the Termination Date in the Termination section.', 'warning');
-        if ($('mgEmpTermDate')) $('mgEmpTermDate').focus();
+        showMessage('Enter the Date to Terminate in General > Terminate Employee, then click Terminate.', 'warning');
+        if ($('mgEmpTermDate')) { showTabOf($('mgEmpTermDate')); $('mgEmpTermDate').focus(); }
         return null;
       }
       const open = assignments.filter((a) => a.status !== 'ended').length;

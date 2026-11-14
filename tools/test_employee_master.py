@@ -463,24 +463,34 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const bd=$('mgf_birth_date');
  assert(bd.type==='text'&&bd.hasAttribute('data-awsum-date')&&bd.placeholder==='MM-DD-YYYY'&&bd.value==='03-15-1990','Birthday common date input (MM-DD-YYYY): '+bd.value);
  assert(bd.closest('.awsum-date-group')&&bd.closest('.awsum-date-group').querySelector('.awsum-date-trigger'),'calendar button');
- assert(['mgf_hire_date','mgEmpTermDate','mgAsgStart'].every(id=>$(id).type==='text'&&$(id).hasAttribute('data-awsum-date')),'every Employee date uses the common input');
+ assert(['mgf_hire_date','mgf_termination_date','mgEmpTermDate','mgAsgStart'].every(id=>$(id).type==='text'&&$(id).hasAttribute('data-awsum-date')),'every Employee date uses the common input');
  assert(!doc.querySelector('#mgFields input[type="date"]'),'no native date input left');
- assert(/^\d{2}-\d{2}-\d{4}$/.test($('mgEmpTermDate').value),'Termination Date defaults to today (MM-DD-YYYY): '+$('mgEmpTermDate').value);
+ // STEP D: no termination value is shown for an employed person (saved value NULL; the Terminate input has no default)
+ assert($('mgf_termination_date').value===''&&$('mgf_termination_reason').value===''&&$('mgEmpTermDate').value==='','no Termination Date / Reason for an Active employee: '+$('mgf_termination_date').value+'|'+$('mgEmpTermDate').value);
+ assert($('mgf_termination_date').readOnly&&$('mgf_termination_reason').readOnly&&!$('mgf_termination_date').name&&!$('mgf_termination_reason').name,'termination values read only, never saved');
+ assert($('mgf_termination_date').closest('.awsum-date-group').querySelector('.awsum-date-trigger').disabled,'no calendar on the read-only Termination Date');
  assert(/11-02-2026/.test($('mgAsgBody').textContent),'assignment start shown as MM-DD-YYYY');
  const genderSel=$('mgf_gender');
  assert([...genderSel.options].map(o=>o.text).join('|')==='Not specified|Male|Female'&&genderSel.value==='FEMALE','Gender list (Male / Female / not selected) and saved value');
- assert($('mgEmpPersonal').compareDocumentPosition($('mgEmpEmployment'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Personal, then Employment Information');
+ const after=(a,b)=>$(a).compareDocumentPosition($(b))&win.Node.DOCUMENT_POSITION_FOLLOWING;
+ assert(after('mgEmpJob','mgEmpEmployment')&&after('mgEmpEmployment','mgEmpPersonal'),'Job, then Employment, then Personal Information');
+ assert(after('mgImageUploader','mgEmpJob')&&!doc.querySelector('.mg-md-fields').contains($('mgf_status')),'Job Information right below the top block; Status moved');
  assert(!/1990|Female|03\/15/.test($('mgBody').textContent),'Birthday / Gender never in the list display');
  // Employment Information (GENERAL): Hire Date moved here + Job Grade / Job Title (Common codes, optional).
  assert(/^Employment Information/.test($('mgEmpEmployment').querySelector('h3').textContent),'Employment Information section');
- assert(['mgf_hire_date','mgf_job_grade_code_id','mgf_job_title_code_id'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Job Grade, Job Title');
+ assert(/^Job Information/.test($('mgEmpJob').querySelector('h3').textContent),'Job Information section');
+ assert(['mgf_job_grade_code_id','mgf_job_title_code_id'].every(id=>$('mgEmpJob').contains($(id))),'Job Grade, Job Title');
+ const top=id=>Math.round($(id).getBoundingClientRect().top);
+ assert(top('mgf_job_grade_code_id')===top('mgf_job_title_code_id'),'Job Grade and Job Title on one row');
+ assert(['mgf_hire_date','mgf_termination_date','mgf_status','mgf_termination_reason'].every(id=>$('mgEmpEmployment').contains($(id))),'Hire Date, Termination Date, Status, Termination Reason');
+ assert(top('mgf_hire_date')===top('mgf_termination_date')&&top('mgf_status')===top('mgf_termination_reason')&&top('mgf_status')>top('mgf_hire_date'),'Hire | Termination Date, then Status | Termination Reason');
  assert(!doc.querySelector('.mg-md-fields').contains($('mgf_hire_date'))&&$('mgf_hire_date').value==='11-01-2026','Hire Date moved, value kept (MM-DD-YYYY)');
  const gradeSel=$('mgf_job_grade_code_id'),titleSel=$('mgf_job_title_code_id'),txt=s=>s.options[s.selectedIndex].text;
  assert(gradeSel.options[0].value===''&&gradeSel.options[0].text==='None'&&gradeSel.options.length===9,'8 active Grades + None');
  assert(txt(gradeSel)==='Supervisor','saved Grade selected');
  assert(titleSel.options.length===11&&txt(titleSel)==='Store Manager (Inactive)','inactive saved Title kept by name: '+txt(titleSel));
  assert(gradeSel.compareDocumentPosition($('mgEmpAudit'))&win.Node.DOCUMENT_POSITION_FOLLOWING,'Employment Information above the audit');
- for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgEmpPersonal','mgf_hire_date','mgEmpEmployment','mgEmpAudit','mgEmpTermDate']],
+ for(const [pane,ids] of [['mgEmpPaneGeneral',['mgEmpCode','mgImageUploader','mgf_first_name','mgEmpJob','mgEmpPersonal','mgf_hire_date','mgEmpEmployment','mgf_status','mgEmpAudit','mgEmpTermDate']],
    ['mgEmpPaneAddress',['mgf_zip','mgf_country']],['mgEmpPaneTerminal',['mgEmpPos','mgf_pos_login_id','mgPinOpen','mgAsgSection']],
    ['mgEmpPanePortal',['mgEmpPortal','mgPortalOpen']]])
    ids.forEach(id=>assert($(pane).contains($(id)),id+' in '+pane));

@@ -587,5 +587,85 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
         self.run_browser(script)
 
 
+    def test_general_termination_values_by_status(self):
+        """STEP D: the General Termination Date / Reason show the saved values only (empty unless terminated)."""
+        inactive = self.create(first_name="Ina", status="inactive", hire_date="2026-02-01")
+        gone = self.create(first_name="Gone", hire_date="2026-03-01")
+        self.client.post(f"{API}/{gone['id']}/terminate", json={"termination_date": "2026-11-30", "termination_reason": "Moved"})
+        listing = self.client.get(API, params={"active": "all"}).json()
+        self.assertEqual({i["code"]: (i["status"], i["termination_date"]) for i in listing["items"]},
+                         {self.employee["code"]: ("active", None), inactive["code"]: ("inactive", None),
+                          gone["code"]: ("terminated", "2026-11-30")})  # the API sends NULL as null
+        options = self.client.get("/merchant/api/master-group/options").json()
+        mock = ("window.__errors=[];addEventListener('error',e=>__errors.push(String(e.message)));"
+                f"window.__list={json.dumps(listing)};window.__options={json.dumps(options)};" + r"""
+window.requests=[];window.bootstrap=window.bootstrap||{};
+const J=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'Content-Type':'application/json'}});
+const byId=id=>__list.items.find(i=>i.id===id);
+window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');const method=options.method||'GET';
+ requests.push({path:url.pathname,method,body:options.body});
+ if(url.pathname.endsWith('/options'))return J(__options);
+ if(url.pathname.endsWith('/assignments'))return J({items:[]});
+ if(/\/records\//.test(url.pathname))return J({items:[],can_add:true,read_only_message:null});
+ const m=url.pathname.match(/\/employee\/(\d+)\/reactivate$/);
+ if(m){const row=Object.assign({},byId(Number(m[1])),{status:'active',hire_date:'2027-03-01',termination_date:null,termination_reason:null,read_only:false,read_only_message:null});
+   __list.items=__list.items.map(i=>i.id===row.id?row:i);return J({item:row});}
+ const p=url.pathname.match(/\/employee\/(\d+)$/);
+ if(p&&method==='PUT')return J({item:byId(Number(p[1]))});
+ if(url.pathname==='/merchant/api/master-group/employee')return J(__list);
+ return J({item:__list.items[0]});};""")
+        page = inline_page(self.client.get("/merchant/employee-group/employee-master").text, mock)
+        codes = json.dumps({"active": self.employee["code"], "inactive": inactive["code"], "gone": gone["code"]})
+        script = "const page=" + json.dumps(page).replace("</", "<\\/") + ";\nconst C=" + codes + ";\n" + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}await pause(50);}throw Error('timeout: '+m);};
+(async()=>{
+ const frame=document.createElement('iframe');frame.style.width='1400px';frame.style.height='1000px';frame.srcdoc=page;
+ const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
+ const doc=frame.contentDocument,win=frame.contentWindow,$=id=>doc.getElementById(id);
+ const toasts=[];const show=win.AwsumToast.show.bind(win.AwsumToast);win.AwsumToast.show=(t,o)=>{toasts.push(String(t));return show(t,o);};
+ win.AwsumConfirm.show=async()=>({confirmed:true});
+ await wait(()=>doc.querySelectorAll('#mgBody [data-row-select]').length===3,'three employees listed');
+ const pick=async(code)=>{[...doc.querySelectorAll('#mgBody [data-row-select]')].find(r=>r.textContent.includes(code)).click();
+   await wait(()=>$('mgEmpCode')&&$('mgEmpCode').textContent===code,'opened '+code);await pause(150);};
+ const term=()=>[$('mgf_termination_date').value,$('mgf_termination_reason').value].join('|');
+ // Terminated: the real date and reason, read only
+ await pick(C.gone);
+ assert(term()==='11-30-2026|Moved'&&$('mgf_status').value==='terminated','terminated: '+term());
+ assert($('mgf_termination_date').readOnly&&!$('mgEmpTermDate'),'read only; no Terminate input for a terminated employee');
+ const note=$('mgEmpTerminated').textContent;  // the date / reason are shown once (Employment Information); the guidance stays
+ assert(!/11-30-2026|Moved/.test(note)&&/Store assignments ended; every record is kept\. Reactivate to rehire/.test(note),'termination notice: '+note);
+ // switching to an Active / Inactive employee clears the values (nothing carried over)
+ await pick(C.active);
+ assert(term()==='|'&&$('mgf_status').value==='active'&&$('mgEmpTermDate').value==='','active: empty ('+term()+')');
+ await pick(C.inactive);
+ assert(term()==='|'&&$('mgf_status').value==='inactive'&&$('mgEmpTermDate').value==='','inactive: empty ('+term()+')');
+ // Save never sends the termination values
+ $('mgf_phone').value='703-555-0199';$('mgSave').click();
+ await wait(()=>win.requests.some(r=>r.method==='PUT'),'saved');
+ const sent=win.requests.find(r=>r.method==='PUT').body;  // the common uploader FormData: payload = the JSON values
+ const body=JSON.parse(sent.get?sent.get('payload'):sent);
+ assert(!('termination_date' in body)&&!('termination_reason' in body)&&body.status==='inactive','Save payload: '+Object.keys(body));
+ // Terminate without a date: asks for the date, sends nothing (no default date)
+ await pick(C.active);
+ $('mgMdDelete').click();await pause(300);
+ assert(!win.requests.some(r=>/terminate/.test(r.path))&&/Date to Terminate/.test(toasts[toasts.length-1]),'terminate needs a date: '+toasts[toasts.length-1]);
+ // Add: empty, no Terminate section
+ $('mgAddBtn').click();await wait(()=>$('mgEmpCodeNote'),'add form');
+ assert(term()==='|'&&!$('mgEmpTermDate')&&$('mgEmpJob')&&$('mgf_status').value==='active','new employee form');
+ // Rehire: Active again, the Termination Date / Reason are empty
+ await pick(C.gone);
+ const hire=$('mgf_hire_date');hire.focus();hire.value='03012027';hire.dispatchEvent(new Event('input',{bubbles:true}));hire.dispatchEvent(new Event('blur'));
+ $('mgMdToggle').click();
+ await wait(()=>win.requests.some(r=>/reactivate/.test(r.path))&&$('mgf_status').value==='active','rehired');await pause(200);
+ assert(term()==='|'&&$('mgf_hire_date').value==='03-01-2027'&&$('mgEmpTermDate').value==='','after rehire: '+term());
+ assert(win.__errors.length===0,'no script errors: '+win.__errors);
+ document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
+"""
+        self.run_browser(script)
+
+
 if __name__ == "__main__":
     unittest.main()
