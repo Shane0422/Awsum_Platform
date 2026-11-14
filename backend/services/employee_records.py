@@ -14,6 +14,12 @@ Employee Master (services.employees, services.master_group, services.dates):
 - BACKGROUND (education / experience / certification / skill): add, edit and delete while the Employee is not
   terminated (terminated: view only, like the Employee Master).
 Dates: ISO in the API, parsed by services.dates (MM-DD-YYYY / MM/DD/YYYY accepted), DATE in the DB.
+
+STEP 1A-5 automatic employment HISTORY: record_status_event() is the one writer of SYSTEM records, called by the
+existing Employee commands (services.employees: create, Active <-> Inactive save, Terminate, Reactivate) inside their
+own transaction (it never commits), so a failed status change leaves no record. A SYSTEM record shows "System" as its
+author, keeps its dates in columns, and is never edited or deleted; the manual API can neither create nor change one
+(record_type / event_type are not accepted fields).
 """
 from __future__ import annotations
 
@@ -22,14 +28,17 @@ from sqlalchemy.orm import Session
 
 from backend.models_admin.common_code import CommonCode
 from backend.models_admin.employee import Employee
-from backend.models_admin.employee_records import (SKILL_PROFICIENCIES, EmployeeCertification, EmployeeEducation,
-                                                   EmployeeExperience, EmployeeHistory, EmployeeSkill)
+from backend.models_admin.employee_records import (HISTORY_EVENTS, SKILL_PROFICIENCIES, EmployeeCertification,
+                                                   EmployeeEducation, EmployeeExperience, EmployeeHistory, EmployeeSkill)
 from backend.services.dates import format_date
 from backend.services.employees import TERMINATED_MESSAGE, _actor_names, _date, _employee, _iso, _reject_unexpected
 from backend.services.master_group import Conflict, FieldErrors, NotFound, _id, _stamp, _text, common_code_query
 
 PROFICIENCY_LABELS = dict(SKILL_PROFICIENCIES)
 AUTHOR_ONLY_MESSAGE = "Only the author can edit this record. Add a new record for a follow-up."
+SYSTEM_RECORD_MESSAGE = "System records are written automatically and cannot be edited or deleted."
+EVENT_LABELS = dict(HISTORY_EVENTS)
+SYSTEM_AUTHOR = "System"
 NO_DELETE_MESSAGE = "History records cannot be deleted. Add a new record for a correction."
 
 # field spec: payload key -> (attribute, kind, options). kinds: text / longtext / date / year / skill / proficiency.
@@ -90,6 +99,41 @@ def kind_config(kind: str) -> dict:
     return cfg
 
 
+def can_add_history(employee: Employee) -> bool:
+    """Whether HISTORY records may be added for this Employee (also for a terminated one): the one rule shared by the
+    HISTORY list (can_add) and the Employee read-only message."""
+    return bool(KINDS["history"].get("terminated_writable") or employee.c_status != "terminated")
+
+
+def record_status_event(db: Session, employee: Employee, event: str, user_id, *, record_date, hire_date=None,
+                        previous_hire_date=None, termination_date=None, termination_reason=None) -> EmployeeHistory:
+    """Add the SYSTEM HISTORY record of an employment status change (no commit: the caller's transaction decides).
+
+    The dates are kept in their own columns; the description repeats them as text (MM-DD-YYYY) for reading.
+    """
+    if event not in EVENT_LABELS:
+        raise ValueError(f"Unknown history event {event!r}.")
+    lines = {
+        "HIRED": [f"Initial employment. Hire Date: {format_date(hire_date) or 'not entered'}."],
+        "TERMINATED": [f"Termination Date: {format_date(termination_date)}.",
+                       f"Reason: {termination_reason}." if termination_reason else "Reason: not entered."],
+        "REHIRED": [f"Previous Hire Date: {format_date(previous_hire_date) or 'not entered'}",
+                    f"Previous Termination Date: {format_date(termination_date) or 'not entered'}",
+                    f"Previous Termination Reason: {termination_reason or 'not entered'}",
+                    f"New Hire Date: {format_date(hire_date)}"],
+        "DEACTIVATED": ["Status changed from Active to Inactive."],
+        "REACTIVATED": ["Status changed from Inactive to Active."],
+    }[event]
+    row = EmployeeHistory(i_employee_id=employee.i_employee_id, i_merchant_id=employee.i_merchant_id,
+                          d_record_date=record_date, c_subject=EVENT_LABELS[event], c_description="\n".join(lines),
+                          c_record_type="SYSTEM", c_event_type=event, d_hire_date=hire_date,
+                          d_previous_hire_date=previous_hire_date, d_termination_date=termination_date,
+                          c_termination_reason=termination_reason)
+    _stamp(row, user_id, created=True)
+    db.add(row)
+    return row
+
+
 def proficiency_options() -> list[dict]:
     return [{"code": code, "name": label} for code, label in SKILL_PROFICIENCIES]
 
@@ -115,13 +159,23 @@ def _serialize(cfg: dict, row, *, employee: Employee, user_id, actors: dict, ski
     edited = (row.i_row_version or 1) > 1
     terminated = employee.c_status == "terminated"
     writable = cfg.get("terminated_writable") or not terminated
+    system = getattr(row, "c_record_type", "MANUAL") == "SYSTEM"
     item.update({
-        "created_by": actors.get(row.i_created_by), "created_at": _iso(row.dt_created),
+        "created_by": SYSTEM_AUTHOR if system else actors.get(row.i_created_by), "created_at": _iso(row.dt_created),
         "updated_by": actors.get(row.i_updated_by) if edited else None,
         "updated_at": _iso(row.dt_updated) if edited else None, "edited": edited,
-        "can_edit": bool(writable and (not cfg.get("author_only") or row.i_created_by == user_id)),
-        "can_delete": bool(writable and cfg.get("deletable", True)),
+        "can_edit": bool(writable and not system and (not cfg.get("author_only") or row.i_created_by == user_id)),
+        "can_delete": bool(writable and not system and cfg.get("deletable", True)),
     })
+    if isinstance(row, EmployeeHistory):
+        item.update({
+            "record_type": row.c_record_type or "MANUAL", "event_type": row.c_event_type,
+            "event_name": EVENT_LABELS.get(row.c_event_type or ""),
+            "event_hire_date": _iso(row.d_hire_date), "event_previous_hire_date": _iso(row.d_previous_hire_date),
+            "event_termination_date": _iso(row.d_termination_date), "event_termination_reason": row.c_termination_reason,
+            # who caused the status change (the record itself is the system's)
+            "recorded_by": actors.get(row.i_created_by) if system else None,
+        })
     return item
 
 
@@ -136,10 +190,11 @@ def _listing(db: Session, cfg: dict, employee: Employee, user_id) -> dict:
     actors = _actor_names(db, employee.i_merchant_id, rows)
     skills = _skill_codes(db, rows)
     terminated = employee.c_status == "terminated"
+    can_add = can_add_history(employee) if cfg is KINDS["history"] else not terminated
     return {"items": [_serialize(cfg, row, employee=employee, user_id=user_id, actors=actors, skills=skills)
                       for row in rows],
-            "can_add": bool(cfg.get("terminated_writable") or not terminated),
-            "read_only_message": None if (cfg.get("terminated_writable") or not terminated) else TERMINATED_MESSAGE}
+            "can_add": can_add,
+            "read_only_message": None if can_add else TERMINATED_MESSAGE}
 
 
 def list_records(db: Session, merchant_id: int, employee_id: int, kind: str, user_id) -> dict:
@@ -227,6 +282,8 @@ def update_record(db: Session, merchant_id: int, employee_id: int, kind: str, re
     cfg = kind_config(kind)
     employee = _writable_employee(db, cfg, merchant_id, employee_id)
     row = _record(db, cfg, employee, record_id)
+    if getattr(row, "c_record_type", "MANUAL") == "SYSTEM":
+        raise HTTPException(403, SYSTEM_RECORD_MESSAGE)
     if cfg.get("author_only") and row.i_created_by != user_id:
         raise HTTPException(403, AUTHOR_ONLY_MESSAGE)
     values = _validated(db, cfg, payload or {}, row, merchant_id)

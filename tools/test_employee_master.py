@@ -790,7 +790,7 @@ class EmployeeLoginAccessTests(unittest.TestCase):
         # Termination disables the account; Reactivate does not restore it.
         self.client.post(f"{API}/{item['id']}/terminate", json={"termination_date": date.today().isoformat()})
         self.assertEqual(self.row(PlatformUser, row.i_platform_user_id).c_status, "inactive")
-        back = self.client.post(f"{API}/{item['id']}/reactivate", json={})
+        back = self.client.post(f"{API}/{item['id']}/reactivate", json={"hire_date": date.today().isoformat()})
         self.assertEqual(back.json()["item"]["portal_login"]["status"], "inactive")
 
     def test_role_missing_and_other_merchant_and_store_logins_are_refused(self):
@@ -1058,7 +1058,7 @@ class EmployeeDateFormatTests(unittest.TestCase):
         self.assertEqual(ended.status_code, 200, ended.text)
         self.assertEqual(ended.json()["item"]["termination_date"], "2026-11-30")
         # the read-only Termination Date may be sent back unchanged in the screen format (no 403)
-        self.client.post(f"{API}/{item['id']}/reactivate", json={})
+        self.client.post(f"{API}/{item['id']}/reactivate", json={"hire_date": "12-01-2026"})
         again = self.create(first_name="Two", hire_date="2026-01-05")
         kept = self.client.put(f"{API}/{again['id']}", json={"termination_date": "", "first_name": "Two"})
         self.assertEqual(kept.status_code, 200, kept.text)

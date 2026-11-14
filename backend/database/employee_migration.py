@@ -32,6 +32,12 @@ STEP 1A-4 (HISTORY / BACKGROUND)
    composite FK (i_employee_id, i_merchant_id) -> tb_employee; the Skill references a tb_common_code (JOB_SKILL).
 9. tb_employee: ADD COLUMN c_background_remark (TEXT NULL), NULL for every existing row.
 
+STEP 1A-5 (automatic employment HISTORY, on an existing tb_employee_history)
+10. tb_employee_history: ADD COLUMN c_record_type (VARCHAR(10) NOT NULL DEFAULT 'MANUAL': every existing row reads as
+    MANUAL without being rewritten), c_event_type, d_hire_date, d_previous_hire_date, d_termination_date (NULL) and
+    c_termination_reason; on PostgreSQL the CHECKs ck_tb_employee_history_record_type / _event_type / _system; the
+    partial unique index uq_tb_employee_history_hired (one HIRED record per Employee). No existing row is changed.
+
 No existing value is changed or removed. The tb_role "Employee" row is seeded by db_init_platform (default roles).
 Runs from db_init_platform before the generic schema step (which would otherwise create tb_employee_store before the
 tb_store index exists).
@@ -62,6 +68,11 @@ GENDER_CHECK_NAME = "ck_tb_employee_gender"
 RECORD_TABLES = ("tb_employee_history", "tb_employee_education", "tb_employee_experience", "tb_employee_certification",
                  "tb_employee_skill")
 REMARK_COLUMN = ("c_background_remark", "TEXT")
+# STEP 1A-5: tb_employee_history columns (name -> DDL), CHECKs and the HIRED index (models_admin.employee_records).
+HISTORY_COLUMNS = {
+    "c_record_type": "VARCHAR(10) NOT NULL DEFAULT 'MANUAL'", "c_event_type": "VARCHAR(20)", "d_hire_date": "DATE",
+    "d_previous_hire_date": "DATE", "d_termination_date": "DATE", "c_termination_reason": "VARCHAR(200)",
+}
 POS_LOGIN_INDEX = "uq_tb_employee_pos_login"
 POS_LOGIN_CHECKS = {
     "ck_tb_employee_pos_login_id": "c_pos_login_id IS NULL OR length(c_pos_login_id) BETWEEN 4 AND 10",
@@ -101,7 +112,23 @@ def pending_employee_schema(engine) -> dict:
             "personal_columns": personal_columns, "gender_check": gender_check,
             "gender_check_replace": gender_check_replace,
             "record_tables": [name for name in RECORD_TABLES if name not in tables],
-            "remark_column": "tb_employee" in tables and REMARK_COLUMN[0] not in present}
+            "remark_column": "tb_employee" in tables and REMARK_COLUMN[0] not in present,
+            **_pending_history(engine, inspector, tables)}
+
+
+def _pending_history(engine, inspector, tables) -> dict:
+    """STEP 1A-5 on an existing tb_employee_history (a new one is created complete by STEP 1A-4)."""
+    from backend.models_admin.employee_records import HIRED_INDEX, HISTORY_CHECKS
+    if "tb_employee_history" not in tables:
+        return {"history_columns": [], "history_checks": [], "history_index": False}
+    present = {column["name"] for column in inspector.get_columns("tb_employee_history")}
+    checks = []
+    if engine.dialect.name == "postgresql":  # SQLite cannot add a CHECK to an existing table
+        existing = {ck["name"] for ck in inspector.get_check_constraints("tb_employee_history")}
+        checks = [name for name in HISTORY_CHECKS if name not in existing]
+    indexes = {ix["name"] for ix in inspector.get_indexes("tb_employee_history")}
+    return {"history_columns": [name for name in HISTORY_COLUMNS if name not in present], "history_checks": checks,
+            "history_index": HIRED_INDEX not in indexes}
 
 
 def _allowed_genders() -> set[str]:
@@ -180,6 +207,21 @@ def _migrate_login_schema(conn, pending: dict) -> None:
                 conn.execute(text(f"ALTER TABLE tb_employee ADD CONSTRAINT {name} CHECK ({condition})"))
 
 
+def _migrate_history(engine, pending: dict) -> None:
+    """STEP 1A-5 (one transaction): the record / event columns, CHECKs and the HIRED index of tb_employee_history."""
+    if not (pending["history_columns"] or pending["history_checks"] or pending["history_index"]):
+        return
+    from backend.models_admin.employee_records import HIRED_INDEX, HISTORY_CHECKS
+    with engine.begin() as conn:
+        for name in pending["history_columns"]:
+            conn.execute(text(f"ALTER TABLE tb_employee_history ADD COLUMN {name} {HISTORY_COLUMNS[name]}"))
+        for name in pending["history_checks"]:
+            conn.execute(text(f"ALTER TABLE tb_employee_history ADD CONSTRAINT {name} CHECK ({HISTORY_CHECKS[name]})"))
+        if pending["history_index"]:
+            conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {HIRED_INDEX} ON tb_employee_history (i_employee_id) "
+                              "WHERE c_event_type = 'HIRED'"))
+
+
 def _migrate_records(engine, pending: dict) -> None:
     """STEP 1A-4 (one transaction): the HISTORY / BACKGROUND tables and tb_employee.c_background_remark."""
     if not (pending["record_tables"] or pending["remark_column"]):
@@ -209,7 +251,9 @@ def migrate_employee_schema(engine) -> dict:
               "gender_check_created": pending["gender_check"],
               "gender_check_replaced": pending["gender_check_replace"],
               "created_record_tables": pending["record_tables"],
-              "background_remark_added": pending["remark_column"]}
+              "background_remark_added": pending["remark_column"],
+              "added_history_columns": pending["history_columns"], "added_history_checks": pending["history_checks"],
+              "history_index_created": pending["history_index"]}
     if not pending["tables"] and not pending["store_index"]:
         if pending["employee_columns"] or pending["pos_login_index"]:
             with engine.begin() as conn:
@@ -218,6 +262,7 @@ def migrate_employee_schema(engine) -> dict:
             with engine.begin() as conn:
                 _migrate_job_schema(conn, pending)
         _migrate_records(engine, pending)
+        _migrate_history(engine, pending)
         return result
     with engine.begin() as conn:
         if "tb_employee" in pending["tables"]:  # create_all below references tb_common_code (Job Grade / Title)
@@ -241,4 +286,5 @@ def migrate_employee_schema(engine) -> dict:
                       added_job_fks=[], created_job_indexes=[], added_personal_columns=[], gender_check_created=False,
                       gender_check_replaced=False)
     _migrate_records(engine, pending)  # after tb_employee exists (the owner FK target)
+    _migrate_history(engine, pending)
     return result

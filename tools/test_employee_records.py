@@ -1,4 +1,5 @@
-"""Employee HISTORY and BACKGROUND records (STEP 1A-4) and the Employee status filter (Active / Terminated / All).
+"""Employee HISTORY and BACKGROUND records (STEP 1A-4), automatic employment HISTORY (STEP 1A-5) and the Employee
+status filter (Active / Terminated / All).
 
 Isolated SQLite app (tools.test_employee_master fixture: Merchant 10 with its Stores, an Employee of Merchant 11).
 """
@@ -56,7 +57,8 @@ class EmployeeHistoryTests(EmployeeRecordTestBase):
         second = self.add("history", record_date="04-15-2026", subject="Praise", description="Line 1\nLine 2")
         self.add("history", record_date="2026-04-15", subject="Same day later", description="Later entry")
         data = self.items("history")
-        self.assertEqual([i["subject"] for i in data["items"]], ["Same day later", "Praise", "Coaching"])  # newest first
+        self.assertEqual([i["subject"] for i in data["items"]], ["Same day later", "Praise", "Coaching", "Hired"])  # newest first
+        self.assertEqual(data["items"][-1]["record_type"], "SYSTEM")  # the automatic HIRED record (01-05-2026)
         self.assertEqual((second["record_date"], second["description"]), ("2026-04-15", "Line 1\nLine 2"))
         self.assertEqual(first["created_by"], "Pat Merchant")  # a name, never an ID
         self.assertIsNotNone(first["created_at"])
@@ -108,7 +110,9 @@ class EmployeeHistoryTests(EmployeeRecordTestBase):
         item = self.add("history", record_date="2026-03-01", subject="Before", description="D")
         self.terminate()
         data = self.items("history")
-        self.assertTrue(data["can_add"] and data["items"][0]["can_edit"])
+        manual = next(i for i in data["items"] if i["record_type"] == "MANUAL")
+        self.assertTrue(data["can_add"] and manual["can_edit"])
+        self.assertEqual([i["event_type"] for i in data["items"] if i["record_type"] == "SYSTEM"], ["TERMINATED", "HIRED"])
         after = self.add("history", record_date="2026-11-02", subject="Exit interview", description="Notes")
         self.assertEqual(after["subject"], "Exit interview")
         self.assertEqual(self.client.put(self.url("history", item["id"]), json={"subject": "Before (fixed)"}).status_code, 200)
@@ -260,6 +264,141 @@ class EmployeeStatusFilterTests(EmployeeRecordTestBase):
         self.assertEqual(len(self.names(active="active")[0]), 2)  # earlier single-status filter still works
 
 
+class EmployeeStatusHistoryTests(EmployeeRecordTestBase):
+    """STEP 1A-5: SYSTEM HISTORY records of every employment status change, written in the same transaction."""
+
+    def system(self, eid=None):
+        return [i for i in self.items("history", eid=eid)["items"] if i["record_type"] == "SYSTEM"]
+
+    def test_hired_on_create_with_structured_hire_date(self):
+        hired = self.system()
+        self.assertEqual(len(hired), 1)
+        h = hired[0]
+        self.assertEqual((h["event_type"], h["subject"], h["record_date"], h["event_hire_date"]),
+                         ("HIRED", "Hired", "2026-01-05", "2026-01-05"))
+        self.assertEqual(h["description"], "Initial employment. Hire Date: 01-05-2026.")
+        self.assertEqual((h["created_by"], h["recorded_by"], h["can_edit"], h["can_delete"]),
+                         ("System", "Pat Merchant", False, False))
+        undated = self.create(first_name="NoDate")
+        h2 = self.system(undated["id"])[0]
+        self.assertEqual((h2["record_date"], h2["event_hire_date"], h2["description"]),
+                         (date.today().isoformat(), None, "Initial employment. Hire Date: not entered."))
+
+    def test_active_inactive_changes_only_on_a_real_change(self):
+        before = self.row(Employee, self.eid).d_hire_date
+        self.client.put(f"{API}/{self.eid}", json={"status": "inactive"})
+        self.client.put(f"{API}/{self.eid}", json={"status": "inactive", "first_name": "Minji"})  # no status change
+        self.client.put(f"{API}/{self.eid}", json={"status": "active"})
+        self.client.put(f"{API}/{self.eid}", json={"phone": "703-555-0100"})  # an ordinary save
+        events = [i["event_type"] for i in self.system()]
+        self.assertEqual(sorted(events), ["DEACTIVATED", "HIRED", "REACTIVATED"])
+        deactivated = next(i for i in self.system() if i["event_type"] == "DEACTIVATED")
+        self.assertEqual((deactivated["record_date"], deactivated["description"]),
+                         (date.today().isoformat(), "Status changed from Active to Inactive."))
+        self.assertEqual(self.row(Employee, self.eid).d_hire_date, before)  # never changes the Hire Date
+
+    def test_terminate_and_rehire_keep_the_previous_employment(self):
+        self.add("history", record_date="2026-03-01", subject="Coaching", description="Kept")
+        self.add("education", school="Kept University")
+        self.assign(self.eid, pos_access=True, pos_role="CASHIER", primary=True, start_date="2026-01-06")
+        self.client.put(f"{API}/{self.eid}", json={"pos_login_enabled": True, "pos_login_id": "4321"})
+        ended = self.client.post(f"{API}/{self.eid}/terminate",
+                                 json={"termination_date": "11-30-2026", "termination_reason": "Resigned"})
+        self.assertEqual(ended.status_code, 200, ended.text)
+        t = next(i for i in self.system() if i["event_type"] == "TERMINATED")
+        self.assertEqual((t["record_date"], t["event_termination_date"], t["event_termination_reason"], t["description"]),
+                         ("2026-11-30", "2026-11-30", "Resigned", "Termination Date: 11-30-2026.\nReason: Resigned."))
+        self.assertIn("HISTORY records can still be added", ended.json()["item"]["read_only_message"])
+        # rehire: the new Hire Date is required and must follow the termination
+        self.assertEqual(self.client.post(f"{API}/{self.eid}/reactivate", json={}).json()["errors"]["hire_date"],
+                         "Hire Date is required.")
+        early = self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "2026-11-01"})
+        self.assertEqual(early.json()["errors"]["hire_date"],
+                         "The new Hire Date must be on or after the Termination Date (11-30-2026).")
+        self.assertEqual(len(self.system()), 2)  # refused: nothing recorded
+        back = self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "03-01-2027"})
+        self.assertEqual(back.status_code, 200, back.text)
+        item = back.json()["item"]
+        self.assertEqual((item["code"], item["status"], item["hire_date"], item["termination_date"], item["termination_reason"]),
+                         (self.employee["code"], "active", "2027-03-01", None, None))
+        r = next(i for i in self.system() if i["event_type"] == "REHIRED")
+        self.assertEqual((r["record_date"], r["event_hire_date"], r["event_previous_hire_date"], r["event_termination_date"],
+                          r["event_termination_reason"]), ("2027-03-01", "2027-03-01", "2026-01-05", "2026-11-30", "Resigned"))
+        self.assertEqual(r["description"], "Previous Hire Date: 01-05-2026\nPrevious Termination Date: 11-30-2026\n"
+                                           "Previous Termination Reason: Resigned\nNew Hire Date: 03-01-2027")
+        # kept: manual HISTORY, BACKGROUND; not restored: Store assignment, POS Login
+        self.assertTrue(any(i["subject"] == "Coaching" for i in self.items("history")["items"]))
+        self.assertEqual(self.items("education")["items"][0]["school"], "Kept University")
+        assignments = self.client.get(f"{API}/{self.eid}/assignments").json()["items"]
+        self.assertTrue(assignments and all(a["status"] == "ended" for a in assignments))
+        self.assertFalse(item["pos_login_enabled"])
+        self.assertEqual([i["event_type"] for i in self.system()], ["REHIRED", "TERMINATED", "HIRED"])  # newest first
+        # a second cycle keeps every period
+        self.client.post(f"{API}/{self.eid}/terminate", json={"termination_date": "2027-06-30"})
+        self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "2027-09-01"})
+        rehires = [i for i in self.system() if i["event_type"] == "REHIRED"]
+        self.assertEqual([(i["event_previous_hire_date"], i["event_termination_date"]) for i in rehires],
+                         [("2027-03-01", "2027-06-30"), ("2026-01-05", "2026-11-30")])
+
+    def test_portal_account_is_not_restored_by_rehire(self):
+        from backend.models_admin.role import Role
+        with self.factory() as db:
+            db.add(Role(c_name="Employee", c_description="Merchant Employee (Portal Login)", c_status="active"))
+            db.commit()
+        self.client.post(f"{API}/{self.eid}/portal-access", json={"enabled": True, "email": "p@example.test",
+                                                                   "password": "Temp#1234", "confirm_password": "Temp#1234"})
+        self.client.post(f"{API}/{self.eid}/terminate", json={"termination_date": "2026-11-30"})
+        back = self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "2027-01-01"}).json()["item"]
+        self.assertEqual(back["portal_login"]["status"], "inactive")
+
+    def test_system_records_cannot_be_written_or_changed_by_clients(self):
+        hired = self.system()[0]
+        self.assertEqual(self.client.put(self.url("history", hired["id"]), json={"subject": "Changed"}).status_code, 403)
+        self.assertEqual(self.client.delete(self.url("history", hired["id"])).status_code, 403)
+        for forged in ({"record_type": "SYSTEM"}, {"event_type": "HIRED"}, {"c_record_type": "SYSTEM"}):
+            response = self.client.post(self.url("history"), json={"record_date": "2026-03-01", "subject": "S",
+                                                                   "description": "D", **forged})
+            self.assertEqual(response.status_code, 422, response.text)
+        manual = self.add("history", record_date="2026-03-01", subject="Mine", description="D")
+        self.assertEqual((manual["record_type"], manual["event_type"], manual["created_by"]), ("MANUAL", None, "Pat Merchant"))
+        self.assertEqual(self.client.put(self.url("history", manual["id"]), json={"subject": "Mine 2"}).status_code, 200)
+        self.assertEqual(self.row(EmployeeHistory, hired["id"]).c_subject, "Hired")
+
+    def test_repeated_requests_never_duplicate_records(self):
+        self.client.post(f"{API}/{self.eid}/terminate", json={"termination_date": "2026-11-30"})
+        self.assertEqual(self.client.post(f"{API}/{self.eid}/terminate", json={"termination_date": "2026-11-30"}).status_code, 409)
+        self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "2027-01-01"})
+        self.assertEqual(self.client.post(f"{API}/{self.eid}/reactivate", json={"hire_date": "2027-01-01"}).status_code, 409)
+        self.assertEqual(sorted(i["event_type"] for i in self.system()), ["HIRED", "REHIRED", "TERMINATED"])
+        from backend.services import employee_records as records
+        from sqlalchemy.exc import IntegrityError
+        with self.factory() as db, self.assertRaises(IntegrityError):  # the database keeps one HIRED per Employee
+            records.record_status_event(db, db.get(Employee, self.eid), "HIRED", 1, record_date=date.today())
+            db.commit()
+
+    def test_a_failed_status_change_records_nothing(self):
+        from unittest.mock import patch
+        from backend.services import employees as emp
+        with self.factory() as db:  # the change fails after its HISTORY row was added: both roll back
+            with patch.object(emp, "_disable_portal", side_effect=RuntimeError("boom")), self.assertRaises(RuntimeError):
+                emp.terminate_employee(db, 10, self.eid, {"termination_date": "2026-11-30"}, 1)
+            db.rollback()
+        with patch.object(emp, "_commit_image", side_effect=RuntimeError("boom")), self.factory() as db:
+            with self.assertRaises(RuntimeError):
+                emp.update_employee(db, 10, self.eid, {"status": "inactive"}, 1)
+            db.rollback()
+        self.assertEqual(self.row(Employee, self.eid).c_status, "active")
+        self.assertEqual([i["event_type"] for i in self.system()], ["HIRED"])
+
+    def test_merchant_isolation(self):
+        foreign = self.foreign["id"]  # Merchant 11's Employee (its own HIRED record)
+        self.assertEqual(self.client.get(self.url("history", eid=foreign)).status_code, 404)
+        self.assertEqual(self.client.post(f"{API}/{foreign}/terminate", json={"termination_date": "2026-11-30"}).status_code, 404)
+        with self.factory() as db:
+            rows = db.query(EmployeeHistory).filter(EmployeeHistory.i_employee_id == foreign).all()
+            self.assertEqual([(r.i_merchant_id, r.c_event_type) for r in rows], [(11, "HIRED")])
+
+
 class EmployeeRecordScreenTests(EmployeeRecordTestBase):
     """The screen: HISTORY / BACKGROUND through the Common Child Grid, the fill panes, the status filter."""
     run_browser = EmployeeMasterTests.run_browser
@@ -270,7 +409,7 @@ class EmployeeRecordScreenTests(EmployeeRecordTestBase):
         with self.factory() as db:
             db.get(EmployeeHistory, theirs["id"]).i_created_by = 987654
             db.commit()
-        for n in range(30):  # many records: the HISTORY pane scrolls, the frame does not grow
+        for n in range(29):  # many records (+ the automatic HIRED one): the HISTORY pane scrolls, the frame does not grow
             self.add("history", record_date="2025-01-01", subject=f"Bulk {n}", description="x")
         self.add("education", school="State University", degree="BS", graduation_year=2010, remark="Honors")
         gone = self.create(first_name="Gone", hire_date="2026-01-05")
@@ -328,6 +467,8 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const rows=[...doc.querySelectorAll('#mgCghistory [data-cg-row]')];
  const cells=r=>[...r.children].slice(0,4).map(c=>c.textContent.trim());
  assert(cells(rows[0]).join('|')==='03-01-2026|Coaching|Pat Merchant|—','first row: '+cells(rows[0]));
+ const hired=rows.find(r=>/Hired/.test(r.children[1].textContent));
+ assert(hired&&hired.querySelector('.mg-cg-system')&&cells(hired)[2]==='System'&&!hired.querySelector('[data-cg-act]'),'automatic HIRED record: System, no actions');
  assert(cells(rows[1])[1]==='Older note','second row older');
  assert(rows[0].querySelector('[data-cg-act="edit"]')&&!rows[1].querySelector('[data-cg-act="edit"]'),'Edit only on own records');
  assert(!doc.querySelector('#mgCghistory [data-cg-act="delete"]'),'no Delete for history');
@@ -374,6 +515,71 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  filter.value='terminated';filter.dispatchEvent(new Event('change',{bubbles:true}));
  await wait(()=>/Gone/.test($('mgBody').textContent),'terminated listed');
  await wait(()=>!$('mgEmpTabs'),'detail panel reset (selected employee not in this filter)');
+ assert(win.__errors.length===0,'no script errors: '+win.__errors);
+ document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
+"""
+        self.run_browser(script)
+
+
+    def test_terminated_employee_rehire_screen(self):
+        self.client.post(f"{API}/{self.eid}/terminate", json={"termination_date": "2026-11-30", "termination_reason": "Resigned"})
+        history = self.items("history")
+        listing = self.client.get(API, params={"active": "terminated"}).json()
+        options = self.client.get("/merchant/api/master-group/options").json()
+        mock = ("window.__errors=[];addEventListener('error',e=>__errors.push(String(e.message)));"
+                f"window.__history={json.dumps(history)};window.__list={json.dumps(listing)};window.__options={json.dumps(options)};" + r"""
+window.requests=[];window.bootstrap=window.bootstrap||{};
+const J=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'Content-Type':'application/json'}});
+window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');const method=options.method||'GET';
+ requests.push({path:url.pathname,method,body:options.body});
+ if(url.pathname.endsWith('/options'))return J(__options);
+ if(url.pathname.endsWith('/assignments'))return J({items:[]});
+ if(/\/records\/history$/.test(url.pathname))return J(__history);
+ if(/\/records\//.test(url.pathname))return J({items:[],can_add:false,read_only_message:'Terminated employee: view only. Reactivate to make changes.'});
+ if(url.pathname.endsWith('/reactivate'))return J({item:Object.assign({},__list.items[0],{status:'active',read_only:false,read_only_message:null})});
+ if(url.pathname==='/merchant/api/master-group/employee')return J(__list);
+ return J({item:__list.items[0]});};""")
+        page = inline_page(self.client.get("/merchant/employee-group/employee-master").text, mock)
+        script = "const page=" + json.dumps(page).replace("</", "<\\/") + ";\n" + r"""
+const assert=(ok,m)=>{if(!ok)throw Error(m);};
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}await pause(50);}throw Error('timeout: '+m);};
+(async()=>{
+ const frame=document.createElement('iframe');frame.style.width='1400px';frame.style.height='1000px';frame.srcdoc=page;
+ const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
+ const doc=frame.contentDocument,win=frame.contentWindow,$=id=>doc.getElementById(id);
+ const confirms=[];win.AwsumConfirm.show=async(o)=>{confirms.push(o);return {confirmed:true};};
+ $('mgActiveFilter').value='terminated';$('mgActiveFilter').dispatchEvent(new Event('change',{bubbles:true}));
+ await wait(()=>doc.querySelectorAll('#mgBody [data-row-select]').length===1,'terminated listed');
+ doc.querySelector('#mgBody [data-row-select]').click();
+ await wait(()=>doc.querySelectorAll('#mgCghistory [data-cg-row]').length===2,'history loaded');
+ assert(/Employee information is read-only\. HISTORY records can still be added\./.test($('mgReadOnlyNote').textContent),'read-only notice: '+$('mgReadOnlyNote').textContent);
+ // everything read-only except the Hire Date of the rehire
+ assert($('mgf_first_name').disabled&&$('mgf_birth_date').disabled&&$('mgSave').disabled,'General stays read-only');
+ const hire=$('mgf_hire_date');
+ assert(!hire.disabled&&hire.value==='01-05-2026'&&$('mgEmpRehireHelp'),'Hire Date open for the rehire');
+ // system rows: marked, author System, no actions; the HISTORY Add stays available
+ const rows=[...doc.querySelectorAll('#mgCghistory [data-cg-row]')];
+ assert(rows.every(r=>r.querySelector('.mg-cg-system')&&r.children[2].textContent.trim()==='System'&&!r.querySelector('[data-cg-act]')),'system rows');
+ assert(/Terminated/.test(rows[0].textContent)&&/Hired/.test(rows[1].textContent),'Terminated above Hired');
+ rows[0].querySelector('td').click();
+ const det=doc.querySelector('#mgCghistory .mg-cg-detail:not([hidden])');
+ assert(det&&/Termination Date: 11-30-2026\.\s*Reason: Resigned\./.test(det.textContent)&&/Recorded automatically .* \(status change by Pat Merchant\)/.test(det.textContent),'system detail: '+(det&&det.textContent));
+ assert(!doc.querySelector('#mgCghistory [data-cg-act=add]').disabled,'HISTORY Add available');
+ // Reactivate with the old Hire Date: refused on the screen, nothing sent
+ const toggle=$('mgMdToggle');
+ assert(toggle.textContent.trim()==='Reactivate','Reactivate action');
+ toggle.click();await pause(200);
+ assert(!win.requests.some(r=>/reactivate/.test(r.path))&&confirms.length===0,'old Hire Date: not sent');
+ // the new Hire Date: confirmed with both periods, sent as ISO
+ hire.focus();hire.value='03012027';hire.dispatchEvent(new Event('input',{bubbles:true}));hire.dispatchEvent(new Event('blur'));
+ toggle.click();
+ await wait(()=>win.requests.some(r=>/reactivate/.test(r.path)),'reactivate sent');
+ const sent=JSON.parse(win.requests.find(r=>/reactivate/.test(r.path)).body);
+ assert(sent.hire_date==='2027-03-01'&&Object.keys(sent).join()==='hire_date','payload: '+JSON.stringify(sent));
+ const d=Object.fromEntries(confirms[0].details);
+ assert(d['Previous Hire Date']==='01-05-2026'&&d['Termination Date']==='11-30-2026'&&d['New Hire Date']==='03-01-2027','confirm details: '+JSON.stringify(d));
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});

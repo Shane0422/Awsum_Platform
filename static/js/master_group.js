@@ -943,9 +943,10 @@
   // Employee HISTORY (manager records) and BACKGROUND lists: configuration only; behaviour is the Common Child Grid.
   const EMPLOYEE_GRIDS = [
     { kind: 'history', title: 'History', addLabel: 'Add Record', label: 'History record', empty: 'No history records yet.',
-      columns: [['Date', (i) => esc(usDate(i.record_date))], ['Subject', (i) => esc(i.subject)],
+      columns: [['Date', (i) => esc(usDate(i.record_date))],
+        ['Subject', (i) => `${esc(i.subject)}${i.record_type === 'SYSTEM' ? ' <span class="badge rounded-pill text-bg-light border mg-cg-system" title="Recorded automatically on a status change">System</span>' : ''}`],
         ['Created By', (i) => textCell(i.created_by)], ['Edited By', (i) => textCell(i.updated_by)]],
-      detail: (i) => `${multiline('Description', i.description)}<div class="mg-cg-meta">Created ${esc(usDateTime(i.created_at))}${i.created_by ? ` by ${esc(i.created_by)}` : ''}${i.edited ? ` · Edited ${esc(usDateTime(i.updated_at))}${i.updated_by ? ` by ${esc(i.updated_by)}` : ''}` : ''}</div>`,
+      detail: (i) => `${multiline('Description', i.description)}<div class="mg-cg-meta">${i.record_type === 'SYSTEM' ? `Recorded automatically ${esc(usDateTime(i.created_at))}${i.recorded_by ? ` (status change by ${esc(i.recorded_by)})` : ''}` : `Created ${esc(usDateTime(i.created_at))}${i.created_by ? ` by ${esc(i.created_by)}` : ''}`}${i.edited ? ` · Edited ${esc(usDateTime(i.updated_at))}${i.updated_by ? ` by ${esc(i.updated_by)}` : ''}` : ''}</div>`,
       fields: [{ name: 'record_date', label: 'Record Date', type: 'date', required: true, col: 'col-md-4', default: () => today() },
         { name: 'subject', label: 'Subject', required: true, max: 200, col: 'col-md-8' },
         { name: 'description', label: 'Description', type: 'textarea', rows: 4, required: true, col: 'col-12' }] },
@@ -1394,13 +1395,25 @@
       showMessage(`${row.code} terminated. ${open} Store assignment(s) ended.`, 'success');
       return data.item;
     }
+    // Rehire: the new Hire Date is the General > Hire Date input (enabled for a terminated employee).
+    const hireInput = f('hire_date');
+    const hire = hireInput ? AwsumDateInput.getValue(hireInput) : '';
+    const rehireError = !hire ? 'Enter the new Hire Date in General > Hire Date, then Reactivate.'
+      : hire === row.hire_date ? 'Enter the new Hire Date (the date of rehire) in General > Hire Date.'
+        : (row.termination_date && hire < row.termination_date ? `The new Hire Date must be on or after the Termination Date (${usDate(row.termination_date)}).` : '');
+    if (rehireError || (hireInput && !AwsumDateInput.check(hireInput))) {
+      if (rehireError) showMessage(rehireError, 'warning');
+      if (hireInput) { showTabOf(hireInput); hireInput.focus(); }
+      return null;
+    }
     const result = await AwsumConfirm.show({
       title: 'Reactivate Employee', variant: 'info', okText: 'Reactivate',
-      message: 'The employee becomes Active again. Earlier Store assignments stay ended; assign Stores again as needed.',
-      details: [['Employee', `${row.code} ${row.name}`]],
+      message: 'The employee is rehired and becomes Active with the same Employee Code. The previous employment is kept in HISTORY. Store assignments, POS and Portal access are not restored.',
+      details: [['Employee', `${row.code} ${row.name}`], ['Previous Hire Date', usDate(row.hire_date) || '\u2014'],
+        ['Termination Date', usDate(row.termination_date) || '\u2014'], ['New Hire Date', usDate(hire)]],
     });
     if (!result.confirmed) return null;
-    const data = await api('POST', `${BASE}/employee/${row.id}/reactivate`, {});
+    const data = await api('POST', `${BASE}/employee/${row.id}/reactivate`, { hire_date: hire });
     showMessage(AwsumToast.message('activated', row.code), 'success');
     return data.item;
   }
@@ -1792,6 +1805,11 @@
       bindLoginAccessEvents();
       loadAssignments(row);
       employeeGrids.forEach((grid) => grid.mount(row));
+      if (row && row.status === 'terminated' && f('hire_date')) { // the Hire Date input of the rehire (Reactivate)
+        const wrap = f('hire_date').closest('[data-field-wrap]');
+        wrap.querySelectorAll('input, button').forEach((el) => { el.disabled = false; });
+        wrap.insertAdjacentHTML('beforeend', '<div class="form-text" id="mgEmpRehireHelp">To rehire, enter the new Hire Date and click Reactivate.</div>');
+      }
     }
     if (modal) modal.show();
   }

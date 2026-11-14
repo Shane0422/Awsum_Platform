@@ -37,6 +37,13 @@ STEP 1A-3 Personal Information: optional Birthday (common date rule, never in th
 models_admin.employee.EMPLOYEE_GENDERS, the fixed list in code; blank = not selected = NULL). Merchant scope only like every
 Employee field; shown only in the edit form (never the list display, search, export, POS or receipts).
 
+STEP 1A-5 automatic employment HISTORY (services.employee_records.record_status_event, same transaction as the change,
+never on a Save that changes nothing): create -> HIRED (record date = Hire Date); Active <-> Inactive -> DEACTIVATED /
+REACTIVATED; Terminate -> TERMINATED (date + reason); Reactivate -> REHIRED. Reactivate is the rehire: it requires the
+new Hire Date (on or after the Termination Date), keeps the Employee Code, HISTORY and BACKGROUND, restores no Store
+assignment / POS / Portal access, and preserves the previous Hire Date / Termination Date / Reason in the REHIRED
+record before resetting them.
+
 Audit (common AuditMixin columns, unchanged): the response adds created_by / updated_by, the names of this
 Merchant's users only (never an ID, email or another owner's user; otherwise None, shown as an em dash). Last Updated
 moves only on a real change: a Save that changes no value and no photo, or a Portal Access save that changes nothing,
@@ -99,6 +106,8 @@ SORTS = {"code": (Employee.c_employee_code,), "pos_number": (Employee.i_pos_numb
          "hire_date": (Employee.d_hire_date,)}
 EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
 TERMINATED_MESSAGE = "Terminated employee: view only. Reactivate to make changes."
+# Read-only notice of a terminated Employee whose HISTORY can still be added (employee_records.can_add_history).
+TERMINATED_HISTORY_MESSAGE = "Employee information is read-only. HISTORY records can still be added."
 
 
 # ---------- helpers ----------
@@ -311,11 +320,22 @@ def serialize(row: Employee, summary: dict | None = None, portal_user: PlatformU
         "pos_pin_set": bool(row.c_pin_hash), "pos_login_status": _pos_login_status(row),
         "pin_changed_at": _iso(row.dt_pin_changed),
         "portal_login": _portal_view(portal_user),
-        "read_only": terminated, "read_only_message": TERMINATED_MESSAGE if terminated else None,
+        "read_only": terminated, "read_only_message": _read_only_message(row) if terminated else None,
         "row_version": row.i_row_version,
         "created_at": _iso(row.dt_created), "updated_at": _iso(row.dt_updated),
         "created_by": actors.get(row.i_created_by), "updated_by": actors.get(row.i_updated_by),
     }
+
+
+def _read_only_message(row: Employee) -> str:
+    from backend.services.employee_records import can_add_history
+    return TERMINATED_HISTORY_MESSAGE if can_add_history(row) else TERMINATED_MESSAGE
+
+
+def _history(db: Session, row: Employee, event: str, user_id, **dates) -> None:
+    """The SYSTEM HISTORY record of a status change, inside the caller's transaction (services.employee_records)."""
+    from backend.services.employee_records import record_status_event
+    record_status_event(db, row, event, user_id, **dates)
 
 
 def _serialized(db: Session, row: Employee) -> dict:
@@ -574,6 +594,7 @@ def create_employee(db: Session, merchant_id: int, payload: dict, user_id: int, 
             if login_id and _pos_login_taken(db, merchant_id, login_id, None):  # saved concurrently: refuse
                 raise FieldErrors({"pos_login_id": POS_LOGIN_DUPLICATE.format(login_id)}) from None
             continue
+        _history(db, row, "HIRED", user_id, record_date=row.d_hire_date or date.today(), hire_date=row.d_hire_date)
         warning = _commit_image(db, row, image_data=image_data)
         db.refresh(row)
         item = _serialized(db, row)
@@ -591,11 +612,15 @@ def update_employee(db: Session, merchant_id: int, employee_id: int, payload: di
     values = _validated(db, payload, row, merchant_id)
     changed = {attr: value for attr, value in values.items() if getattr(row, attr) != value}
     photo_changed = image_data is not None or (remove_image and bool(row.c_image_path))
+    status_change = (row.c_status, values["c_status"]) if "c_status" in changed else None
     for attr, value in changed.items():
         setattr(row, attr, value)
     if changed or photo_changed:  # a Save that changes nothing issues no UPDATE (no version bump, no stamp)
         _bump(row)
         _stamp(row, user_id, created=False)
+    if status_change:  # a real Active <-> Inactive change only (terminated has its own commands)
+        _history(db, row, "DEACTIVATED" if status_change[1] == "inactive" else "REACTIVATED", user_id,
+                 record_date=date.today())
     try:
         db.flush()
     except IntegrityError:  # the POS Login ID was saved concurrently by another employee of this Merchant
@@ -635,6 +660,7 @@ def terminate_employee(db: Session, merchant_id: int, employee_id: int, payload:
         _bump(assignment)
         _stamp(assignment, user_id, created=False)
     row.c_status, row.d_termination_date, row.c_termination_reason = "terminated", end, reason
+    _history(db, row, "TERMINATED", user_id, record_date=end, termination_date=end, termination_reason=reason)
     row.c_pin_hash, row.i_pin_failed_count, row.dt_pin_locked_until = None, 0, None
     row.i_pin_version = (row.i_pin_version or 0) + 1  # Store Servers drop the PIN on their next sync (STEP 2)
     row.b_pos_login_enabled = False  # the POS Login ID stays reserved for this employee (history)
@@ -652,12 +678,18 @@ def reactivate_employee(db: Session, merchant_id: int, employee_id: int, payload
     if row.c_status != "terminated":
         raise Conflict("Only a terminated employee can be reactivated.")
     errors: dict[str, str] = {}
-    hire = _date(payload, "hire_date", errors, label="Hire Date")
+    # Rehire: the new Hire Date is required and starts on or after the end of the previous employment.
+    hire = _date(payload, "hire_date", errors, label="Hire Date", required=True)
+    if hire and row.d_termination_date and hire < row.d_termination_date and "hire_date" not in errors:
+        errors["hire_date"] = (f"The new Hire Date must be on or after the Termination Date "
+                               f"({_us(row.d_termination_date)}).")
     if errors:
         raise FieldErrors(errors)
+    # The ended employment is kept in the REHIRED record before its values are reset (same transaction).
+    _history(db, row, "REHIRED", user_id, record_date=hire, hire_date=hire, previous_hire_date=row.d_hire_date,
+             termination_date=row.d_termination_date, termination_reason=row.c_termination_reason)
     row.c_status, row.d_termination_date, row.c_termination_reason = "active", None, None
-    if hire:
-        row.d_hire_date = hire
+    row.d_hire_date = hire
     _bump(row)
     _stamp(row, user_id, created=False)
     db.commit()  # earlier Store assignments stay ended (not restored)
