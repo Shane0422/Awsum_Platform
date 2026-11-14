@@ -628,7 +628,8 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert($('mgf_created_by').value==='—'&&$('mgf_updated_by').value==='—'&&$('mgf_updated_at').value==='—','no value: em dash');
  // Common Map (ADDRESS, static/js/awsum-map.js): hidden, nothing requested before Show Map; the current (unsaved)
  // values without Address Line 2; an address edit, the ZIP autofill and another selection reset it; Save never sends it.
- const mapBtn=()=>$('mgEmpMap').querySelector('[data-map-toggle]'),mapLink=()=>$('mgEmpMap').querySelector('[data-map-link]');
+ const mapBtn=()=>$('mgEmpMap').querySelector('[data-map-toggle]'),mapExt=()=>$('mgEmpMap').querySelector('[data-map-external]');
+ const opened=[];win.open=(url,target,features)=>{opened.push({url,target,features});return null;};
  const mapCalls=()=>win.requests.filter(r=>r.path==='/merchant/api/map-config').length;
  assert(mapCalls()===0,'no map request before Show Map');
  assert($('mgEmpAddress').contains($('mgEmpMap'))&&top('mgEmpMap')>top('mgf_country')&&mapBtn().textContent==='Show Map'&&$('mgEmpMap').querySelector('[data-map-panel]').classList.contains('d-none'),'Show Map below the address, map hidden');
@@ -638,18 +639,25 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const hiddenH=frameH(),hiddenSave=saveTop();
  $('mgf_address_line1').value='10 Main St';$('mgf_address_line2').value='Apt 7';mapBtn().click();
  await wait(()=>mapBtn().textContent==='Hide Map'&&$('mgEmpMap').querySelector('iframe'),'map shown');
- assert(new URL(mapLink().href).searchParams.get('query')==='10 Main St, Fairfax, VA 22031, United States'&&!/Apt/.test(mapLink().href),'current values, Line 2 excluded: '+mapLink().href);
+ mapExt().click();
+ assert(opened.length===1&&new URL(opened[0].url).searchParams.get('query')==='10 Main St, Fairfax, VA 22031, United States'&&!/Apt/.test(opened[0].url)&&opened[0].features==='noopener,noreferrer','Open in Google Maps: current values, Line 2 excluded: '+JSON.stringify(opened[0]));
  const mapSrc=new URL($('mgEmpMap').querySelector('iframe').src);
  assert(mapSrc.origin+mapSrc.pathname==='https://www.google.com/maps/embed/v1/place'&&mapSrc.searchParams.get('key')==='FAKE-KEY'&&mapSrc.searchParams.get('q')==='10 Main St, Fairfax, VA 22031, United States','mock key: Embed URL');
  // The common Page Frame (one grid cell for every pane) grows with the map: nothing clipped, Save stays put.
  const pf=$('mgEmpTabs').closest('.mg-md-pageframe').getBoundingClientRect(),box=$('mgEmpMap').querySelector('.ratio').getBoundingClientRect();
  assert(box.height>150&&box.bottom<=pf.bottom+1&&box.right<=pf.right+1&&frameH()>hiddenH&&saveTop()===hiddenSave,'map inside the Page Frame: '+[box.height,box.bottom,pf.bottom,frameH(),hiddenH]);
  assert(doc.documentElement.scrollWidth<=doc.documentElement.clientWidth,'no sideways scroll');
+ // Equal Height (Global UI Standard): the list card follows the taller form (map open), and every tab keeps it.
+ const eq=(m)=>{const a=doc.querySelector('.mg-md-list-panel').getBoundingClientRect(),c=doc.querySelector('.mg-md-form-panel').getBoundingClientRect();
+   assert(Math.abs(a.top-c.top)<=1&&Math.abs(a.height-c.height)<=1,'equal height '+m+': '+a.height+'/'+c.height);return a.height;};
+ const openH=eq('map open');
  mapBtn().click();await pause(50);
  assert(frameH()===hiddenH&&!$('mgEmpMap').querySelector('iframe'),'Hide: frame back to its height, map frame removed');
+ assert(eq('map closed')<=openH,'the list card never stays taller than the form row');
+ for(const key of ['General','Address','Terminal','Portal','Background','History','Address']){$('mgEmpTab'+key).click();await pause(200);eq(key+' tab');}
  mapBtn().click();await wait(()=>$('mgEmpMap').querySelector('iframe'),'shown again (cached config)');
  $('mgf_city').value='Vienna';$('mgf_city').dispatchEvent(new Event('input',{bubbles:true}));
- assert(mapBtn().textContent==='Show Map'&&!mapLink().hasAttribute('href')&&!$('mgEmpMap').querySelector('iframe'),'address edit resets the map');
+ assert(mapBtn().textContent==='Show Map'&&!$('mgEmpMap').querySelector('iframe'),'address edit resets the map');
  mapBtn().click();await wait(()=>mapBtn().textContent==='Hide Map','shown again');
  const zip=$('mgf_zip');zip.dispatchEvent(new Event('focus'));zip.value='20190';zip.dispatchEvent(new Event('blur'));
  await wait(()=>$('mgf_city').value==='Reston','common ZIP autofill');

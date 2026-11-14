@@ -59,7 +59,7 @@ class MasterGroupListTemplateTests(unittest.TestCase):
                     self.assertIn('class="mg-md-form"', html)
                     self.assertNotIn('id="mgModal"', html)
                     self.assertNotIn("awsum-filter-card", html)
-                    self.assertEqual(html.count('href="/static/css/awsum-master-detail.css?v=2"'), 1)
+                    self.assertEqual(html.count('href="/static/css/awsum-master-detail.css?v=3"'), 1)
                 else:
                     self.assertIn('id="mgModal"', html)
                 for control in ("mgSearch", "mgActiveFilter", "mgPageSize", "mgExportBtn",
@@ -340,6 +340,87 @@ window.fetch=async(path,options={})=>{
         html = html.replace("</body>", f"<script>{mock}\n{money}\n{keypad}\n{tree}\n{barcode}\n{option_group}\n{client}</script></body>")
         return html
 
+    def test_split_layout_equal_height(self):
+        """AWSUM Global UI Standard: the left list and the right form cards keep one outer height (CSS Grid stretch).
+
+        The row is the Workspace height (viewport below --mg-md-offset) or the form height when the form is longer
+        (tabs, Add / Edit, Show Map); a long list scrolls inside its card under the sticky header; under 992px the
+        panels stack and no equal height is forced.
+        """
+        css = (browser.ROOT / "static" / "bootstrap" / "css" / "bootstrap.min.css").read_text(encoding="utf-8") + "\n" + "\n".join(
+            (browser.ROOT / "static" / "css" / name).read_text(encoding="utf-8")
+            for name in ("brand.css", "awsum-list.css", "awsum-master-detail.css"))
+        client = (browser.ROOT / "static" / "js" / "master_group.js").read_text(encoding="utf-8")
+        tree = (browser.ROOT / "static" / "js" / "master-detail.js").read_text(encoding="utf-8")
+        money = (browser.ROOT / "static" / "js" / "money.js").read_text(encoding="utf-8")
+        mock = r"""
+window.bootstrap={Modal:class{show(){}hide(){}}};
+window.fetch=async(path)=>{
+  const url=new URL(path,'http://127.0.0.1');
+  if(url.pathname.endsWith('/options'))return new Response(JSON.stringify({can_view_cost:true}));
+  const items=Array.from({length:60},(_,i)=>({id:i+1,code:'TEST'+String(i+1).padStart(5,'0'),name:'Record '+(i+1),rate:'5.00',
+    display_order:i,active:true,category1_name:'Food',category2_name:'Beverage',category3_name:'Soft Drink',retail_price:'2.50',cost:'1.20'}));
+  return new Response(JSON.stringify({items,total:60,page:1,pages:1,sort:'code',direction:'asc'}));
+};
+"""
+        pages = []
+        for entity, title in PAGES:
+            html = render_list(entity, title)
+            html = re.sub(r'<script\b[^>]*\bsrc=[^>]*>.*?</script>', "", html, flags=re.DOTALL)
+            html = re.sub(r"<link\b[^>]*>", "", html).replace("</head>", toast_head(), 1)
+            html = html.replace("</head>", f"<style>{css}</style></head>")
+            html = html.replace("</body>", f"<script>{mock}\n{money}\n{tree}\n{client}</script></body>")
+            pages.append(html)
+        serialized = json.dumps(pages).replace("</", "<\\/")
+        script = f"const pages={serialized};\n" + r"""
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const tick=()=>new Promise(resolve=>setTimeout(resolve,60));
+const wait=async(check,m)=>{for(let i=0;i<100;i++){try{if(check())return;}catch(e){}await tick();}throw Error('timeout: '+m);};
+(async()=>{
+  for(const html of pages){
+    const frame=document.createElement('iframe');frame.style.border='0';frame.style.width='1440px';frame.style.height='800px';frame.srcdoc=html;
+    const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+    document.body.appendChild(frame);await loaded;
+    const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id);
+    const entity=find('mgPage').dataset.entity;
+    await wait(()=>doc.querySelectorAll('#mgBody [data-row-select]').length>=20,entity+' rows');
+    const list=doc.querySelector('.mg-md-list-panel'),form=doc.querySelector('.mg-md-form-panel'),wrap=list.querySelector('.awsum-list-table-wrap');
+    const same=(label)=>{const a=list.getBoundingClientRect(),b=form.getBoundingClientRect();
+      assert(Math.abs(a.top-b.top)<=1&&Math.abs(a.height-b.height)<=1,entity+' '+label+': equal height '+a.height+'/'+b.height);return a;};
+    // Short form (nothing selected): both cards take the Workspace height.
+    win.scrollTo(0,0);await tick();
+    let box=same('short form');
+    assert(Math.abs(box.bottom-(win.innerHeight-12))<=2,entity+' Workspace height: '+box.bottom);
+    // A long list scrolls inside its card; the header row sticks; the pager stays at the card bottom.
+    assert(wrap.scrollHeight>wrap.clientHeight+50&&['auto','scroll'].includes(win.getComputedStyle(wrap).overflowY),entity+' list scrolls inside');
+    wrap.scrollTop=400;await tick();
+    const th=wrap.querySelector('thead th');
+    assert(win.getComputedStyle(th).position==='sticky'&&Math.abs(th.getBoundingClientRect().top-wrap.getBoundingClientRect().top)<=1,entity+' sticky header');
+    const pager=list.querySelector('.mg-md-pager').getBoundingClientRect();
+    assert(pager.bottom<=box.bottom+1&&wrap.getBoundingClientRect().bottom<=pager.top+1,entity+' pager visible at the bottom');
+    // Long form (Add / Edit, a taller tab, Show Map...): the list card grows with it; nothing is cut.
+    doc.querySelectorAll('#mgBody [data-row-select]')[0].click();await tick();await tick();
+    const grow=doc.createElement('div');grow.style.height='1400px';grow.id='eqGrow';form.appendChild(grow);await tick();
+    box=same('long form');
+    assert(box.height>=1400&&form.getBoundingClientRect().bottom>=grow.getBoundingClientRect().bottom,entity+' form not cut');
+    assert(Math.abs(list.querySelector('.mg-md-pager').getBoundingClientRect().bottom-box.bottom)<20,entity+' pager follows the taller card');
+    grow.remove();await tick();
+    box=same('form shrinks back');
+    // 992px boundary: still side by side and equal; 991px: stacked, equal height not forced.
+    frame.style.width='992px';await tick();
+    same('992px');
+    frame.style.width='991px';await tick();
+    const a=list.getBoundingClientRect(),b=form.getBoundingClientRect();
+    assert(b.top>=a.bottom-1&&win.getComputedStyle(list).maxHeight!=='none',entity+' 991px stacked (list max-height kept)');
+    frame.style.width='375px';await tick();
+    assert(doc.documentElement.scrollWidth<=376&&list.getBoundingClientRect().height<=win.innerHeight*0.7+1,entity+' mobile: stacked, no sideways scroll');
+    frame.remove();
+  }
+  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
+})().catch(error=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:error.stack});});
+"""
+        self.run_browser(script)
+
     def test_md_split_form_and_detail_crud_use_existing_api(self):
         html = self.md_page_html()
         serialized = json.dumps(html).replace("</", "<\\/")
@@ -410,7 +491,9 @@ const wait=async(check)=>{for(let i=0;i<100;i++){if(check())return;await tick();
   assert(['mgMdToggle','mgMdDelete','mgSave'].every(id=>find(id).closest('.awsum-page-header')===pageHeader)&&!header.querySelector('button'),'Deactivate/Delete/Save live in the Page Header (none left in the form header)');
   assert(find('mgSave').getAttribute('form')==='mgForm'&&Math.abs(pageHeader.getBoundingClientRect().right-find('mgSave').getBoundingClientRect().right)<24,'Save submits the form and sits at the right of the Page Header');
   const panelBox=listPanel.getBoundingClientRect(),pagerBox=listPanel.querySelector('.mg-md-pager').getBoundingClientRect(),wrap=listPanel.querySelector('.awsum-list-table-wrap');
-  assert(Math.abs(panelBox.bottom-(win.innerHeight-12))<=2,'left grid card fits the viewport height ('+panelBox.bottom+'/'+win.innerHeight+')');
+  // Equal Height (Global UI Standard): the long MD form sets the row; the list card takes the same height (not cut).
+  const formBox=doc.querySelector('.mg-md-form-panel').getBoundingClientRect();
+  assert(Math.abs(panelBox.top-formBox.top)<=1&&Math.abs(panelBox.height-formBox.height)<=1&&panelBox.bottom>=win.innerHeight-14,'list and form cards share one height ('+panelBox.height+'/'+formBox.height+')');
   assert(Math.abs(listPanel.querySelector('.mg-md-filter').getBoundingClientRect().top-panelBox.top)<20&&Math.abs(panelBox.bottom-pagerBox.bottom)<20,'Search/Status top and Pagination bottom stay fixed');
   assert(['auto','scroll'].includes(win.getComputedStyle(wrap).overflowY)&&wrap.getBoundingClientRect().bottom<=pagerBox.top+1,'only the list scrolls inside the card');
   const tabContent=doc.querySelector('.mg-md-pageframe .tab-content'),panes=[...tabContent.querySelectorAll(':scope > .tab-pane')];

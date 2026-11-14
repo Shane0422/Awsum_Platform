@@ -2,9 +2,10 @@
  * AWSUM Common Map (Employee address now; Merchant / Store / Agency forms reuse it the same way).
  * One implementation of "Show Map" for an address form: each screen passes its field ids and the map config URL of
  * its scope (GET {apiBase}/map-config -> { enabled, embed_key }: backend.services.maps through the scope's router).
- * Privacy: nothing is sent to Google until the user clicks Show Map; Address Line 2 is never part of the map query;
- * Hide / Reset remove the map frame. Without an Embed key (or if the config cannot be read) only the
- * "Open in Google Maps" link is shown. Saving and the rest of the form never depend on the map.
+ * Two actions: Show / Hide Map (the map inside AWSUM) and Open in Google Maps (a new browser tab, Google Maps URLs,
+ * no key needed). Privacy: nothing is sent to Google until the user clicks one of them; Address Line 2 is never part
+ * of a map query; Hide / Reset remove the map frame. Without an Embed key (or if the config cannot be read) Show Map
+ * points to Open in Google Maps. Saving and the rest of the form never depend on the map.
  */
 (function (global) {
   'use strict';
@@ -51,10 +52,9 @@
     const fields = (options && options.fields) || {};
     root.innerHTML = `<div class="d-flex flex-wrap align-items-center gap-2">
         <button type="button" class="btn btn-sm btn-outline-primary" data-map-toggle>Show Map</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-map-external>Open in Google Maps</button>
         <span class="small text-muted" data-map-message role="status"></span></div>
-      <div class="mt-2 d-none" data-map-panel>
-        <div class="ratio ratio-21x9 border rounded" data-map-frame></div>
-        <a class="small d-inline-block mt-1" data-map-link target="_blank" rel="noopener noreferrer">Open in Google Maps</a></div>`;
+      <div class="mt-2 d-none" data-map-panel><div class="ratio ratio-21x9 border rounded" data-map-frame></div></div>`;
     const part = (name) => root.querySelector(`[data-map-${name}]`);
     const button = part('toggle');
     let address = null;   // set by setAddress(); otherwise the current field values are read
@@ -72,7 +72,6 @@
       part('frame').innerHTML = '';   // removes the iframe: no further map request
       part('frame').classList.remove('d-none');
       part('panel').classList.add('d-none');
-      part('link').removeAttribute('href');
       button.textContent = 'Show Map';
       visible = false;
     }
@@ -89,7 +88,6 @@
       message('');
       visible = true;
       button.textContent = 'Hide Map';
-      part('link').href = `${SEARCH_URL}?api=1&query=${encodeURIComponent(query)}`;
       part('panel').classList.remove('d-none');
       const config = await loadConfig(options && options.configUrl);
       if (mine !== token) return false;
@@ -110,6 +108,18 @@
       return true;
     }
 
+    // Open in Google Maps: the current address in a new tab (official Maps URL, no key, no opener / referrer).
+    function openExternal(next) {
+      const parts = next || address || readFields();
+      if (!isComplete(parts)) {
+        message(INCOMPLETE_MESSAGE);
+        return false;
+      }
+      if (!visible) message('');
+      global.open(`${SEARCH_URL}?api=1&query=${encodeURIComponent(formatAddress(parts))}`, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+
     function reset() {
       address = null;
       hide();
@@ -122,6 +132,7 @@
     }
 
     button.addEventListener('click', () => (visible ? hide() : show()));
+    part('external').addEventListener('click', () => openExternal());
     Object.values(fields).forEach((id) => {
       const el = id && document.getElementById(id);
       if (!el) return;
@@ -129,7 +140,7 @@
       ['input', 'change'].forEach((type) => el.addEventListener(type, () => { if (visible || part('message').textContent) reset(); }));
     });
 
-    return { show, hide, reset, setAddress, isVisible: () => visible };
+    return { show, hide, reset, setAddress, openExternal, isVisible: () => visible };
   }
 
   global.AwsumMap = { create, formatAddress, isComplete };

@@ -23,7 +23,7 @@ FAKE_KEY = "FAKE-embed-key/for+tests"
 class CommonMapSourceTests(unittest.TestCase):
     def test_employee_form_uses_the_common_module_without_a_key_in_code(self):
         group = (ROOT / "templates" / "platform" / "master_group.html").read_text(encoding="utf-8")
-        self.assertIn('<script src="/static/js/awsum-map.js?v=1"></script>{% endif %}', group)  # Employee page only
+        self.assertIn('<script src="/static/js/awsum-map.js?v=2"></script>{% endif %}', group)  # Employee page only
         js = (ROOT / "static" / "js" / "master_group.js").read_text(encoding="utf-8")
         self.assertIn("AwsumMap.create($('mgEmpMap'), { configUrl: '/merchant/api/map-config'", js)
         self.assertNotIn("google.com/maps", js)                     # the map URLs live only in the module
@@ -96,7 +96,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  const KEY=__KEY__;
  document.body.insertAdjacentHTML('beforeend','<input id="l1"><input id="l2"><input id="c"><input id="s"><input id="z"><input id="n"><div id="m1"></div><div id="m2"></div>');
  const $=id=>document.getElementById(id);
- const calls=[];let release;const gate=new Promise(r=>{release=r;});
+ const calls=[],opened=[];let release;
+ window.open=(url,target,features)=>{opened.push({url,target,features});return null;};const gate=new Promise(r=>{release=r;});
  window.fetch=async(path)=>{calls.push(path);if(path==='/slow/map-config')await gate;
    const body=path==='/key/map-config'||path==='/slow/map-config'?{enabled:true,embed_key:KEY}:{enabled:false,embed_key:''};
    return new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});};
@@ -107,10 +108,13 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  assert(!AwsumMap.isComplete({line1:'1 Main',city:'Fairfax'})&&!AwsumMap.isComplete({zip:'22031',city:'Fairfax',state:'VA'})&&!AwsumMap.isComplete(null),'incomplete');
  // No key: hidden by default, nothing requested until Show Map.
  const map=AwsumMap.create('m1',{configUrl:'/none/map-config',fields});
- const btn=$('m1').querySelector('[data-map-toggle]'),panel=$('m1').querySelector('[data-map-panel]'),msg=$('m1').querySelector('[data-map-message]'),link=$('m1').querySelector('[data-map-link]');
+ const btn=$('m1').querySelector('[data-map-toggle]'),panel=$('m1').querySelector('[data-map-panel]'),msg=$('m1').querySelector('[data-map-message]'),ext=$('m1').querySelector('[data-map-external]');
  assert(btn.textContent==='Show Map'&&panel.classList.contains('d-none')&&!map.isVisible()&&calls.length===0,'hidden by default, no request');
+ assert(ext&&ext.tagName==='BUTTON'&&ext.textContent==='Open in Google Maps'&&!panel.contains(ext)&&!$('m1').querySelector('a'),'separate Open in Google Maps button, no duplicate link');
  $('l1').value='1 Main St';btn.click();await pause(20);
  assert(!map.isVisible()&&/Enter Address Line 1 and a ZIP Code/.test(msg.textContent)&&calls.length===0,'incomplete address: hint, no request');
+ msg.textContent='';ext.click();
+ assert(opened.length===0&&/Enter Address Line 1 and a ZIP Code/.test(msg.textContent),'incomplete address: no new tab, hint');
  $('z').value='22031';$('z').dispatchEvent(new Event('input',{bubbles:true}));
  assert(msg.textContent==='','editing clears the hint');
  $('l1').value='12 A&B St #5 / Rear?';$('l2').value='Apt 9 SECRET-UNIT';$('c').value='Fairfax';$('s').value='VA';$('n').value='United States';
@@ -118,12 +122,18 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
  assert(map.isVisible()&&btn.textContent==='Hide Map'&&!panel.classList.contains('d-none'),'shown');
  assert(calls.join()==='/none/map-config','config read on Show Map only');
  assert(!$('m1').querySelector('iframe')&&/not set up/.test(msg.textContent),'no key: no map frame, hint');
- const href=link.getAttribute('href'),u=new URL(href);
- assert(href.startsWith('https://www.google.com/maps/search/?api=1&query=')&&link.target==='_blank'&&/noopener/.test(link.rel),'Open in Google Maps link: '+href);
+ ext.click();
+ const tab=opened[0]||{},href=tab.url||'',u=new URL(href);
+ assert(opened.length===1&&href.startsWith('https://www.google.com/maps/search/?api=1&query=')&&tab.target==='_blank'&&tab.features==='noopener,noreferrer','new tab, official URL, noopener,noreferrer: '+JSON.stringify(tab));
  assert(u.searchParams.get('query')==='12 A&B St #5 / Rear?, Fairfax, VA 22031, United States'&&!/[&#?]B|#5/.test(href.split('query=')[1]),'query safely encoded: '+href);
  assert(!href.includes('SECRET-UNIT')&&!href.includes('Apt'),'Address Line 2 excluded');
+ assert(map.isVisible()&&calls.length===1,'the external tab leaves the inside map as it is and reads no config');
  btn.click();
- assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none')&&!link.hasAttribute('href'),'Hide');
+ assert(!map.isVisible()&&btn.textContent==='Show Map'&&panel.classList.contains('d-none'),'Hide');
+ // Without any Show Map and without a key: the external button still works with the current values.
+ const plain=AwsumMap.create('m2',{fields});
+ $('m2').querySelector('[data-map-external]').click();
+ assert(opened.length===2&&new URL(opened[1].url).searchParams.get('query')==='12 A&B St #5 / Rear?, Fairfax, VA 22031, United States'&&!plain.isVisible(),'external button needs no key and no config');
  btn.click();await pause(20);
  assert(calls.length===1,'config read once per page');
  // Address edits reset (typing, and the ZIP autofill's input events on City / State / Country).

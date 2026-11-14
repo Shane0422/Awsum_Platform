@@ -324,11 +324,12 @@ AWSUM_GOOGLE_MAPS_EMBED_KEY=<your Maps Embed key>
    (signed-in Portal users only) then returns `enabled: true` with this key, and
    nothing else.
 
-**Without a key** (unset or empty) the map is disabled: Show Map shows only an
-**Open in Google Maps** link (Google Maps URLs, no key) for the current address.
-If the map cannot load (an invalid or restricted key, an outage), Google's message
-stays inside the map frame and the link still works; saving and the rest of the
-form are never affected.
+**Without a key** (unset or empty) the map inside AWSUM is disabled: Show Map
+points to the separate **Open in Google Maps** button, which always works without
+a key (Google Maps URLs, a new tab with `noopener,noreferrer`, the current
+address). If the map cannot load (an invalid or restricted key, an outage),
+Google's message stays inside the map frame and the button still works; saving
+and the rest of the form are never affected.
 
 **Privacy:** an address is sent to Google only when a user clicks Show Map, and
 Address Line 2 is never included. Mention this in the privacy notice.

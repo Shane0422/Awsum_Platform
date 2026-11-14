@@ -4,7 +4,10 @@
                             + .mg-md-form-panel (.mg-md-form-header > .mg-md-form-title + actions).
    (The mg-md-* names come from MD Master, where this layout started.)
    The list panel height uses --mg-md-offset (top of the workspace), set by the page script. */
-.mg-md-workspace { display: grid; grid-template-columns: minmax(240px, 26fr) minmax(0, 74fr); align-items: start; gap: .65rem; }
+/* Equal Height (AWSUM Global UI Standard): one grid row, both panels stretch to it. The row is the Workspace height
+   below --mg-md-offset, or taller when the form is longer (tabs, Add / Edit, Show Map...); no script resizes it. */
+.mg-md-workspace { display: grid; grid-template-columns: minmax(240px, 26fr) minmax(0, 74fr); align-items: stretch; gap: .65rem;
+  min-height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
 .mg-md-filter { margin-bottom: .4rem; }
 .mg-md-filter .row { --bs-gutter-x: .5rem; --bs-gutter-y: 0; align-items: end; }
 .mg-md-filter .awsum-list-filter-label { margin-bottom: .15rem; font-size: 10px; }
@@ -46,7 +49,9 @@
 .mg-md-form-header { flex-wrap: wrap; gap: .5rem !important; margin-bottom: .4rem !important; padding-bottom: .3rem; border-bottom: 1px solid var(--list-border); }
 .mg-md-form-header > :last-child { flex-wrap: wrap; justify-content: flex-end; }
 .mg-md-form-title { padding-left: .45rem; border-left: 3px solid var(--platform-blue, #1263eb); color: var(--list-navy); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; }
-.mg-md-list-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
+/* The list never sets the row height: it takes the row (height 0 + min-height 100%, like the Employee fill pane) and a
+   long list keeps scrolling inside .awsum-list-table-wrap under its sticky header. */
+.mg-md-list-panel { display: flex; flex-direction: column; height: 0; min-height: 100%; }
 .mg-md-list-panel > .mg-md-filter, .mg-md-list-panel > .mg-md-pager { flex: 0 0 auto; }
 .mg-md-list-panel > .awsum-list-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .mg-md-list-panel thead th { position: sticky; top: 0; z-index: 1; }
@@ -57,7 +62,7 @@
 .mg-md-fit > .mg-md-form-panel { display: flex; flex-direction: column; height: max(360px, calc(100vh - var(--mg-md-offset, 180px) - 12px)); }
 .mg-md-fit > .mg-md-form-panel > .mg-md-form-header { flex: 0 0 auto; }
 .mg-md-fit > .mg-md-form-panel > .mg-md-form-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-@media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; } .mg-md-list-panel, .mg-md-fit > .mg-md-form-panel { height: auto; max-height: 70vh; } }
+@media (max-width: 991.98px) { .mg-md-workspace { grid-template-columns: 1fr; min-height: 0; } .mg-md-list-panel, .mg-md-fit > .mg-md-form-panel { height: auto; min-height: 0; max-height: 70vh; } }
 /* An existing edit modal shown inline as the right detail panel (no Bootstrap show/hide): the same form,
    tabs and handlers, without the overlay. Its primary actions are moved into .mg-md-form-header. */
 .modal.awsum-modal-inline { position: static; display: block; z-index: auto; width: auto; height: auto; overflow: visible; opacity: 1; }
