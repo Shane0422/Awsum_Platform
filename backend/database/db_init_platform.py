@@ -608,7 +608,7 @@ PLATFORM_MODEL_MODULES = (
     "device_type", "device", "device_log", "agency", "agency_type", "billing", "payment_method", "subscription",
     "pricing_plan", "invoice", "contract", "provision_log", "store_sync_status", "store_entitlement",
     "license_device_link", "license_email_log", "system_settings", "system_settings_audit", "master_group",
-    "store_location", "business_contact", "common_code", "merchant_feature",
+    "store_location", "business_contact", "common_code", "merchant_feature", "store_md",
 )
 
 
@@ -736,6 +736,10 @@ def init_platform_db(*, allow_destructive: bool = False) -> None:
     # before the generic step so the composite FK target exists first.
     from backend.database.employee_migration import migrate_employee_schema
     migrate_employee_schema(platform_engine)
+    # Store Override (SO-1a): tb_md_detail (i_md_detail_id, i_md_id) index + tb_store_md_price / tb_store_md (additive),
+    # before the generic step so the composite FK targets exist first.
+    from backend.database.store_md_migration import migrate_store_md_schema
+    migrate_store_md_schema(platform_engine)
     safe_schema_migrate(PlatformBase, platform_engine, backup_dir=str(backup_path))
     # Merchant Feature Entitlement: initial rows from current Store usage, only in the run that creates the table.
     seed_new_merchant_feature_table(platform_engine, merchant_feature_existed)

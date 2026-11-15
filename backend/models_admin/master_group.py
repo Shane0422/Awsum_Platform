@@ -160,6 +160,9 @@ class MdDetail(PlatformBase, AuditMixin):
     __tablename__ = "tb_md_detail"
     __table_args__ = (
         UniqueConstraint("i_md_id", "i_detail_no", name="uq_tb_md_detail_md_detail_no"),
+        # Target of the Store Override price FK (Detail belongs to its MD). i_md_detail_id is the PK, so no existing
+        # row can violate it (database/store_md_migration adds it to existing databases).
+        Index("uq_tb_md_detail_id_md", "i_md_detail_id", "i_md_id", unique=True),
         # The Detail's owner is always its MD's owner (a different value is refused by the database).
         ForeignKeyConstraint(["i_md_id", "i_owner_key"], ["tb_md_master.i_md_id", "tb_md_master.i_owner_key"],
                              name="fk_tb_md_detail_md_owner", onupdate="CASCADE", ondelete="CASCADE"),

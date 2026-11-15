@@ -22,6 +22,7 @@ from .license_device_link import LicenseDeviceLink
 from .license_email_log import LicenseEmailLog
 from .master_group import Tax, Category1, Category2, Category3, MdMaster
 from .store_location import StoreCategory3Location, StoreLocation, StoreMdLocation
+from .store_md import StoreMd, StoreMdPrice
 from .system_settings import SystemSettings
 from .system_settings_audit import SystemSettingsAudit
 from .platform_user import PlatformUser
