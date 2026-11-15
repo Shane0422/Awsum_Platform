@@ -44,6 +44,7 @@ from backend.routers.platform_store import (
     _get_business_store,
     _parse_option_flag,
     _query_store_list,
+    _query_store_tree,
     _set_no_cache_headers,
     _store_detail_data,
     _update_store,
@@ -255,6 +256,20 @@ def merchant_list_stores(
     if pagination is not None:
         return _set_no_cache_headers(JSONResponse({"items": items, **pagination}))
     return _set_no_cache_headers(JSONResponse(items))
+
+
+@router.get(f"{API}/store-tree")
+def merchant_store_tree(request: Request, db: Session = Depends(get_db)):
+    # Common Store Management Tree in the Merchant scope: the login's Merchant and all its Stores (Active and Inactive),
+    # no Agency level. The Merchant comes from the login scope only (no request parameter can change it).
+    _user, scope = _merchant_scope(request, db, "read")
+    merchants = [{key: node[key] for key in ("merchant_id", "merchant_code", "merchant_name", "merchant_status",
+                                             "stores")}
+                 for node in _query_store_tree(db, merchant_id=scope.merchant_id) if node["merchant_id"] is not None]
+    return _set_no_cache_headers(JSONResponse({
+        "merchants": merchants,
+        "counts": {"merchants": len(merchants), "stores": sum(len(m["stores"]) for m in merchants)},
+    }))
 
 
 @router.get(f"{API}/store/{{store_id}}")

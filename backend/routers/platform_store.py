@@ -943,6 +943,78 @@ def _query_store_list(
     return results, pagination
 
 
+# ---------- Store Organization Tree (Common Store Management: Agency -> Merchant -> Store) ----------
+NO_AGENCY_LABEL = "No Agency"
+NO_MERCHANT_LABEL = "No Merchant"
+
+
+def _name_key(value) -> tuple:
+    return (str(value or "").casefold(), str(value or ""))
+
+
+def _query_store_tree(db: Session, *, merchant_id: Optional[int] = None) -> list[dict]:
+    """Every Merchant (with its Agency) and its Stores in two queries, without paging, so the Tree never misses a Store
+    of a later list page. The Agency is the Merchant's (Merchant.i_agency_id); the installing Agency
+    (Store.i_installed_by_agency_id) does not decide where a Store sits. Merchants without Stores and Inactive Stores are
+    included. Identity, name and status only (no Notes, License Key or contract values). merchant_id narrows the tree
+    to one Merchant (the Merchant scope passes its login Merchant). Read only."""
+    merchant_rows = (
+        db.query(Merchant.i_merchant_id, Merchant.c_merchant_code, Merchant.c_merchant_name, Merchant.c_status,
+                 Agency.i_agency_id, Agency.c_agency_code, Agency.c_agency_name)
+        .outerjoin(Agency, Agency.i_agency_id == Merchant.i_agency_id)
+    )
+    store_rows = (
+        db.query(Store.i_store_id, Store.c_store_code, Store.c_store_name, Store.c_status, Store.i_merchant_id)
+        .filter(Store.i_store_id != ADMIN_STORE_ID)
+    )
+    if merchant_id is not None:
+        merchant_rows = merchant_rows.filter(Merchant.i_merchant_id == merchant_id)
+        store_rows = store_rows.filter(Store.i_merchant_id == merchant_id)
+    merchants = {}
+    for m_id, m_code, m_name, m_status, a_id, a_code, a_name in merchant_rows.all():
+        merchants[m_id] = {
+            "merchant_id": m_id, "merchant_code": m_code, "merchant_name": m_name, "merchant_status": m_status,
+            "agency_id": a_id, "agency_code": a_code, "agency_name": a_name if a_id is not None else NO_AGENCY_LABEL,
+            "stores": [],
+        }
+    for s_id, s_code, s_name, s_status, s_merchant in store_rows.all():
+        if s_merchant not in merchants:  # a Store without a (known) Merchant: kept, under No Agency / No Merchant
+            merchants[s_merchant] = {
+                "merchant_id": None, "merchant_code": None, "merchant_name": NO_MERCHANT_LABEL,
+                "merchant_status": None, "agency_id": None, "agency_code": None, "agency_name": NO_AGENCY_LABEL,
+                "stores": [],
+            }
+        merchants[s_merchant]["stores"].append(
+            {"store_id": s_id, "store_code": s_code, "store_name": s_name, "status": s_status})
+    nodes = sorted(merchants.values(), key=lambda m: (m["merchant_id"] is None, _name_key(m["merchant_name"])))
+    for node in nodes:
+        node["stores"].sort(key=lambda s: (_name_key(s["store_name"]), s["store_id"]))
+    return nodes
+
+
+@router.get("/platform/api/store-tree")
+def get_store_tree(request: Request, db: Session = Depends(get_db)):
+    """Platform Admin: the whole organization tree, Agency (Merchant's) -> Merchant -> Store. No Agency is last."""
+    user = get_current_user(request, db)
+    require_platform_admin(user)
+    agencies = {}
+    for node in _query_store_tree(db):
+        agency = agencies.setdefault(node["agency_id"], {
+            "agency_id": node["agency_id"], "agency_code": node["agency_code"], "agency_name": node["agency_name"],
+            "merchants": [],
+        })
+        agency["merchants"].append({key: node[key] for key in (
+            "merchant_id", "merchant_code", "merchant_name", "merchant_status", "stores")})
+    ordered = sorted(agencies.values(), key=lambda a: (a["agency_id"] is None, _name_key(a["agency_name"])))
+    merchants = [m for a in ordered for m in a["merchants"]]
+    return _set_no_cache_headers(JSONResponse({
+        "agencies": ordered,
+        "counts": {"agencies": sum(a["agency_id"] is not None for a in ordered),
+                   "merchants": sum(m["merchant_id"] is not None for m in merchants),
+                   "stores": sum(len(m["stores"]) for m in merchants)},
+    }))
+
+
 @router.get("/platform/store/{store_id}")
 def get_store(request: Request, store_id: int, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
