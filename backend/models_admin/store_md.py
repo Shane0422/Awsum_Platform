@@ -14,8 +14,9 @@ Merchant (composite FK -> tb_store (i_store_id, i_merchant_id)) and the MD's own
 (i_md_detail_id, i_md_id)). Deleting the MD, the Detail or the Store removes its override rows (CASCADE); an MD owner
 or Store Merchant change is refused while override rows exist (NO ACTION), like the Employee Store links.
 
-i_row_version: optimistic concurrency token (1 on insert, +1 on each update); a save that read another version is
-refused by the service. Audit columns come from the common AuditMixin (server-side login user only).
+i_row_version: optimistic concurrency (1 on insert, +1 on each update). The service token is "<row id>.<version>":
+row ids are never reused (PostgreSQL sequence; SQLite AUTOINCREMENT), so a reverted and re-created row never matches
+an old token. Audit columns come from the common AuditMixin (server-side login user only).
 """
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKeyConstraint, Index, Integer, Numeric, UniqueConstraint, text
 
@@ -43,6 +44,7 @@ class StoreMdPrice(PlatformBase, AuditMixin):
         CheckConstraint("i_row_version >= 1", name="ck_tb_store_md_price_row_version"),
         Index("ix_tb_store_md_price_md", "i_md_id"),  # the Store Settings grid of one MD; MD cascade
         Index("ix_tb_store_md_price_detail", "i_md_detail_id"),  # Detail cascade
+        {"sqlite_autoincrement": True},  # ids never reused (as PostgreSQL sequences): part of the version token
     )
 
     i_store_md_price_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -61,6 +63,7 @@ class StoreMd(PlatformBase, AuditMixin):
         UniqueConstraint("i_store_id", "i_md_id", name="uq_tb_store_md_store_md"),
         CheckConstraint("i_row_version >= 1", name="ck_tb_store_md_row_version"),
         Index("ix_tb_store_md_md", "i_md_id"),
+        {"sqlite_autoincrement": True},
     )
 
     i_store_md_id = Column(Integer, primary_key=True, autoincrement=True)
