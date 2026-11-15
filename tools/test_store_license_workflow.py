@@ -191,5 +191,86 @@ class StoreLicenseWorkflowTests(unittest.TestCase):
         self.assertEqual((detail["device"]["last_seen"], detail["device"]["last_ip"]), (rows[0]["last_seen_at"], rows[0]["last_ip"]))
 
 
+class DeviceServerIpTests(unittest.TestCase):
+    """Device activation / validation record the server-confirmed client IP (services.session_metadata.client_ip);
+    a device-reported IP goes to the device log note only; admin actions never set the device's Last IP."""
+
+    issue = StoreLicenseWorkflowTests.issue
+    licenses = StoreLicenseWorkflowTests.licenses
+    mock_send = StoreLicenseWorkflowTests.mock_send
+
+    def setUp(self):
+        StoreLicenseWorkflowTests.setUp(self)
+        self.client.put("/platform/store/10/entitlement", json={"pos_qty": 2, "kiosk_qty": 0, "customer_ordering": False})
+        self.issue("POS", 2, "issue-pos-ip-01")
+        self.keys = [key for _, key, *_ in self.licenses()]
+
+    def device_for(self, key):
+        from backend.models_admin.device import Device
+        from backend.models_admin.device_log import DeviceLog
+        with self.factory() as db:
+            lic = db.query(License).filter_by(c_license_key=key).one()
+            device = db.query(Device).filter_by(i_license_id=lic.i_license_id).one()
+            logs = [(log.c_event_type, log.c_ip_address, log.c_note)
+                    for log in db.query(DeviceLog).filter_by(i_device_id=device.i_device_id).order_by(DeviceLog.i_log_id)]
+            return device.c_device_uuid, device.c_last_ip, logs
+
+    def activate_device(self, key, peer, headers=None, **extra):
+        with TestClient(self.app, client=(peer, 50000)) as device:
+            return device.post("/platform/license/activate", headers=headers or {},
+                               json={"license_key": key, "device_fingerprint": "HW-" + key[-4:], **extra})
+
+    def test_direct_connection_records_the_peer_and_keeps_the_reported_ip_apart(self):
+        response = self.activate_device(self.keys[0], "198.51.100.10", ip_address="10.0.0.5")
+        self.assertEqual(response.status_code, 200, response.text)
+        code, last_ip, logs = self.device_for(self.keys[0])
+        self.assertEqual(last_ip, "198.51.100.10")  # server IP, not the device-reported 10.0.0.5
+        self.assertEqual(logs[-1][:2], ("ACTIVATED", "198.51.100.10"))
+        self.assertEqual(logs[-1][2], f"Activated with POS-01. | Reported IP: 10.0.0.5")  # note kept, IP appended
+        # Validation: the server IP again; a spoofed X-Forwarded-For from an untrusted peer is ignored.
+        with TestClient(self.app, client=("198.51.100.20", 50001)) as device:
+            valid = device.post("/platform/device/validate", headers={"X-Forwarded-For": "1.2.3.4"},
+                                json={"device_code": code, "hardware_id": "HW-" + self.keys[0][-4:], "ip_address": "10.0.0.6",
+                                      "note": "Shift start"})
+        self.assertEqual(valid.status_code, 200, valid.text)
+        self.assertEqual(valid.json()["last_ip"], "198.51.100.20")
+        _, last_ip, logs = self.device_for(self.keys[0])
+        self.assertEqual(last_ip, "198.51.100.20")
+        self.assertEqual(logs[-1], ("LOGIN", "198.51.100.20", "Shift start | Reported IP: 10.0.0.6"))
+
+    def test_trusted_proxy_records_the_forwarded_client(self):
+        with patch.dict("os.environ", {"AWSUM_TRUSTED_PROXY_CIDRS": "10.0.0.0/8"}):
+            response = self.activate_device(self.keys[1], "10.1.2.3", headers={"X-Forwarded-For": "203.0.113.50"})
+        self.assertEqual(response.status_code, 200, response.text)
+        _, last_ip, logs = self.device_for(self.keys[1])
+        self.assertEqual((last_ip, logs[-1][1]), ("203.0.113.50", "203.0.113.50"))
+        self.assertNotIn("Reported IP", logs[-1][2])  # nothing reported by the device
+
+    def test_untrusted_proxy_header_is_ignored(self):
+        response = self.activate_device(self.keys[1], "198.51.100.30", headers={"X-Forwarded-For": "203.0.113.99"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.device_for(self.keys[1])[1], "198.51.100.30")
+
+    def test_invalid_or_oversized_reported_ip_is_not_logged(self):
+        self.activate_device(self.keys[0], "198.51.100.11", ip_address="not-an-ip")
+        self.activate_device(self.keys[1], "198.51.100.12", last_ip="1" * 80)
+        for key in self.keys:
+            _, last_ip, logs = self.device_for(key)
+            self.assertNotIn("Reported IP", logs[-1][2])
+            self.assertTrue(last_ip.startswith("198.51.100."))
+
+    def test_admin_device_creation_does_not_set_the_device_last_ip(self):
+        from backend.models_admin.device import Device
+        with self.factory() as db:
+            license_id = db.query(License).filter_by(c_license_key=self.keys[0]).one().i_license_id
+        created = self.client.post("/platform/merchant/10/stores/10/devices",
+                                   json={"device_name": "Admin Added", "last_ip": "192.0.2.77", "ip_address": "192.0.2.78",
+                                         "license_id": license_id})
+        self.assertEqual(created.status_code, 200, created.text)
+        with self.factory() as db:
+            device = db.query(Device).filter_by(c_device_name="Admin Added").one()
+            self.assertIsNone(device.c_last_ip)  # neither the admin's IP nor a typed value
+
+
 if __name__ == "__main__":
     unittest.main()

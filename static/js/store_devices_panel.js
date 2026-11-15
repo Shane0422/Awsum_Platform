@@ -112,9 +112,9 @@
   // Table cells: a date / time never breaks inside itself (only between the parts).
   const keepWords = (text) => esc(text).split(' ').map(part => /\d/.test(part) ? '<span class="text-nowrap">' + part + '</span>' : part).join(' ');
   const LAST_SEEN_HELP = 'Last time the AWSUM server confirmed this device (activation or validation).';
-  // Last IP: the value stored with the last activation / validation (tb_device.c_last_ip). Today it is only an IP the
-  // device sent in its request; the server does not record the connection IP yet, so it is not labeled as server data.
-  const LAST_IP_HELP = 'IP sent by the device with its last activation / validation (not verified by the server).';
+  // Last IP: the client IP the server confirmed at the last activation / validation (tb_device.c_last_ip; behind a
+  // trusted proxy, the forwarded client). An IP the device reports itself is only kept in the device log.
+  const LAST_IP_HELP = 'Last IP is the address the server saw for that connection.';
 
   // Contract Quantities (tb_store_entitlement through the existing workspace summary; read only here).
   function quantitiesHtml(sum) {
@@ -610,11 +610,11 @@
     const deviceBlock = dev
       ? '<h6 class="mt-3">Activated Device</h6><dl class="row mb-0">' + row('Device ID', dev.device_code) + row('Name', dev.name) + row('OS', dev.os) + row('OS version', dev.os_version) +
         row('Model', dev.model) + row('App version', dev.app_version) + row('Fingerprint', dev.fingerprint_tail ? '…' + dev.fingerprint_tail : null) +
-        row('Last seen (server)', lastSeenText(dev.last_seen)) + row('Last IP (reported by device)', dev.last_ip || 'Not Recorded') +
+        row('Last seen (server)', lastSeenText(dev.last_seen)) + row('Last IP (server)', dev.last_ip || 'Not Recorded') +
         row('Activated at', fmtDate(dev.first_activated_at)) + '</dl>' +
         '<p class="small text-muted mt-1 mb-0">' + esc(LAST_SEEN_HELP) + ' ' + esc(LAST_IP_HELP) + '</p>'
       : '<div class="alert alert-secondary mt-3 mb-0">Not activated. No device is linked to this license yet; device details appear after field activation.</div>' +
-        '<dl class="row mt-2 mb-0">' + row('Device name', 'Not Recorded') + row('Last seen (server)', 'Not Recorded') + row('Last IP (reported by device)', 'Not Recorded') + '</dl>';
+        '<dl class="row mt-2 mb-0">' + row('Device name', 'Not Recorded') + row('Last seen (server)', 'Not Recorded') + row('Last IP (server)', 'Not Recorded') + '</dl>';
     const history = info.history.length
       ? '<h6 class="mt-3">Link History</h6><div class="table-responsive"><table class="table table-sm sd-table mb-0"><thead><tr><th>Device</th><th>Linked</th><th>Unlinked</th><th>Reason</th></tr></thead><tbody>' +
         info.history.map(h => '<tr><td>' + esc(h.device_code || h.device_id) + '</td><td>' + fmtDate(h.linked_at) + '</td><td>' + (h.unlinked_at ? fmtDate(h.unlinked_at) + ' by ' + esc(h.unlinked_by || '—') : 'Active') + '</td><td>' + esc(h.unlink_reason || '—') + '</td></tr>').join('') +

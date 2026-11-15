@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from collections import defaultdict
+import ipaddress
 import re
 import secrets
 import bcrypt
@@ -62,6 +63,7 @@ from backend.services.organization_users import (
 from backend.services.email_layout import AwsumEmailLayout
 from backend.services.mail_common import EmailConfigurationError, MailDeliveryError, validate_email_address
 from backend.services.system_settings import send_configured_email
+from backend.services.session_metadata import client_ip as _server_client_ip
 
 router = APIRouter()
 
@@ -588,14 +590,28 @@ def _actor_label(user) -> Optional[str]:
 
 
 def _resolve_request_ip(request: Optional[Request], payload: Optional[dict] = None) -> Optional[str]:
-    payload = payload or {}
-    explicit_ip = str(payload.get("ip_address") or payload.get("last_ip") or "").strip()
-    if explicit_ip:
-        return explicit_ip
-    merchant = getattr(request, "merchant", None)
-    host = getattr(merchant, "host", None)
-    host = str(host or "").strip()
-    return host or None
+    """The client IP confirmed by the server (services.session_metadata.client_ip: the socket peer, or the forwarded
+    client only behind a trusted proxy, AWSUM_TRUSTED_PROXY_CIDRS; run Uvicorn with --no-proxy-headers). An IP sent in
+    the request body is never used here (see _reported_ip). The IP is recorded only; it never decides authorization."""
+    if request is None or getattr(request, "client", None) is None:
+        return None
+    try:
+        return _server_client_ip(request)
+    except ValueError:  # invalid trusted-proxy configuration: record nothing instead of failing the device request
+        logging.getLogger(__name__).exception("Trusted proxy configuration is invalid; device IP not recorded.")
+        return None
+
+
+def _reported_ip(payload: Optional[dict]) -> Optional[str]:
+    """An IP the device itself sent (ip_address / last_ip): kept apart from the server IP, only when it is a valid
+    address of reasonable length."""
+    raw = str((payload or {}).get("ip_address") or (payload or {}).get("last_ip") or "").strip()
+    if not raw or len(raw) > 64:
+        return None
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return None
 
 
 def _log_device_event(
@@ -607,8 +623,14 @@ def _log_device_event(
     payload: Optional[dict] = None,
     action_by: Optional[str] = None,
     note: Optional[str] = None,
+    reported_ip: Optional[str] = None,
 ) -> DeviceLog:
     payload = payload or {}
+    # c_ip_address: the server-confirmed IP of the requester (the device, or the admin for admin actions). A
+    # device-reported IP is appended to the note, never replacing it.
+    note_text = str(note or payload.get("note") or "").strip()
+    if reported_ip:
+        note_text = f"{note_text} | Reported IP: {reported_ip}" if note_text else f"Reported IP: {reported_ip}"
     event_log = DeviceLog(
         i_device_id=device.i_device_id,
         c_event_type=str(event_type or "").strip().upper() or "UPDATED",
@@ -619,7 +641,7 @@ def _log_device_event(
         c_version=str(payload.get("app_version") or payload.get("version") or device.c_app_version or "").strip() or None,
         c_action_by=str(action_by or payload.get("action_by") or payload.get("activated_by") or "").strip() or None,
         dt_event_time=datetime.now(),
-        c_note=str(note or payload.get("note") or "").strip() or None,
+        c_note=note_text or None,
     )
     db.add(event_log)
     return event_log
@@ -1757,7 +1779,7 @@ def create_store_device(merchant_id: int, store_id: int, payload: dict, request:
         dt_activation_expiry=datetime.now() + timedelta(minutes=DEVICE_ACTIVATION_TTL_MINUTES),
         c_status="inactive",
         c_note=str(payload.get("note") or "").strip() or None,
-        c_last_ip=_resolve_request_ip(request, payload),
+        c_last_ip=None,  # set only when the device itself connects (activation / validation)
         dt_last_seen=None,
     )
     _stamp_created(device, user)
@@ -1945,6 +1967,7 @@ def activate_device(payload: dict, request: Request, db: Session = Depends(get_d
         payload=payload,
         action_by=device.c_activated_by,
         note=str(payload.get("note") or "").strip() or "Device activated.",
+        reported_ip=_reported_ip(payload),
     )
     db.commit()
     db.refresh(device)
@@ -2020,6 +2043,7 @@ def validate_device_binding(payload: dict, request: Request, db: Session = Depen
         payload=payload,
         action_by=str(payload.get("action_by") or payload.get("hardware_id") or "").strip() or None,
         note=str(payload.get("note") or "").strip() or "Device validation/login.",
+        reported_ip=_reported_ip(payload),
     )
     db.commit()
 

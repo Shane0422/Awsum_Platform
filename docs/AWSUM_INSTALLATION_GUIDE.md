@@ -284,7 +284,17 @@ Required/relevant configuration:
   Generating a different key does not decrypt old values.
 * Required SMTP settings/secrets, or the restored encrypted DB settings and key.
 * `AWSUM_TRUSTED_PROXY_CIDRS`: only real trusted proxy networks, when deployed
-  behind a proxy; do not trust arbitrary forwarded headers.
+  behind a proxy; do not trust arbitrary forwarded headers. Device activation /
+  validation record the server-confirmed client IP in `tb_device.c_last_ip`
+  (`services.session_metadata.client_ip`); without this setting behind a proxy,
+  the proxy address is recorded. A device-reported IP is kept only in the device
+  log note (`Reported IP: ...`).
+* Existing device IP data (`tb_device.c_last_ip`, `tb_device_log.c_ip_address`):
+  values written before the server-confirmed IP change (2026-11) may be an IP the
+  device sent itself or empty, and cannot be told apart from server-confirmed
+  values. They are kept unchanged and become server-confirmed at the device's next
+  activation / validation. Treat older values as unverified when reviewing a
+  restored or migrated database.
 * `AWSUM_GEOIP_DATABASE_PATH`: optional local GeoIP database location, if used.
 * `AWSUM_GOOGLE_MAPS_EMBED_KEY`: optional Google Maps Embed API key for the
   common Show Map of address forms (`static/js/awsum-map.js`, Employee ADDRESS

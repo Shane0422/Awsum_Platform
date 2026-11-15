@@ -223,7 +223,7 @@ const wait=async(f,m)=>{for(let i=0;i<150;i++){try{if(f())return;}catch(e){}awai
  panel.querySelector('[data-sd-detail="103"]').click();
  await wait(()=>shown(find('sdModalBody'))&&find('sdModalBody').textContent.includes('Last seen (server)'),'details');
  const det=find('sdModalBody').textContent.replace(/\s+/g,' ');
- assert(/Name\s*Front Kiosk/.test(det)&&/Last seen \(server\)\s*11-14-2026 04:05 PM/.test(det)&&/Last IP \(reported by device\)\s*203\.0\.113\.7/.test(det),'details: device name / last seen / last IP: '+det.slice(0,400));
+ assert(/Name\s*Front Kiosk/.test(det)&&/Last seen \(server\)\s*11-14-2026 04:05 PM/.test(det)&&/Last IP \(server\)\s*203\.0\.113\.7/.test(det),'details: device name / last seen / last IP: '+det.slice(0,400));
  // Details dates: the Common formatter (MM-DD-YYYY hh:mm AM/PM) for Issued / Activated at / Linked / Unlinked.
  assert(/Issued\s*10-20-2026 09:00 AM/.test(det)&&/Activated at\s*10-21-2026 08:00 AM/.test(det),'details issued / activated: '+det.slice(0,500));
  assert(det.includes('10-01-2026 10:15 AM')&&det.includes('10-19-2026 05:40 PM by admin@example.test')&&det.includes('10-21-2026 08:00 AM'),'details link history dates: '+det);

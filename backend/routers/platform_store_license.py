@@ -42,6 +42,7 @@ from backend.routers.platform_store import (
     _actor_label,
     _generate_store_device_code,
     _log_device_event,
+    _reported_ip,
     _resolve_request_ip,
     _serialize_device_log,
     _set_no_cache_headers,
@@ -850,6 +851,7 @@ def activate_license(payload: dict, request: Request, db: Session = Depends(get_
         db, device, "ACTIVATED", request=request,
         payload={"hardware_id": fingerprint, "os": device.c_os, "app_version": device.c_app_version},
         action_by=device.c_activated_by, note=f"Activated with {_license_label(lic)}.",
+        reported_ip=_reported_ip(payload),
     )
     try:
         db.commit()
