@@ -3116,7 +3116,7 @@
   }
 </script>
 
-<script src="/static/js/store_devices_panel.js?v=13"></script>
+<script src="/static/js/store_devices_panel.js?v=16"></script>
 <script src="/static/js/awsum-address.js?v=1"></script>
 <script>
   const activeModuleRaw =  "{{ active_module }}";
@@ -3125,8 +3125,12 @@
   // Merchant scope. The server sends the field policy and enforces it; the screen only mirrors it. null = Platform.
   const merchantStorePolicy = {{ (merchant_store_policy | default(none)) | tojson }};
   const apiBase = merchantStorePolicy ? merchantStorePolicy.api_base : "/platform";
-  // Devices stay Platform only (not part of Merchant Store Management).
-  const storeDevicesPanel = merchantStorePolicy ? null : window.AwsumStoreDevices;
+  // The common Devices & Licenses panel: Platform manages licenses; the Merchant scope sees its own Stores' licenses
+  // read only (full License Key with Copy; no Merchant write route exists).
+  const storeDevicesPanel = window.AwsumStoreDevices || null;
+  if (storeDevicesPanel && storeDevicesPanel.configure) {
+    storeDevicesPanel.configure({ api: merchantStorePolicy ? `${apiBase}/store` : '/platform/store', readOnly: !!merchantStorePolicy });
+  }
   // Merchant scope list: no Agency / Merchant column, filter or sort; Store Name / Code search; Store Name (A-Z) first.
   const MERCHANT_STORE_HIDDEN_COLUMNS = new Set(['installed_by_agency_name', 'merchant_name']);
   const MERCHANT_STORE_SORTS = merchantStorePolicy ? merchantStorePolicy.sorts : null;
@@ -4085,10 +4089,9 @@
     });
   }
 
-  // Platform Store Tree: the existing Devices & Licenses panel (static/js/store_devices_panel.js: Contract Quantities,
-  // Issue Licenses, Email Preview / Send) moves into the License tab of the common Store form, unchanged. It already
-  // follows the selected Store (selectItem -> show, clearForm -> clear). The Merchant scope has no panel
-  // (storeDevicesPanel is null) and the license APIs are Platform Admin only.
+  // Store Tree (Platform and Merchant): the common Devices & Licenses panel (static/js/store_devices_panel.js) sits in
+  // the License tab of the common Store form and follows the selected Store (selectItem -> show, clearForm -> clear).
+  // Platform: Contract Quantities, Issue Licenses, Email Preview / Send; Merchant: read only (configure above).
   function mountStoreDevicesInLicenseTab() {
     if (activeModule !== 'store' || !MASTER_DETAIL || !storeDevicesPanel) return;
     const licenseTab = masterFormModal?.querySelector('.merchant-tab-panel[data-tab-panel="license"]');

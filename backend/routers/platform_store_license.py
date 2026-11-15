@@ -647,7 +647,12 @@ def get_store_license_detail(store_id: int, license_id: int, request: Request, d
     user = get_current_user(request, db)
     require_platform_admin(user)
     _get_store(db, store_id)
+    return _set_no_cache_headers(JSONResponse(_license_detail_data(db, store_id, license_id)))
 
+
+def _license_detail_data(db: Session, store_id: int, license_id: int) -> dict:
+    """License Details (license row, active device, link history, recent device logs) of a license of this store;
+    404 when the license is not of the store. Shared by the Platform route and the Merchant read-only view."""
     lic = db.query(License).filter(License.i_license_id == license_id, License.i_store_id == store_id).first()
     if not lic:
         raise HTTPException(status_code=404, detail="License not found for this store.")
@@ -706,12 +711,12 @@ def get_store_license_detail(store_id: int, license_id: int, request: Request, d
             .all()
         ]
 
-    return _set_no_cache_headers(JSONResponse({
+    return {
         "license": _serialize_license_row(lic, active, active_device, _accepted_license_emails(db, store_id)),
         "device": _device_payload(active_device) if active_device else None,
         "history": history,
         "logs": logs,
-    }))
+    }
 
 
 @router.post("/platform/store/{store_id}/licenses/{license_id}/unlink")

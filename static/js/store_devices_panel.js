@@ -2,7 +2,15 @@
 (function () {
   'use strict';
 
-  const API = '/platform/store';
+  // configure({ api, readOnly }): the API base of the scope (Platform '/platform/store', Merchant '/merchant/api/store')
+  // and readOnly (Merchant: view only; no selection, issue, quantities, email or unlink; the server has no Merchant
+  // write route either). Viewing / copying a License Key is not a management action and stays available.
+  let API = '/platform/store';
+  let readOnly = false;
+  function configure(options = {}) {
+    if (options.api) API = String(options.api).replace(/\/+$/, '');
+    readOnly = !!options.readOnly;
+  }
   const WIDTH_KEY = 'awsum.storeSplit.leftPct.v2';
   const state = { storeId: null, data: null, loading: false, token: 0, inited: false, modal: null, selected: new Set(), recent: new Set() };
 
@@ -125,7 +133,7 @@
       id: 'sdQty', title: 'Contract Quantities', expanded: true,
       summary: 'POS ' + sum.POS.issued + '/' + sum.POS.contracted + ' · KIOSK ' + sum.KIOSK.issued + '/' + sum.KIOSK.contracted +
         ' · Ordering ' + (ordering.enabled ? 'On' : 'Off'),
-      actionsHtml: '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button>',
+      actionsHtml: readOnly ? '' : '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button>',
       bodyHtml: '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdQtyTable"><thead><tr><th>Device Type</th>' +
         '<th>Contracted</th><th>Issued</th><th>Activated</th><th>Remaining</th></tr></thead><tbody>' +
         row('POS', sum.POS) + row('KIOSK', sum.KIOSK) +
@@ -143,7 +151,7 @@
     const all = d.licenses.concat(d.service_license ? [d.service_license] : []);
     const groups = new Map();
     all.forEach(l => {
-      const key = l.issue_request_id || '';
+      const key = l.issue_request_id || l.issue_batch || '';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(l);
     });
@@ -155,17 +163,17 @@
       items.forEach(l => { types[l.type] = (types[l.type] || 0) + 1; });
       const sent = items.filter(l => l.email_sent_count > 0).length;
       const by = Array.from(new Set(items.map(l => l.issued_by).filter(Boolean))).join(', ');
-      return '<tr><td>' + esc(day(issued || null)) + '</td><td>' + esc(by || '—') + '</td>' +
-        '<td><span class="sd-key" title="' + esc(key) + '">' + esc(key || 'Not recorded') + '</span></td>' +
+      return '<tr><td>' + esc(day(issued || null)) + '</td>' + (readOnly ? '' : '<td>' + esc(by || '—') + '</td>' +
+        '<td><span class="sd-key" title="' + esc(key) + '">' + esc(key || 'Not recorded') + '</span></td>') +
         '<td>' + esc(items.map(l => l.name).join(', ')) + '</td>' +
         '<td>' + esc(Object.keys(types).map(t => t + ' x' + types[t]).join(', ')) + '</td>' +
         '<td>' + (sent ? esc(sent + ' / ' + items.length + ' sent') : 'Not sent') + '</td></tr>';
-    }).join('') || '<tr><td colspan="6" class="text-center text-muted py-3">No licenses issued yet.</td></tr>';
+    }).join('') || '<tr><td colspan="' + (readOnly ? 4 : 6) + '" class="text-center text-muted py-3">No licenses issued yet.</td></tr>';
     return section({
       id: 'sdHistory', title: 'Issue History', expanded: false,
       summary: entries.length + (entries.length === 1 ? ' issue' : ' issues'),
       bodyHtml: '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdHistoryTable"><thead><tr>' +
-        '<th>Issued Date</th><th>Issued By</th><th>Request ID</th><th>New Licenses</th><th>Device Types</th><th>Email Status</th>' +
+        '<th>Issued Date</th>' + (readOnly ? '' : '<th>Issued By</th><th>Request ID</th>') + '<th>New Licenses</th><th>Device Types</th><th>Email Status</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>',
     });
   }
@@ -190,27 +198,27 @@
       const btn = '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 me-1" data-sd-copy="' + esc(l.license_key) + '" title="Copy license key">Copy</button>' +
         '<button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-sd-detail="' + l.license_id + '">Details</button>';
       const fresh = state.recent.has(Number(l.license_id)) ? ' <span class="sd-badge issued">New</span>' : '';
-      return '<tr><td><input type="checkbox" class="form-check-input" data-sd-license-select="' + Number(l.license_id) + '" aria-label="Select ' + esc(l.name) + '"' + (state.selected.has(Number(l.license_id)) ? ' checked' : '') + '></td>' +
+      return '<tr>' + (readOnly ? '' : '<td><input type="checkbox" class="form-check-input" data-sd-license-select="' + Number(l.license_id) + '" aria-label="Select ' + esc(l.name) + '"' + (state.selected.has(Number(l.license_id)) ? ' checked' : '') + '></td>') +
         '<td class="fw-semibold">' + esc(l.name) + fresh + '</td><td>' + esc(l.type) + '</td>' +
         '<td><span class="sd-key" title="' + esc(l.license_key) + '">' + esc(l.license_key) + '</span></td>' +
         '<td class="sd-issued">' + esc(day(l.issued_at)) + '</td><td class="sd-valid">' + esc(day(l.valid_until)) + '</td>' +
         '<td>' + badge(l.status, l.status_label) + '</td><td class="sd-linked">' + linkedDeviceHtml(l) + '</td>' +
         '<td class="sd-seen" title="' + esc(LAST_SEEN_HELP) + '">' + keepWords(lastSeenText(l.last_seen_at)) + '</td>' +
         '<td class="sd-email">' + keepWords(emailText(l)) + '</td><td class="text-end">' + btn + '</td></tr>';
-    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
+    }).join('') || '<tr><td colspan="' + (readOnly ? 10 : 11) + '" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
 
     const activated = d.licenses.filter(l => l.device_id).length;
     panel().innerHTML = headerHtml(s) + (window.AwsumCollapsible ? AwsumCollapsible.controlsHtml() : '') + quantitiesHtml(d.summary) +
       section({
         id: 'sdLicenses', title: 'Device Licenses', expanded: true,
         summary: d.licenses.length + (d.licenses.length === 1 ? ' license' : ' licenses') + ' · ' + activated + ' activated',
-        actionsHtml: '<span id="sdSelectedCount" class="small text-muted"></span>' +
+        actionsHtml: readOnly ? '' : '<span id="sdSelectedCount" class="small text-muted"></span>' +
           '<button type="button" class="btn btn-sm btn-link px-1" id="sdDeselectAll">Deselect All</button>' +
           '<button type="button" class="btn btn-sm btn-primary role-action-btn" id="sdBtnIssue">Issue Licenses</button>' +
           '<button type="button" class="btn btn-sm btn-outline-primary" id="sdPreviewEmail" disabled>Preview Email</button>' +
           '<button type="button" class="btn btn-sm btn-outline-primary" id="sdSendEmail" disabled>Send Email</button>',
         bodyHtml: '<div class="sd-table-wrap"><table class="table table-hover align-middle sd-table mb-0" id="sdLicenseTable"><thead><tr>' +
-          '<th><input type="checkbox" class="form-check-input" id="sdSelectAll" aria-label="Select all licenses"></th>' +
+          (readOnly ? '' : '<th><input type="checkbox" class="form-check-input" id="sdSelectAll" aria-label="Select all licenses"></th>') +
           '<th>Device Name</th><th>Type</th><th>License Key</th><th>Issued Date</th><th>Valid Until</th><th>Status</th><th>Activated / Linked Device</th>' +
           '<th title="' + esc(LAST_SEEN_HELP) + '">Last Seen (Server)</th><th>Email</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>',
       }) +
@@ -218,6 +226,7 @@
     if (window.AwsumCollapsible) AwsumCollapsible.bind(panel());
     const actions = $('sdActions');
     if (actions) actions.remove(); // the actions now sit in their sections
+    if (readOnly) return; // view only: no selection or management actions
 
     const selectAll = $('sdSelectAll');
     selectAll.checked = d.licenses.length > 0 && state.selected.size === d.licenses.length;
@@ -349,6 +358,7 @@
   }
 
   function openEmailModal() {
+    if (readOnly) return;
     const d = state.data;
     if (!d || !state.selected.size) return;
     const s = d.store;
@@ -504,6 +514,7 @@
 
   /* ---------- edit quantities ---------- */
   function openQtyModal() {
+    if (readOnly) return;
     const d = state.data;
     if (!d) return;
     const body = errBox +
@@ -539,6 +550,7 @@
 
   /* ---------- issue licenses ---------- */
   function openIssueModal() {
+    if (readOnly) return;
     const d = state.data;
     if (!d) return;
     const body = errBox +
@@ -608,27 +620,30 @@
     const l = info.license, dev = info.device;
     const row = (k, v) => '<dt class="col-5 text-muted fw-normal">' + k + '</dt><dd class="col-7">' + esc(v ?? '—') + '</dd>';
     const deviceBlock = dev
-      ? '<h6 class="mt-3">Activated Device</h6><dl class="row mb-0">' + row('Device ID', dev.device_code) + row('Name', dev.name) + row('OS', dev.os) + row('OS version', dev.os_version) +
-        row('Model', dev.model) + row('App version', dev.app_version) + row('Fingerprint', dev.fingerprint_tail ? '…' + dev.fingerprint_tail : null) +
+      ? '<h6 class="mt-3">Activated Device</h6><dl class="row mb-0">' + (readOnly ? '' : row('Device ID', dev.device_code)) + row('Name', dev.name) + row('OS', dev.os) + row('OS version', dev.os_version) +
+        row('Model', dev.model) + row('App version', dev.app_version) + (readOnly ? '' : row('Fingerprint', dev.fingerprint_tail ? '…' + dev.fingerprint_tail : null)) +
         row('Last seen (server)', lastSeenText(dev.last_seen)) + row('Last IP (server)', dev.last_ip || 'Not Recorded') +
         row('Activated at', fmtDate(dev.first_activated_at)) + '</dl>' +
         '<p class="small text-muted mt-1 mb-0">' + esc(LAST_SEEN_HELP) + ' ' + esc(LAST_IP_HELP) + '</p>'
       : '<div class="alert alert-secondary mt-3 mb-0">Not activated. No device is linked to this license yet; device details appear after field activation.</div>' +
         '<dl class="row mt-2 mb-0">' + row('Device name', 'Not Recorded') + row('Last seen (server)', 'Not Recorded') + row('Last IP (server)', 'Not Recorded') + '</dl>';
     const history = info.history.length
-      ? '<h6 class="mt-3">Link History</h6><div class="table-responsive"><table class="table table-sm sd-table mb-0"><thead><tr><th>Device</th><th>Linked</th><th>Unlinked</th><th>Reason</th></tr></thead><tbody>' +
-        info.history.map(h => '<tr><td>' + esc(h.device_code || h.device_id) + '</td><td>' + fmtDate(h.linked_at) + '</td><td>' + (h.unlinked_at ? fmtDate(h.unlinked_at) + ' by ' + esc(h.unlinked_by || '—') : 'Active') + '</td><td>' + esc(h.unlink_reason || '—') + '</td></tr>').join('') +
+      ? '<h6 class="mt-3">Link History</h6><div class="table-responsive"><table class="table table-sm sd-table mb-0"><thead><tr><th>Device</th><th>Linked</th><th>Unlinked</th>' + (readOnly ? '' : '<th>Reason</th>') + '</tr></thead><tbody>' +
+        info.history.map(h => '<tr><td>' + esc(readOnly ? (h.device_name || '—') : (h.device_code || h.device_id)) + '</td><td>' + fmtDate(h.linked_at) + '</td><td>' +
+          (h.unlinked_at ? fmtDate(h.unlinked_at) + (readOnly ? '' : ' by ' + esc(h.unlinked_by || '—')) : 'Active') + '</td>' +
+          (readOnly ? '' : '<td>' + esc(h.unlink_reason || '—') + '</td>') + '</tr>').join('') +
         '</tbody></table></div>'
       : '';
     $('sdModalTitle').textContent = l.name + ' · ' + l.type;
     $('sdModalBody').innerHTML = errBox + '<dl class="row mb-0">' + row('License key', l.license_key) + row('Status', l.status_label) + row('Issued', fmtDate(l.issued_at)) + row('Email', emailText(l)) + '</dl>' + deviceBlock + history;
-    if (dev) {
+    if (dev && !readOnly) {
       $('sdModalFooter').innerHTML = '<button type="button" class="btn btn-outline-danger me-auto" id="sdUnlink">Unlink Device…</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>';
       $('sdUnlink').addEventListener('click', () => confirmUnlink(l, dev));
     }
   }
 
   function confirmUnlink(lic, dev) {
+    if (readOnly) return;
     $('sdModalTitle').textContent = 'Unlink Device';
     $('sdModalBody').innerHTML = errBox +
       '<p>You are about to unlink this device from <strong>' + esc(lic.name) + '</strong>:</p>' +
@@ -707,5 +722,5 @@
     renderEmpty();
   }
 
-  window.AwsumStoreDevices = { init, show, clear };
+  window.AwsumStoreDevices = { init, show, clear, configure };
 })();

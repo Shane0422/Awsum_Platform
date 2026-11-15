@@ -387,6 +387,14 @@ const J=b=>new Response(typeof b==='string'?b:JSON.stringify(b),{headers:{'Conte
 window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  requests.push({path:url.pathname,search:url.search,method:options.method||'GET',body:options.body});
  if(url.pathname==='/merchant/api/store-tree')return J(__tree);
+ if(url.pathname==='/merchant/api/store/10/devices-licenses')return J({store:{store_id:10,store_name:'Store <One>',store_code:'STR26ABCD',merchant_id:10,merchant_name:'Merchant <One>',agency_name:null,business_type:null,status:'active'},
+  summary:{POS:{contracted:2,issued:2,activated:1,remaining:0},KIOSK:{contracted:0,issued:0,activated:0,remaining:0},CUSTOMER_ORDERING:{enabled:false,issued:0,remaining:0,license_status:'Not Issued'}},
+  licenses:[{license_id:501,name:'POS-01',device_name:'Counter POS',type:'POS',license_key:'AWS-POS-AB2C-DE3F-GH4J-WQK4',os:'Windows',status:'activated',status_label:'Activated',device_id:9,issued_at:'2026-11-01T10:00:00',activated_at:'2026-11-02T09:00:00',valid_until:null,email_sent_count:1,email_last_sent_at:'2026-11-03T08:00:00',last_seen_at:'2026-11-14T16:05:00',last_ip:'198.51.100.40',issue_batch:'b1'},
+   {license_id:502,name:'POS-02',device_name:null,type:'POS',license_key:'AWS-POS-KM5N-PQ6R-ST7U-ZZ22',os:null,status:'issued',status_label:'Not Activated',device_id:null,issued_at:'2026-11-01T10:00:00',activated_at:null,valid_until:null,email_sent_count:0,email_last_sent_at:null,last_seen_at:null,last_ip:null,issue_batch:'b1'}],
+  service_license:null});
+ if(url.pathname==='/merchant/api/store/10/licenses/501')return J({license:{license_id:501,name:'POS-01',type:'POS',license_key:'AWS-POS-AB2C-DE3F-GH4J-WQK4',status:'activated',status_label:'Activated',issued_at:'2026-11-01T10:00:00',email_sent_count:1,email_last_sent_at:'2026-11-03T08:00:00'},
+  device:{name:'Counter POS',os:'Windows',os_version:null,model:null,app_version:null,last_seen:'2026-11-14T16:05:00',last_ip:'198.51.100.40',first_activated_at:'2026-11-02T09:00:00',status:'activated'},
+  history:[{device_name:'Counter POS',linked_at:'2026-11-02T09:00:00',unlinked_at:null}],logs:[]});
  const detail=url.pathname.match(/^\/merchant\/api\/store\/(\d+)$/);
  if(detail&&(options.method||'GET')==='GET')return J(__details[detail[1]]);
  if(url.pathname.startsWith('/merchant/api/business-contacts/'))return J('[]');
@@ -442,6 +450,33 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(logo&&[...logo.querySelectorAll('input,button')].every(el=>el.disabled),'Store Logo uploader disabled (Platform only)');
  const tabs=[...doc.querySelectorAll('#masterEditModal .merchant-tab-btn')].map(b=>b.textContent.trim());
  assert(!tabs.includes('Notes')&&tabs.includes('License'),'Notes tab hidden, License shown');
+ // License tab: the common Devices & Licenses panel, read only (Merchant API, masked keys, no management action).
+ doc.querySelector('#masterEditModal .merchant-tab-btn[data-tab-target="license"]').click();
+ const lp=doc.getElementById('storeDevicesPanel');
+ await wait(()=>lp.querySelector('[data-awsum-collapsible="sdLicenses"]')&&lp.textContent.includes('AWS-POS-AB2C-DE3F-GH4J-WQK4'),'read-only license panel');
+ assert(doc.querySelector('#masterEditModal .merchant-tab-panel[data-tab-panel="license"]').contains(lp),'panel in the License tab');
+ assert(win.requests.some(r=>r.path==='/merchant/api/store/10/devices-licenses'),'Merchant read-only API');
+ for(const id of ['sdBtnIssue','sdPreviewEmail','sdSendEmail','sdBtnQty','sdDeselectAll','sdSelectAll','sdSelectedCount'])assert(!doc.getElementById(id),id+' not rendered (read only)');
+ assert(!lp.querySelector('[data-sd-license-select]'),'no selection');
+ // Viewing / copying its own Store's full License Key is allowed (the common key cell and Copy of the Platform view).
+ const copies=[...lp.querySelectorAll('[data-sd-copy]')].map(b=>b.getAttribute('data-sd-copy'));
+ assert(JSON.stringify(copies)==='["AWS-POS-AB2C-DE3F-GH4J-WQK4","AWS-POS-KM5N-PQ6R-ST7U-ZZ22"]','Copy with the full keys: '+copies);
+ assert(lp.querySelector('#sdLicenseTable .sd-key').title==='AWS-POS-AB2C-DE3F-GH4J-WQK4','full key in the key cell');
+ const lwrap=doc.getElementById('sdLicenseTable').closest('.sd-table-wrap');assert(lwrap.scrollWidth<=lwrap.clientWidth+1,'read-only table fits: '+lwrap.scrollWidth+'/'+lwrap.clientWidth);
+ const lheads=[...doc.getElementById('sdLicenseTable').querySelectorAll('thead th')].map(th=>th.textContent.trim());
+ assert(JSON.stringify(lheads)==='["Device Name","Type","License Key","Issued Date","Valid Until","Status","Activated / Linked Device","Last Seen (Server)","Email",""]','read-only columns: '+lheads);
+ const hheads=[...doc.getElementById('sdHistoryTable').querySelectorAll('thead th')].map(th=>th.textContent.trim());
+ assert(JSON.stringify(hheads)==='["Issued Date","New Licenses","Device Types","Email Status"]','history without Issued By / Request ID: '+hheads);
+ assert(doc.getElementById('sdHistoryTable').querySelectorAll('tbody tr').length===1,'one issue (opaque batch)');
+ const lrow=[...lp.querySelector('[data-sd-detail="501"]').closest('tr').children].map(td=>td.textContent.replace(/\s+/g,' ').trim());
+ assert(lrow[7]==='11-14-2026 04:05 PM'&&lrow[8]==='Sent 11-03-2026','last seen / email: '+lrow);
+ lp.querySelector('[data-sd-detail="501"]').click();
+ await wait(()=>doc.getElementById('sdModalBody')&&doc.getElementById('sdModalBody').textContent.includes('Last IP (server)'),'read-only details');
+ const mdet=doc.getElementById('sdModalBody').textContent.replace(/\s+/g,' ');
+ assert(/Last seen \(server\)\s*11-14-2026 04:05 PM/.test(mdet)&&/Last IP \(server\)\s*198\.51\.100\.40/.test(mdet)&&/Email\s*Sent 11-03-2026/.test(mdet),'details values: '+mdet.slice(0,300));
+ assert(!/Device ID|Fingerprint|Reason/.test(mdet)&&!doc.getElementById('sdUnlink'),'no Device ID / Fingerprint / Reason / Unlink');
+ doc.querySelector('#sdModal [data-bs-dismiss="modal"]').click();await pause(400);
+ doc.querySelector('#masterEditModal .merchant-tab-btn').click();await pause(50);
  f('receipt_store_name').value='Form Receipt';f('receipt_store_name').dispatchEvent(new Event('input',{bubbles:true}));
  doc.getElementById('btnModalSave').click();
  await wait(()=>win.requests.some(r=>r.method==='PUT'),'save');

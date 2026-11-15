@@ -24,6 +24,7 @@ Policy (server side; the screen only mirrors it). AWSUM Platform controls the St
 - Store Logo (view only for a Merchant) and Business Contacts: every read and write checks that the Store belongs to the
   login's Merchant.
 """
+import hashlib
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -52,6 +53,7 @@ from backend.routers.platform_store import (
     get_db,
     lookup_zip,
 )
+from backend.routers.platform_store_license import _build_workspace, _license_detail_data
 from backend.routers.system_settings import _validate_origin
 from backend.services.app_navigation import STORE_MANAGEMENT_PERMISSION, resolve_app_scope
 from backend.services.branding import resolve_branding
@@ -269,6 +271,62 @@ def merchant_store_tree(request: Request, db: Session = Depends(get_db)):
     return _set_no_cache_headers(JSONResponse({
         "merchants": merchants,
         "counts": {"merchants": len(merchants), "stores": sum(len(m["stores"]) for m in merchants)},
+    }))
+
+
+# ---- Store Licenses, read only (the common Devices & Licenses panel with readOnly) ----
+# The Platform workspace / details are built by routers.platform_store_license and passed through an allow-list:
+# a key added later is never shown to a Merchant until it is listed here. Viewing (incl. the full License Key of its own
+# Stores, which the Merchant may copy) is separate from managing: no Merchant write route exists for licenses (issue,
+# quantities, email, unlink and status changes stay Platform Admin only).
+_MERCHANT_LICENSE_KEYS = ("license_id", "name", "device_name", "type", "license_key", "os", "status", "status_label",
+                          "device_id", "issued_at", "activated_at", "valid_until", "email_sent_count",
+                          "email_last_sent_at", "last_seen_at", "last_ip")
+_MERCHANT_LICENSE_STORE_KEYS = ("store_id", "store_name", "store_code", "merchant_id", "merchant_name", "agency_name",
+                                "business_type", "status")
+_MERCHANT_LICENSE_DEVICE_KEYS = ("name", "os", "os_version", "model", "app_version", "last_seen", "last_ip",
+                                 "first_activated_at", "status")
+_MERCHANT_LICENSE_LINK_KEYS = ("device_name", "linked_at", "unlinked_at")
+
+
+def _merchant_license_row(row: dict | None, store_id: int) -> dict | None:
+    if not row:
+        return None
+    view = {key: row.get(key) for key in _MERCHANT_LICENSE_KEYS}
+    # One issue = one request: an opaque batch key groups the Issue History without exposing the request ID.
+    request_id = row.get("issue_request_id")
+    view["issue_batch"] = hashlib.sha256(f"{store_id}:{request_id}".encode()).hexdigest()[:12] if request_id else None
+    return view
+
+
+def _merchant_license_workspace(workspace: dict) -> dict:
+    store_id = workspace["store"]["store_id"]
+    return {
+        "store": {key: workspace["store"].get(key) for key in _MERCHANT_LICENSE_STORE_KEYS},
+        "summary": workspace["summary"],
+        "licenses": [_merchant_license_row(row, store_id) for row in workspace["licenses"]],
+        "service_license": _merchant_license_row(workspace.get("service_license"), store_id),
+    }
+
+
+@router.get(f"{API}/store/{{store_id}}/devices-licenses")
+def merchant_store_licenses(store_id: int, request: Request, db: Session = Depends(get_db)):
+    _user, scope = _merchant_scope(request, db, "read")
+    store = _merchant_store(db, scope, store_id, "GET")  # another Merchant's Store: 404
+    return _set_no_cache_headers(JSONResponse(_merchant_license_workspace(_build_workspace(db, store))))
+
+
+@router.get(f"{API}/store/{{store_id}}/licenses/{{license_id}}")
+def merchant_store_license_detail(store_id: int, license_id: int, request: Request, db: Session = Depends(get_db)):
+    _user, scope = _merchant_scope(request, db, "read")
+    store = _merchant_store(db, scope, store_id, "GET")
+    detail = _license_detail_data(db, store.i_store_id, license_id)  # a license of another Store: 404
+    device = detail.get("device")
+    return _set_no_cache_headers(JSONResponse({
+        "license": _merchant_license_row(detail["license"], store.i_store_id),
+        "device": {key: device.get(key) for key in _MERCHANT_LICENSE_DEVICE_KEYS} if device else None,
+        "history": [{key: link.get(key) for key in _MERCHANT_LICENSE_LINK_KEYS} for link in detail["history"]],
+        "logs": [],
     }))
 
 
