@@ -2,7 +2,8 @@
 
 Full suite (`.venv/Scripts/python -m unittest $(ls tools/test_*.py | sed 's#/#.#; s#\.py$##')`):
 
-**Current baseline (2026-11-14, Common Framework test cleanup): 712 tests, 0 failures, 0 errors, 11 skipped.**
+**Current baseline (2026-11-15, Store Management S2-b): 727 tests, 0 failures, 0 errors, 11 skipped.**
+(2026-11-14, Common Framework test cleanup: 712 tests, 0 failures, 0 errors, 11 skipped.)
 
 Any failure or error is a regression until shown otherwise. Rerun a test listed under "Unstable" alone before
 treating it as a regression. The 37 earlier failures / errors (first recorded 2026-11-12, 612 tests) were stale
@@ -35,13 +36,32 @@ expected values that described earlier versions); no login, registration or scre
 
 ## Unstable (flaky) browser tests
 
-Still unstable; they passed in the 2026-11-14 cleanup run.
+They passed in the 2026-11-14 cleanup run. The first one was stabilized on 2026-11-15 (test wait only; see below).
 
 
 - `tools.test_master_group_ui.MasterGroupListBrowserTests.test_md_store_item_features_off_hide_fields_and_keep_saved_values`
   fails intermittently in the full suite (timing) and passes when run alone (2/2 on 2026-11-12). Rerun it in isolation
   before treating it as a regression. It also fails alone at times on committed code (1/6 at `5c16192`, 2026-11-13;
   1/2 on 2026-11-14); the message is always "Timed out waiting for UI update".
+  **Known Flaky (investigated 2026-11-15; test unchanged).**
+  - Failure point (instrumented runs; every failure is the same step): after `mgDetailSave.click()` the test waits for
+    `PUT .../md/7/details/2`, which is never sent. All earlier waits finish within about 60 ms, so the 3 s wait budget
+    is not the cause.
+  - Cause: a race inside the test, not in the screen. The test continues as soon as the Default Detail sync
+    `PUT .../details/1` has been *sent*, while the MD save flow is still running
+    (`syncDefaultDetail` -> `loadMdDetails` -> `load()`, `static/js/master_group.js`). During that flow `saving` is
+    true, so `saveMdDetail()` returns at its first line (`if (!state.editing || saving) return;`) and the Detail Save
+    click does nothing. In addition, the Edit click hits the row of the earlier render, and `loadMdDetails()` closes
+    the Detail editor when it reloads (state at the timeout: MD save finished, editor closed).
+  - Reproduction: run the test alone or with its module. 2026-11-15: alone 6/10 passed, module 3/6 and 2/3 passed.
+    On the committed baseline `1e015a8` (changes stashed): alone 6/10 passed, module failed the same way. The failure
+    rate is the same with and without the S2-b changes, so it is unrelated to them.
+  - **Stabilized 2026-11-15 (test wait only, approved):** before the Detail Edit click the test now waits for the end
+    of the MD save flow: a `GET .../md/7/details` after the sync `PUT .../details/1` (Detail list reloaded) and
+    `#mgSave` enabled again (`save()` disables it until its `finally`), then the Edit row. No sleep; no assertion or
+    expected value changed; `master_group.js` unchanged.
+  - Result after the fix (same reproduction conditions): alone 15/15 (instrumented) and 10/10 (plain unittest),
+    module 5/5 (instrumented) and 1/1 (plain); full suite 727 tests, 0 failures, 0 errors, 11 skipped.
 - `tools.test_image_components.SharedImageComponentTests.test_local_preview_validation_cancel_form_payload_and_avatar_fallback`
   has failed intermittently in earlier full runs (avatar fallback timing) and passes when rerun; it passed in the
   2026-11-14 run.

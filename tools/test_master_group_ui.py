@@ -747,7 +747,11 @@ const wait=async(check)=>{for(let i=0;i<100;i++){if(check())return;await tick();
   catch(e){throw Error('no default sync; form error='+find('mgFormError').textContent+' | message='+(find('awsumToastRegion')||{textContent:''}).textContent+' | reqs='+win.requests.slice(-4).map(r=>r.method+' '+r.path).join(','));}
   const defaultSync=win.requests.find(r=>r.method==='PUT'&&r.path.endsWith('/details/1'));
   assert(defaultSync.payload.pk_size==='6'&&!('color_id' in defaultSync.payload)&&!('color_code_id' in defaultSync.payload),'Default Detail sync leaves out Color (saved Color kept by the server)');
-  await wait(()=>find('mgDetailBody').querySelector('[data-detail-act="edit"][data-id="2"]'));
+  // Wait for the end of the MD save flow (Default Detail sync -> Detail list reload -> list reload; mgSave is disabled
+  // until it ends): during it the page ignores a Detail Save, and the reload closes an editor opened on the earlier rows.
+  const syncAt=win.requests.findIndex(r=>r.method==='PUT'&&r.path.endsWith('/details/1'));
+  await wait(()=>!find('mgSave').disabled&&win.requests.slice(syncAt+1).some(r=>r.method==='GET'&&r.path.endsWith('/md/7/details'))
+    &&find('mgDetailBody').querySelector('[data-detail-act="edit"][data-id="2"]'));
   find('mgDetailBody').querySelector('[data-detail-act="edit"][data-id="2"]').click();
   assert(win.getComputedStyle(find('mgDetailModifier').parentElement).display==='none','Modifier input is hidden in the Detail editor');
   assert(win.getComputedStyle(find('mgDetailColor').parentElement).display==='none','Color select is hidden in the Detail editor');
