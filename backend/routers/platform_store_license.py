@@ -38,6 +38,7 @@ from backend.services.license_email import (
     validate_email_content,
 )
 from backend.services.mail_common import EmailConfigurationError, MailDeliveryError, validate_email_address
+from backend.services.device_access import enforce_rate_limits, require_operational_store
 from backend.routers.platform_store import (
     _actor_label,
     _generate_store_device_code,
@@ -777,6 +778,7 @@ def activate_license(payload: dict, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="license_key is required.")
     if not fingerprint or len(fingerprint) > 255:
         raise HTTPException(status_code=400, detail="device_fingerprint is required.")
+    enforce_rate_limits(request, "license_activate", license_key)  # before any database work
 
     def _clean(name: str, limit: int = 120) -> Optional[str]:
         return str(payload.get(name) or "").strip()[:limit] or None
@@ -785,7 +787,7 @@ def activate_license(payload: dict, request: Request, db: Session = Depends(get_
     if not probe:
         raise HTTPException(status_code=404, detail="Invalid license key.")
 
-    _lock_store(db, probe.i_store_id)
+    store = _lock_store(db, probe.i_store_id)
     lic = db.query(License).filter(License.i_license_id == probe.i_license_id).with_for_update().first()
     ltype = _license_type(lic)
     if ltype not in DEVICE_LICENSE_TYPES:
@@ -793,6 +795,7 @@ def activate_license(payload: dict, request: Request, db: Session = Depends(get_
     status = str(lic.c_status or "active").strip().lower()
     if status not in ACTIVATABLE_STATUSES or _is_expired(lic):
         raise HTTPException(status_code=403, detail="License is not active.")
+    require_operational_store(db, store)  # Store / Merchant active; nothing is changed when refused
 
     active = (
         db.query(LicenseDeviceLink)

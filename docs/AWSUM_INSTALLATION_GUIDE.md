@@ -289,6 +289,24 @@ Required/relevant configuration:
   (`services.session_metadata.client_ip`); without this setting behind a proxy,
   the proxy address is recorded. A device-reported IP is kept only in the device
   log note (`Reported IP: ...`).
+* Device API rate limits (`services/rate_limit.py`, `services/device_access.py`):
+  `POST /platform/license/activate`, `/platform/device/activate` and
+  `/platform/device/validate` answer 429 with `Retry-After` over a limit. Each
+  value is `<limit>/<seconds>`; an invalid value logs a warning and the default
+  is used. Defaults: `AWSUM_RL_LICENSE_ACTIVATE_IP=20/600`,
+  `AWSUM_RL_LICENSE_ACTIVATE_KEY=10/600`, `AWSUM_RL_DEVICE_ACTIVATE_IP=20/600`,
+  `AWSUM_RL_DEVICE_ACTIVATE_CODE=10/600`, `AWSUM_RL_DEVICE_VALIDATE_DEVICE=30/60`,
+  `AWSUM_RL_DEVICE_VALIDATE_IP=600/60` (high because a store's devices share one
+  public IP). IP limits use the server-confirmed client IP (trusted proxy rule
+  above) and are skipped when that IP is unavailable. The counters are kept in
+  process memory: valid for development / a single process only. With several
+  Uvicorn workers or servers each process counts separately (the effective limit
+  grows with the number of processes) and a restart clears them; such a
+  deployment needs a shared store (for example Redis or the database) before
+  relying on these limits.
+* The device APIs also require the device's Store to be active and to belong to
+  an active Merchant; a Store without a Merchant is refused (403 otherwise; links
+  and device data are kept and work again when reactivated).
 * Existing device IP data (`tb_device.c_last_ip`, `tb_device_log.c_ip_address`):
   values written before the server-confirmed IP change (2026-11) may be an IP the
   device sent itself or empty, and cannot be told apart from server-confirmed

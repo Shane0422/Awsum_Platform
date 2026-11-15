@@ -57,7 +57,8 @@ def seed(factory):
         db.add(Role(i_role_id=1, c_name="SuperAdmin", c_status="active"))
         db.add(Role(i_role_id=2, c_name="StoreAdmin", c_status="active"))
         db.add(Store(i_store_id=ADMIN_STORE_ID, c_store_name="HQ", c_store_code="HQ", c_status="active"))
-        db.add(Store(i_store_id=2, c_store_name="Test Store", c_store_code="STR00002", c_status="active"))
+        # A business Store belongs to a Merchant (Store creation / update require one; device APIs refuse Stores without).
+        db.add(Store(i_store_id=2, c_store_name="Test Store", c_store_code="STR00002", c_status="active", i_merchant_id=1))
         db.flush()
         db.add(Agency(i_agency_id=1, c_agency_code="AGT00001", c_agency_name="Test Agency"))
         db.add(Merchant(i_merchant_id=1, c_merchant_code="CLT11001", c_merchant_name="Customer Merchant"))

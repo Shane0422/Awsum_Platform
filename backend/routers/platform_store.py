@@ -64,6 +64,7 @@ from backend.services.email_layout import AwsumEmailLayout
 from backend.services.mail_common import EmailConfigurationError, MailDeliveryError, validate_email_address
 from backend.services.system_settings import send_configured_email
 from backend.services.session_metadata import client_ip as _server_client_ip
+from backend.services.device_access import enforce_rate_limits, require_operational_store
 
 router = APIRouter()
 
@@ -1932,6 +1933,7 @@ def activate_device(payload: dict, request: Request, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="activation_code is required.")
     if not hardware_id:
         raise HTTPException(status_code=400, detail="hardware_id is required.")
+    enforce_rate_limits(request, "device_activate", activation_code)  # before any database work
 
     device = db.query(Device).filter(Device.c_activation_code == activation_code).first()
     if not device:
@@ -1942,6 +1944,7 @@ def activate_device(payload: dict, request: Request, db: Session = Depends(get_d
 
     if device.c_bound_hardware_id and device.c_bound_hardware_id != hardware_id:
         raise HTTPException(status_code=403, detail="Device is already bound to different hardware.")
+    require_operational_store(db, db.get(Store, device.i_store_id))  # Store / Merchant active; nothing changed when refused
 
     activated_at = datetime.now()
     device.c_bound_hardware_id = hardware_id
@@ -1993,6 +1996,7 @@ def validate_device_binding(payload: dict, request: Request, db: Session = Depen
         raise HTTPException(status_code=400, detail="device_code is required.")
     if not hardware_id:
         raise HTTPException(status_code=400, detail="hardware_id is required.")
+    enforce_rate_limits(request, "device_validate", device_code)  # a counting key only, not an identity
 
     device = db.query(Device).filter(Device.c_device_uuid == device_code).first()
     if not device:
@@ -2025,6 +2029,7 @@ def validate_device_binding(payload: dict, request: Request, db: Session = Depen
 
     if device.c_bound_hardware_id != hardware_id:
         raise HTTPException(status_code=403, detail="Hardware mismatch.")
+    require_operational_store(db, db.get(Store, device.i_store_id))  # no Last Seen / IP / log change when refused
 
     device.dt_last_seen = datetime.now()
     device.c_last_ip = _resolve_request_ip(request, payload)

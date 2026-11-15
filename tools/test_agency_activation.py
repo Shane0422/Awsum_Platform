@@ -31,6 +31,8 @@ from backend.services.mail_common import EmailConfigurationError, MailDeliveryEr
 
 class AgencyActivationTests(unittest.TestCase):
     def setUp(self):
+        from backend.services import rate_limit
+        rate_limit.reset()  # device API rate limits are per process: every test starts with empty counters
         self.engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
         PlatformBase.metadata.create_all(self.engine)
         self.factory = sessionmaker(bind=self.engine, autoflush=False)

@@ -274,8 +274,10 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
     accepts_html = "text/html" in (request.headers.get("accept") or "")
     is_api_request = request.method != "GET" or request.url.path.startswith("/subscriptions")
 
+    # Headers set on the exception (e.g. Retry-After on 429) are kept, as FastAPI's default handler does.
+    headers = getattr(exc, "headers", None)
     if is_api_request and not accepts_html:
-        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code, headers=headers)
 
     if exc.status_code == 404:
         html = popup_multi_choice(
@@ -285,7 +287,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
             redirect_path="/confirm-result"
         )
         return HTMLResponse(content=html, status_code=404)
-    return HTMLResponse(content=str(exc.detail), status_code=exc.status_code)
+    return HTMLResponse(content=str(exc.detail), status_code=exc.status_code, headers=headers)
 
 
 # ✅ 라우터 등록
