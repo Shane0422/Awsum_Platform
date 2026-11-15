@@ -309,10 +309,12 @@
   /* Inside the Store form the panel's Store / Merchant / Agency heading repeats the form; hidden here only. */
   body.page-master #masterEditModal .store-devices-card > :is(.sd-title, .sd-sub) { display: none; }
   body.page-master #masterEditModal .store-devices-card > .sd-section:first-of-type { margin-top: 0; }
+  body.page-master #masterEditModal .sd-table td.sd-seen { white-space: normal; min-width: 88px; }
+  body.page-master #masterEditModal .sd-table td.sd-linked { min-width: 124px; }
   /* License tab tables: headers and the short status / email texts may wrap so the columns fit the form width. */
-  body.page-master #masterEditModal .sd-table { font-size: 13px; }
+  body.page-master #masterEditModal .sd-table { font-size: 12.5px; }
   body.page-master #masterEditModal .sd-table th, body.page-master #masterEditModal .sd-table td.sd-email { white-space: normal; }
-  body.page-master #masterEditModal .sd-table .sd-key { max-width: 140px; }
+  body.page-master #masterEditModal .sd-table .sd-key { max-width: 104px; }
   body.page-master #masterEditModal .sd-table > :not(caption) > * > * { padding-left: .4rem; padding-right: .4rem; }
   .store-cell-main { min-width: 0; max-width: 260px; }
   .store-cell-merchant { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3114,7 +3116,7 @@
   }
 </script>
 
-<script src="/static/js/store_devices_panel.js?v=9"></script>
+<script src="/static/js/store_devices_panel.js?v=13"></script>
 <script src="/static/js/awsum-address.js?v=1"></script>
 <script>
   const activeModuleRaw =  "{{ active_module }}";

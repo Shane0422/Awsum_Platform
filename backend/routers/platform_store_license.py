@@ -188,6 +188,9 @@ def _serialize_license_row(lic: License, link: Optional[LicenseDeviceLink], devi
         "issue_request_id": lic.c_issue_request_id,
         "email_sent_count": email["count"] if email else 0,
         "email_last_sent_at": email["last"].isoformat() if email and email["last"] else None,
+        # Read only: the last time the server confirmed the linked device (activation / validation) and its IP.
+        "last_seen_at": device.dt_last_seen.isoformat() if device and device.dt_last_seen else None,
+        "last_ip": device.c_last_ip if device else None,
     }
 
 
@@ -703,7 +706,7 @@ def get_store_license_detail(store_id: int, license_id: int, request: Request, d
         ]
 
     return _set_no_cache_headers(JSONResponse({
-        "license": _serialize_license_row(lic, active, active_device),
+        "license": _serialize_license_row(lic, active, active_device, _accepted_license_emails(db, store_id)),
         "device": _device_payload(active_device) if active_device else None,
         "history": history,
         "logs": logs,

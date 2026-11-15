@@ -23,10 +23,10 @@
     return body;
   }
 
-  function fmtDate(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  // Dates and times use the Common formatter (static/js/date.js): MM-DD-YYYY hh:mm AM/PM from the stored text.
+  function fmtDate(iso, empty = '—') {
+    if (!iso) return empty;
+    return window.AwsumDateInput ? AwsumDateInput.formatDateTime(iso, empty) : String(iso).replace('T', ' ').slice(0, 16);
   }
 
   /* ---------- splitter ---------- */
@@ -98,18 +98,40 @@
   // Dates use the Common date formatter (MM-DD-YYYY, static/js/date.js); a missing value shows a dash.
   const day = (iso) => (iso ? (window.AwsumDateInput ? AwsumDateInput.format(String(iso).slice(0, 10)) : String(iso).slice(0, 10)) : '—');
 
+  // Sections use the Common Collapsible Section (static/js/collapsible-section.js) when it is loaded; without it they
+  // render as plain sections with the same content and controls.
+  function section(opts) {
+    if (window.AwsumCollapsible) return AwsumCollapsible.html(opts);
+    return '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">' + esc(opts.title) + '</h6>' +
+      (opts.actionsHtml ? '<div class="d-flex flex-wrap align-items-center gap-2">' + opts.actionsHtml + '</div>' : '') +
+      '</div>' + opts.bodyHtml + '</div>';
+  }
+
+  // Last Seen: the last time the AWSUM server confirmed the device (activation / validation), tb_device.dt_last_seen.
+  const lastSeenText = (value) => fmtDate(value, 'Not Recorded');
+  // Table cells: a date / time never breaks inside itself (only between the parts).
+  const keepWords = (text) => esc(text).split(' ').map(part => /\d/.test(part) ? '<span class="text-nowrap">' + part + '</span>' : part).join(' ');
+  const LAST_SEEN_HELP = 'Last time the AWSUM server confirmed this device (activation or validation).';
+  // Last IP: the value stored with the last activation / validation (tb_device.c_last_ip). Today it is only an IP the
+  // device sent in its request; the server does not record the connection IP yet, so it is not labeled as server data.
+  const LAST_IP_HELP = 'IP sent by the device with its last activation / validation (not verified by the server).';
+
   // Contract Quantities (tb_store_entitlement through the existing workspace summary; read only here).
   function quantitiesHtml(sum) {
     const row = (label, q) => '<tr><td class="fw-semibold">' + label + '</td><td>' + q.contracted + '</td><td>' + q.issued +
       '</td><td>' + q.activated + '</td><td>' + q.remaining + '</td></tr>';
     const ordering = sum.CUSTOMER_ORDERING;
-    return '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Contract Quantities</h6>' +
-      '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button></div>' +
-      '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdQtyTable"><thead><tr><th>Device Type</th>' +
-      '<th>Contracted</th><th>Issued</th><th>Activated</th><th>Remaining</th></tr></thead><tbody>' +
-      row('POS', sum.POS) + row('KIOSK', sum.KIOSK) +
-      '<tr><td class="fw-semibold">Customer Ordering</td><td colspan="4">' + (ordering.enabled ? 'Enabled' : 'Not enabled') +
-      ' &nbsp;·&nbsp; ' + esc(ordering.license_status || '—') + '</td></tr></tbody></table></div></div>';
+    return section({
+      id: 'sdQty', title: 'Contract Quantities', expanded: true,
+      summary: 'POS ' + sum.POS.issued + '/' + sum.POS.contracted + ' · KIOSK ' + sum.KIOSK.issued + '/' + sum.KIOSK.contracted +
+        ' · Ordering ' + (ordering.enabled ? 'On' : 'Off'),
+      actionsHtml: '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button>',
+      bodyHtml: '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdQtyTable"><thead><tr><th>Device Type</th>' +
+        '<th>Contracted</th><th>Issued</th><th>Activated</th><th>Remaining</th></tr></thead><tbody>' +
+        row('POS', sum.POS) + row('KIOSK', sum.KIOSK) +
+        '<tr><td class="fw-semibold">Customer Ordering</td><td colspan="4">' + (ordering.enabled ? 'Enabled' : 'Not enabled') +
+        ' &nbsp;·&nbsp; ' + esc(ordering.license_status || '—') + '</td></tr></tbody></table></div>',
+    });
   }
 
   // Email: License emails the mail server accepted that included this license (tb_license_email_log, read only).
@@ -139,10 +161,13 @@
         '<td>' + esc(Object.keys(types).map(t => t + ' x' + types[t]).join(', ')) + '</td>' +
         '<td>' + (sent ? esc(sent + ' / ' + items.length + ' sent') : 'Not sent') + '</td></tr>';
     }).join('') || '<tr><td colspan="6" class="text-center text-muted py-3">No licenses issued yet.</td></tr>';
-    return '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Issue History</h6></div>' +
-      '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdHistoryTable"><thead><tr>' +
-      '<th>Issued Date</th><th>Issued By</th><th>Request ID</th><th>New Licenses</th><th>Device Types</th><th>Email Status</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    return section({
+      id: 'sdHistory', title: 'Issue History', expanded: false,
+      summary: entries.length + (entries.length === 1 ? ' issue' : ' issues'),
+      bodyHtml: '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdHistoryTable"><thead><tr>' +
+        '<th>Issued Date</th><th>Issued By</th><th>Request ID</th><th>New Licenses</th><th>Device Types</th><th>Email Status</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>',
+    });
   }
 
   // Activated / Linked Device: the device of the active link (name, OS, link date) from the existing workspace row.
@@ -170,20 +195,27 @@
         '<td><span class="sd-key" title="' + esc(l.license_key) + '">' + esc(l.license_key) + '</span></td>' +
         '<td class="sd-issued">' + esc(day(l.issued_at)) + '</td><td class="sd-valid">' + esc(day(l.valid_until)) + '</td>' +
         '<td>' + badge(l.status, l.status_label) + '</td><td class="sd-linked">' + linkedDeviceHtml(l) + '</td>' +
-        '<td class="sd-email">' + esc(emailText(l)) + '</td><td class="text-end">' + btn + '</td></tr>';
-    }).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
+        '<td class="sd-seen" title="' + esc(LAST_SEEN_HELP) + '">' + keepWords(lastSeenText(l.last_seen_at)) + '</td>' +
+        '<td class="sd-email">' + keepWords(emailText(l)) + '</td><td class="text-end">' + btn + '</td></tr>';
+    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
 
-    panel().innerHTML = headerHtml(s) + quantitiesHtml(d.summary) +
-      '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Device Licenses</h6>' +
-      '<div class="d-flex flex-wrap align-items-center gap-2"><span id="sdSelectedCount" class="small text-muted"></span>' +
-      '<button type="button" class="btn btn-sm btn-link px-1" id="sdDeselectAll">Deselect All</button>' +
-      '<button type="button" class="btn btn-sm btn-primary role-action-btn" id="sdBtnIssue">Issue Licenses</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-primary" id="sdPreviewEmail" disabled>Preview Email</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-primary" id="sdSendEmail" disabled>Send Email</button></div></div>' +
-      '<div class="sd-table-wrap"><table class="table table-hover align-middle sd-table mb-0" id="sdLicenseTable"><thead><tr>' +
-      '<th><input type="checkbox" class="form-check-input" id="sdSelectAll" aria-label="Select all licenses"></th>' +
-      '<th>Device Name</th><th>Type</th><th>License Key</th><th>Issued Date</th><th>Valid Until</th><th>Status</th><th>Activated / Linked Device</th><th>Email</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    const activated = d.licenses.filter(l => l.device_id).length;
+    panel().innerHTML = headerHtml(s) + (window.AwsumCollapsible ? AwsumCollapsible.controlsHtml() : '') + quantitiesHtml(d.summary) +
+      section({
+        id: 'sdLicenses', title: 'Device Licenses', expanded: true,
+        summary: d.licenses.length + (d.licenses.length === 1 ? ' license' : ' licenses') + ' · ' + activated + ' activated',
+        actionsHtml: '<span id="sdSelectedCount" class="small text-muted"></span>' +
+          '<button type="button" class="btn btn-sm btn-link px-1" id="sdDeselectAll">Deselect All</button>' +
+          '<button type="button" class="btn btn-sm btn-primary role-action-btn" id="sdBtnIssue">Issue Licenses</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-primary" id="sdPreviewEmail" disabled>Preview Email</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-primary" id="sdSendEmail" disabled>Send Email</button>',
+        bodyHtml: '<div class="sd-table-wrap"><table class="table table-hover align-middle sd-table mb-0" id="sdLicenseTable"><thead><tr>' +
+          '<th><input type="checkbox" class="form-check-input" id="sdSelectAll" aria-label="Select all licenses"></th>' +
+          '<th>Device Name</th><th>Type</th><th>License Key</th><th>Issued Date</th><th>Valid Until</th><th>Status</th><th>Activated / Linked Device</th>' +
+          '<th title="' + esc(LAST_SEEN_HELP) + '">Last Seen (Server)</th><th>Email</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>',
+      }) +
       historyHtml(d);
+    if (window.AwsumCollapsible) AwsumCollapsible.bind(panel());
     const actions = $('sdActions');
     if (actions) actions.remove(); // the actions now sit in their sections
 
@@ -578,15 +610,18 @@
     const deviceBlock = dev
       ? '<h6 class="mt-3">Activated Device</h6><dl class="row mb-0">' + row('Device ID', dev.device_code) + row('Name', dev.name) + row('OS', dev.os) + row('OS version', dev.os_version) +
         row('Model', dev.model) + row('App version', dev.app_version) + row('Fingerprint', dev.fingerprint_tail ? '…' + dev.fingerprint_tail : null) +
-        row('Last seen', fmtDate(dev.last_seen)) + row('Activated at', fmtDate(dev.first_activated_at)) + '</dl>'
-      : '<div class="alert alert-secondary mt-3 mb-0">Not activated. No device is linked to this license yet; device details appear after field activation.</div>';
+        row('Last seen (server)', lastSeenText(dev.last_seen)) + row('Last IP (reported by device)', dev.last_ip || 'Not Recorded') +
+        row('Activated at', fmtDate(dev.first_activated_at)) + '</dl>' +
+        '<p class="small text-muted mt-1 mb-0">' + esc(LAST_SEEN_HELP) + ' ' + esc(LAST_IP_HELP) + '</p>'
+      : '<div class="alert alert-secondary mt-3 mb-0">Not activated. No device is linked to this license yet; device details appear after field activation.</div>' +
+        '<dl class="row mt-2 mb-0">' + row('Device name', 'Not Recorded') + row('Last seen (server)', 'Not Recorded') + row('Last IP (reported by device)', 'Not Recorded') + '</dl>';
     const history = info.history.length
       ? '<h6 class="mt-3">Link History</h6><div class="table-responsive"><table class="table table-sm sd-table mb-0"><thead><tr><th>Device</th><th>Linked</th><th>Unlinked</th><th>Reason</th></tr></thead><tbody>' +
         info.history.map(h => '<tr><td>' + esc(h.device_code || h.device_id) + '</td><td>' + fmtDate(h.linked_at) + '</td><td>' + (h.unlinked_at ? fmtDate(h.unlinked_at) + ' by ' + esc(h.unlinked_by || '—') : 'Active') + '</td><td>' + esc(h.unlink_reason || '—') + '</td></tr>').join('') +
         '</tbody></table></div>'
       : '';
     $('sdModalTitle').textContent = l.name + ' · ' + l.type;
-    $('sdModalBody').innerHTML = errBox + '<dl class="row mb-0">' + row('License key', l.license_key) + row('Status', l.status_label) + row('Issued', fmtDate(l.issued_at)) + '</dl>' + deviceBlock + history;
+    $('sdModalBody').innerHTML = errBox + '<dl class="row mb-0">' + row('License key', l.license_key) + row('Status', l.status_label) + row('Issued', fmtDate(l.issued_at)) + row('Email', emailText(l)) + '</dl>' + deviceBlock + history;
     if (dev) {
       $('sdModalFooter').innerHTML = '<button type="button" class="btn btn-outline-danger me-auto" id="sdUnlink">Unlink Device…</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>';
       $('sdUnlink').addEventListener('click', () => confirmUnlink(l, dev));

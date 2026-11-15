@@ -26,7 +26,8 @@ almost covers it, extend it (with approval); never write a screen-specific copy.
 | Toast | `AwsumToast` - `static/js/awsum-toast.js`, `awsum-toast.css` | `success, info, warning, error, done(action, label), message(action, label), flash, clear` | all three bases | every screen |
 | Lookup | `AwsumLookup` - `static/js/lookup-modal.js`, `awsum-lookup.css` | `await AwsumLookup.open({title, subtitle, fixed, searchPlaceholder, filters, columns, fetch})`; `fetch(params)` -> `{items, total, page, pages}` | per template | MD / Category III location pickers |
 | Page actions | `AwsumPageActions` - `static/js/page-actions.js` | `mount(el, {mode, actions:[{id, modes, pin, menu, danger, permission}]})` -> `setMode, setPermissions, setEnabled, refresh, layout`; adopts the existing buttons | `master_group.html`, `management_layout.html` | Master Group (all entities) |
-| Master-detail tree | `AwsumMasterDetail` - `static/js/master-detail.js` | `treeHtml, treePathKeys, expandTree, toggleTree, fitWorkspace` | `platform_base`, `master_management` | Master Group trees, Platform Agency / Merchant |
+| Master-detail tree | `AwsumMasterDetail` - `static/js/master-detail.js` | `treeHtml(..., countItem), treePathKeys, expandTree, toggleTree, fitWorkspace` | `platform_base`, `master_management` | Master Group trees, Platform Agency / Merchant / Store |
+| Collapsible section | `AwsumCollapsible` - `static/js/collapsible-section.js`, `awsum-collapsible.css` | `html({id, title, summary, expanded, actionsHtml, bodyHtml}), controlsHtml(), bind(container), expandAll(root), collapseAll(root), isExpanded(id), setExpanded(section, open)`; heading = button (chevron, title, right summary), actions beside it; Bootstrap Collapse when loaded, `hidden` otherwise; state kept per id across re-renders | `platform_base` | Store License tab (Contract Quantities, Device Licenses, Issue History) |
 | Images | `AwsumImages` - built bundle `static/components/image-uploader/image-uploader.js` + `.css` (source `shared/image-components/src`) | `createUploader(target, opts), createAvatar, updateCurrentAvatar, bindImageInput, adjustImage` | `platform_base` | MD, Employee, Users, Agency / Merchant / Store logos |
 | Reports / print | `AwsumReports` - `static/js/report-print.js` (+ `static/css/report-print.css`) | `printHtml, printTable, spreadsheetStyle` | injected by `GlobalReportMiddleware` (`backend/services/reporting.py`) | Platform Admin client export, Sessions |
 | Email preview | `AwsumEmailPreview`, `AwsumStoreDevices` - `static/js/store_devices_panel.js` | registration email preview; Store device panel | `master_management.html` | Platform Agency / Merchant / Store |
@@ -111,6 +112,11 @@ master-detail tree, split layout CSS, scope / feature checks.
 
 ## 6. Not common yet
 
-- Tab / Section component (see 5.4); Loading indicator (no standard); dirty-state check in B; generic Audit Log
+- Tab / Section component (see 5.4; collapsible sections: `AwsumCollapsible` above); Loading indicator (no standard); dirty-state check in B; generic Audit Log
   (HISTORY exists for Employee only); field-level permission as a definition attribute (today `can_view_cost`,
   `data-item-feature`); mobile viewport meta (deferred common UI task).
+- Store / Merchant form Tab layout (common UI task, recorded 2026-11-15): the Store form tabs use a fixed 5-column grid
+  (`#masterEditModal.agency-modal.store-modal .merchant-detail-tabs`, `master_management.html`) and overflow the form at
+  375 px (measured 416 / 267 px; also on `bde6abb`); the Merchant form uses a horizontal scroll strip for the same tabs.
+  Proposal for the common Tab layout design: on narrow screens wrap the grid (`repeat(auto-fit, minmax(96px, 1fr))`),
+  desktop unchanged, one rule for Store / Merchant / `merchantStoreModal`; review with the mobile viewport task.

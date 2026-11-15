@@ -20,7 +20,8 @@ KEY = re.compile(r"AWS-(?:POS|KSK|ORD)-[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){3
 # License row keys before the read-only additions (kept with the same meaning).
 ORIGINAL_ROW_KEYS = {"license_id", "name", "device_name", "type", "license_key", "os", "status", "status_label",
                      "device_id", "issued_at", "activated_at"}
-ADDED_ROW_KEYS = {"valid_until", "issued_by", "issue_request_id", "email_sent_count", "email_last_sent_at"}
+ADDED_ROW_KEYS = {"valid_until", "issued_by", "issue_request_id", "email_sent_count", "email_last_sent_at",
+                  "last_seen_at", "last_ip"}
 
 
 class StoreLicenseWorkflowTests(unittest.TestCase):
@@ -48,6 +49,12 @@ class StoreLicenseWorkflowTests(unittest.TestCase):
         with self.factory() as db:
             return [(lic.i_license_id, lic.c_license_key, lic.c_license_type, lic.i_slot_no)
                     for lic in db.query(License).filter_by(i_store_id=10).order_by(License.i_license_id)]
+
+    def test_not_activated_license_has_no_last_seen(self):
+        self.client.put("/platform/store/10/entitlement", json={"pos_qty": 1, "kiosk_qty": 0, "customer_ordering": False})
+        self.issue("POS", 1, "issue-pos-0501")
+        row = self.client.get("/platform/store/10/devices-licenses").json()["licenses"][0]
+        self.assertEqual((row["device_id"], row["last_seen_at"], row["last_ip"]), (None, None, None))
 
     def test_additional_issue_keeps_earlier_licenses_and_limit_is_enforced(self):
         self.assertEqual(self.client.put("/platform/store/10/entitlement",
@@ -173,6 +180,15 @@ class StoreLicenseWorkflowTests(unittest.TestCase):
             self.assertEqual(other.status_code, 409)
         rows = self.client.get("/platform/store/10/devices-licenses").json()["licenses"]
         self.assertEqual((rows[0]["status"], bool(rows[0]["device_id"])), ("activated", True))
+        # Last Seen / Last IP: the server's record of the activation (tb_device), read only.
+        with self.factory() as db:
+            from backend.models_admin.device import Device
+            device = db.get(Device, rows[0]["device_id"])
+            self.assertEqual(rows[0]["last_seen_at"], device.dt_last_seen.isoformat())
+            self.assertEqual(rows[0]["last_ip"], device.c_last_ip)
+        self.assertTrue(rows[0]["last_seen_at"])  # the test client sends no IP; the value equals the stored one
+        detail = self.client.get(f"/platform/store/10/licenses/{rows[0]['license_id']}").json()
+        self.assertEqual((detail["device"]["last_seen"], detail["device"]["last_ip"]), (rows[0]["last_seen_at"], rows[0]["last_ip"]))
 
 
 if __name__ == "__main__":

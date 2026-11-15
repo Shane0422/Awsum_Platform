@@ -48,13 +48,16 @@ window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');request
  if(lic){const id=Number(lic[1]);requests[requests.length-1].method=method;requests[requests.length-1].body=body;
   const ws={store:{store_id:id,store_name:'Detail '+id,merchant_name:'Merchant One',agency_name:'Agency One',agency_email:'license@example.test'},
    licenses:[{license_id:id*10+1,name:'POS-01',type:'POS',status:'issued',status_label:'Not Activated',license_key:'AWS-POS-AAAA-BBBB-CCCC-'+id,issued_at:'2026-11-01T10:00:00',valid_until:'2027-10-31T00:00:00',issued_by:'admin@example.test',issue_request_id:'req-aaaa-0001',email_sent_count:0,email_last_sent_at:null},
-    {license_id:id*10+3,name:'KIOSK-01',type:'KIOSK',status:'activated',status_label:'Activated',license_key:'AWS-KSK-GGGG-HHHH-JJJJ-'+id,issued_at:'2026-10-20T09:00:00',device_id:77,device_name:'Front Kiosk',os:'Windows 11',activated_at:'2026-10-21T08:00:00',valid_until:null,issued_by:null,issue_request_id:null,email_sent_count:2,email_last_sent_at:'2026-10-22T11:00:00'}],
+    {license_id:id*10+3,name:'KIOSK-01',type:'KIOSK',status:'activated',status_label:'Activated',license_key:'AWS-KSK-GGGG-HHHH-JJJJ-'+id,issued_at:'2026-10-20T09:00:00',device_id:77,device_name:'Front Kiosk',os:'Windows 11',activated_at:'2026-10-21T08:00:00',last_seen_at:'2026-11-14T16:05:00',last_ip:'203.0.113.7',valid_until:null,issued_by:null,issue_request_id:null,email_sent_count:2,email_last_sent_at:'2026-10-22T11:00:00'}],
    devices:[],entitlements:[],summary:{POS:{contracted:3,issued:1,activated:0,remaining:2},KIOSK:{contracted:1,issued:0,activated:0,remaining:1},
     CUSTOMER_ORDERING:{enabled:false,remaining:0}}};
   if(lic[2]==='licenses/issue')return J({replayed:false,issued:[id*10+2],workspace:{...ws,summary:{...ws.summary,POS:{contracted:3,issued:2,activated:0,remaining:1}},licenses:[...ws.licenses,{license_id:id*10+2,name:'POS-02',type:'POS',status:'issued',status_label:'Not Activated',license_key:'AWS-POS-DDDD-EEEE-FFFF-'+id,issued_at:'2026-11-15T13:30:00',valid_until:null,issued_by:'admin@example.test',issue_request_id:'req-bbbb-0002',email_sent_count:0,email_last_sent_at:null}]}});
   if(lic[2]==='licenses/email/preview')return J({html:'<p>Your License Information AWS-POS-AAAA-BBBB-CCCC-'+id+'</p>',subject:'Your License Information',recipient:body.recipient});
   if(lic[2]==='licenses/email')return J({accepted:true,recipient:body.recipient,message_id:'mock-license'});
   return J(ws);}
+ const det=url.pathname.match(/^\/platform\/store\/(\d+)\/licenses\/(\d+)$/);
+ if(det)return J({license:{license_id:Number(det[2]),name:'KIOSK-01',type:'KIOSK',status:'activated',status_label:'Activated',license_key:'AWS-KSK-GGGG-HHHH-JJJJ-'+det[1],issued_at:'2026-10-20T09:00:00',email_sent_count:2,email_last_sent_at:'2026-10-22T11:00:00'},
+  device:{device_id:77,device_code:'DEV-77',name:'Front Kiosk',os:'Windows 11',last_seen:'2026-11-14T16:05:00',last_ip:'203.0.113.7',first_activated_at:'2026-10-21T08:00:00',status:'activated'},history:[{device_id:76,device_code:'DEV-76',linked_at:'2026-10-01T10:15:00',unlinked_at:'2026-10-19T17:40:00',unlinked_by:'admin@example.test',unlink_reason:'Replaced'},{device_id:77,device_code:'DEV-77',linked_at:'2026-10-21T08:00:00',unlinked_at:null}],logs:[]});
  const m=url.pathname.match(/^\/platform\/store\/(\d+)$/);
  if(m){const id=Number(m[1]);if(__delay[id])await new Promise(r=>setTimeout(r,__delay[id]));
   return J({...__detail,store_id:id,id,store_name:id===10?__detail.store_name:'Detail '+id,store_code:id===10?__detail.store_code:'DET'+id});}
@@ -182,12 +185,29 @@ const wait=async(f,m)=>{for(let i=0;i<150;i++){try{if(f())return;}catch(e){}awai
  const qrows=[...qtyTable.querySelectorAll('tbody tr')].map(rowText);
  assert(qrows[0]==='POS 3 1 0 2'&&qrows[1]==='KIOSK 1 0 0 1'&&/^Customer Ordering Not enabled/.test(qrows[2]),'Contract Quantities: '+JSON.stringify(qrows));
  const heads=[...licTable.querySelectorAll('thead th')].map(th=>th.textContent.trim());
- assert(JSON.stringify(heads)==='["","Device Name","Type","License Key","Issued Date","Valid Until","Status","Activated / Linked Device","Email",""]','columns: '+heads);
+ assert(JSON.stringify(heads)==='["","Device Name","Type","License Key","Issued Date","Valid Until","Status","Activated / Linked Device","Last Seen (Server)","Email",""]','columns: '+heads);
  const licWrap=licTable.closest('.sd-table-wrap');
  assert(licWrap.scrollWidth<=licWrap.clientWidth+1,'Device Licenses fit the form at 1440 (Copy / Details visible): '+licWrap.scrollWidth+'/'+licWrap.clientWidth);
  const cells=id=>[...panel.querySelector('[data-sd-license-select="'+id+'"]').closest('tr').children].map(td=>td.textContent.replace(/\s+/g,' ').trim());
- assert(cells(101)[4]==='11-01-2026'&&cells(101)[5]==='10-31-2027'&&cells(101)[7]==='—'&&cells(101)[8]==='Not sent','issued / valid until / no device / not sent: '+cells(101));
- assert(cells(103)[4]==='10-20-2026'&&cells(103)[5]==='—'&&/Front Kiosk · Windows 11\s*Activated 10-21-2026/.test(cells(103)[7])&&cells(103)[8]==='Sent 10-22-2026 (2x)','linked device / email sent: '+cells(103));
+ assert(cells(101)[4]==='11-01-2026'&&cells(101)[5]==='10-31-2027'&&cells(101)[7]==='—'&&cells(101)[8]==='Not Recorded'&&cells(101)[9]==='Not sent','issued / valid until / no device / last seen / not sent: '+cells(101));
+ assert(cells(103)[4]==='10-20-2026'&&cells(103)[5]==='—'&&/Front Kiosk · Windows 11\s*Activated 10-21-2026/.test(cells(103)[7])&&cells(103)[8]==='11-14-2026 04:05 PM'&&cells(103)[9]==='Sent 10-22-2026 (2x)','linked device / last seen / email sent: '+cells(103));
+ // Accordion (Common AwsumCollapsible): Contract Quantities and Device Licenses open, Issue History closed.
+ const sec=id=>panel.querySelector('[data-awsum-collapsible="'+id+'"]'),tog=id=>sec(id).querySelector('.awsum-collapsible-toggle');
+ const open=id=>tog(id).getAttribute('aria-expanded')==='true',bodyShown=id=>shown(sec(id).querySelector('.awsum-collapsible-body'));
+ assert(open('sdQty')&&open('sdLicenses')&&!open('sdHistory'),'default: Quantities / Licenses open, History closed');
+ await wait(()=>bodyShown('sdQty')&&bodyShown('sdLicenses')&&!bodyShown('sdHistory'),'default bodies');
+ assert(tog('sdHistory').tagName==='BUTTON'&&tog('sdHistory').getAttribute('aria-controls')===sec('sdHistory').querySelector('.awsum-collapsible-body').id,'keyboard: a real button with aria-controls');
+ const summary=id=>sec(id).querySelector('.awsum-collapsible-summary').textContent;
+ assert(summary('sdQty')==='POS 1/3 · KIOSK 0/1 · Ordering Off'&&summary('sdLicenses')==='2 licenses · 1 activated'&&summary('sdHistory')==='2 issues','summaries: '+[summary('sdQty'),summary('sdLicenses'),summary('sdHistory')]);
+ tog('sdHistory').click();await wait(()=>bodyShown('sdHistory')&&open('sdHistory'),'History opened');
+ tog('sdQty').click();await wait(()=>!bodyShown('sdQty')&&!open('sdQty'),'Quantities closed');
+ assert(shown(tog('sdQty'))&&summary('sdQty').length>0&&shown(find('sdBtnQty')),'collapsed: title, summary and action stay visible');
+ panel.querySelector('[data-awsum-collapsible-all="collapse"]').click();
+ await wait(()=>!bodyShown('sdQty')&&!bodyShown('sdLicenses')&&!bodyShown('sdHistory'),'Collapse All');
+ assert(shown(find('sdBtnIssue'))&&shown(find('sdSendEmail')),'Device License actions visible while collapsed');
+ panel.querySelector('[data-awsum-collapsible-all="expand"]').click();
+ await wait(()=>bodyShown('sdQty')&&bodyShown('sdLicenses')&&bodyShown('sdHistory'),'Expand All');
+ tog('sdHistory').click();await wait(()=>!bodyShown('sdHistory'),'History closed again');
  // The Store / Merchant / Agency heading of the panel repeats the form: hidden inside the Store form only.
  assert(!shown(panel.querySelector('.sd-title'))&&!shown(panel.querySelector('.sd-sub')),'panel heading hidden in the License tab');
  // Issue History: one entry per issue request ID; licenses without a request ID are "Not recorded" (never by time).
@@ -200,6 +220,16 @@ const wait=async(f,m)=>{for(let i=0;i<150;i++){try{if(f())return;}catch(e){}awai
  sel(101);await wait(()=>state()==='1 selected|false|false','one selected');
  find('sdSelectAll').click();await wait(()=>state()==='2 selected|false|false','all selected');
  find('sdDeselectAll').click();await wait(()=>state()==='0 selected|true|true','deselected');
+ panel.querySelector('[data-sd-detail="103"]').click();
+ await wait(()=>shown(find('sdModalBody'))&&find('sdModalBody').textContent.includes('Last seen (server)'),'details');
+ const det=find('sdModalBody').textContent.replace(/\s+/g,' ');
+ assert(/Name\s*Front Kiosk/.test(det)&&/Last seen \(server\)\s*11-14-2026 04:05 PM/.test(det)&&/Last IP \(reported by device\)\s*203\.0\.113\.7/.test(det),'details: device name / last seen / last IP: '+det.slice(0,400));
+ // Details dates: the Common formatter (MM-DD-YYYY hh:mm AM/PM) for Issued / Activated at / Linked / Unlinked.
+ assert(/Issued\s*10-20-2026 09:00 AM/.test(det)&&/Activated at\s*10-21-2026 08:00 AM/.test(det),'details issued / activated: '+det.slice(0,500));
+ assert(det.includes('10-01-2026 10:15 AM')&&det.includes('10-19-2026 05:40 PM by admin@example.test')&&det.includes('10-21-2026 08:00 AM'),'details link history dates: '+det);
+ // Details Email = the list's Email for the same license (same aggregation and emailText).
+ assert(/Email\s*Sent 10-22-2026 \(2x\)/.test(det)&&cells(103)[9]==='Sent 10-22-2026 (2x)','details email = list email: '+det.slice(0,300));
+ doc.querySelector('#sdModal [data-bs-dismiss="modal"]').click();await wait(()=>!shown(find('sdModalBody')),'details closed');await pause(300);
  // Another Store: the panel reloads for it.
  body.querySelector('tr[data-row-select="2003"]').click();
  await wait(()=>f('store_code').value==='DET2003'&&panel.textContent.includes('AWS-POS-AAAA-BBBB-CCCC-2003'),'Store 2003 licenses');
@@ -226,6 +256,7 @@ const wait=async(f,m)=>{for(let i=0;i<150;i++){try{if(f())return;}catch(e){}awai
  assert(!/New/.test(panel.querySelector('[data-sd-license-select="20031"]').closest('tr').children[1].textContent),'existing license not marked New');
  assert(rowText(find('sdQtyTable').querySelector('tbody tr'))==='POS 3 2 0 1','quantities refreshed');
  assert(hist()[0]==='11-15-2026 admin@example.test req-bbbb-0002 POS-02 POS x1 Not sent'&&hist().length===3,'new issue on top of the history: '+JSON.stringify(hist()));
+ assert(!open('sdHistory')&&open('sdLicenses'),'section state kept after the re-render');
  await wait(()=>!shown(find('sdIssueGo')),'issue dialog closed');await pause(400);
  // Email Preview / Send -> the existing email APIs with the selected license IDs.
  const box=panel.querySelector('[data-sd-license-select="20031"]');box.checked=true;box.dispatchEvent(new win.Event('change',{bubbles:true}));
