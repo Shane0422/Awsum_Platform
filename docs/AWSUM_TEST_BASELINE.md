@@ -65,6 +65,13 @@ They passed in the 2026-11-14 cleanup run. The first one was stabilized on 2026-
 - `tools.test_image_components.SharedImageComponentTests.test_local_preview_validation_cancel_form_payload_and_avatar_fallback`
   has failed intermittently in earlier full runs (avatar fallback timing) and passes when rerun; it passed in the
   2026-11-14 run.
+- `tools.test_master_group_form_definition.TaxFormDefinitionBrowserTests.test_tax_form_from_definition_keeps_dom_values_payload_errors_and_read_only`
+  **Cause not determined (observed 2026-11-15).** It failed once in the second half of a full run (Store Management
+  S2-b work in progress); the failure message was not kept (the run output was filtered). Then: alone 5/5, its class
+  8/8, its module and a rerun of the same half (416 tests) all passed. The test compares the Tax form DOM with
+  `tools/fixtures/master_group_tax_form.json` and uses 40 ms x 100 waits; the S2-b changes it loads
+  (`master-detail.js` `countItem`, default unchanged) do not change that DOM. Keep the full output of every full run
+  and record any recurrence here with its message.
 
 ## History: classification at P0 (2026-11-14, 710 tests, 27 failures, 10 errors)
 
