@@ -269,6 +269,7 @@ class StoreLogoBrowserTests(unittest.TestCase):
         ))
         setup = r"""
 let activeModule='store';
+const merchantStorePolicy=null; // Platform scope (the page declares it; a Merchant scope object locks the base Logo)
 const apiBase='/platform',config={fields:[],get endpoint(){return activeModule;}},isListCentricModule=true;
 const selectedMasterId={value:'2'},formBaselineSnapshot={id:'2'};
 let savingStoreImage=false,agencyModalMode='edit',lastSavedId=null,selectedMerchantStoreId=2,suppressMerchantStoreRowClickUntil=0;

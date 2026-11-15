@@ -29,16 +29,24 @@ API = "/merchant/api"
 SECRETS = ("SECRET-NOTE", "SECRET-MEMO", "SECRET-REMARK", "SL-SECRET1")
 
 
-# The exact payload the common Store form sends in the Merchant scope (asserted by the browser test below).
+# The exact payload the common Store form sends in the Merchant scope (asserted by the browser test below): Receipt Info
+# and Item Features only. Store basic information, Address, Logo and Business Options are Platform only (S1 policy).
 FORM_PAYLOAD = {
-    "store_name": "Form Save", "business_type": "", "operation_type": "", "zip": "", "city": "", "state": "",
-    "address_line1": "", "address_line2": "", "country": "United States", "default_tax_rate": "",
-    "timezone": "America/New_York", "receipt_store_name": "", "receipt_phone": "", "receipt_email": "",
-    "receipt_website_url": "", "receipt_message": "", "opt_customer": "off", "customer_scope": "", "opt_loyalty": "off",
-    "loyalty_scope": "", "opt_time_attendance": "off", "opt_inventory": "off", "opt_location_management": "off",
-    "opt_accounting": "off", "opt_use_color": "off", "opt_use_modifier": "on", "opt_use_bottle_deposit": "off",
+    "receipt_store_name": "Form Receipt", "receipt_phone": "", "receipt_email": "", "receipt_website_url": "",
+    "receipt_message": "", "opt_use_color": "off", "opt_use_modifier": "on", "opt_use_bottle_deposit": "off",
     "opt_use_sugar_tax": "off", "opt_use_output_device": "on",
 }
+# Platform-only Store fields (S1): a Merchant change is refused (403); the saved value passes.
+PLATFORM_ONLY_CHANGES = [
+    {"store_name": "Must not save"}, {"business_type": "Retail"}, {"operation_type": "Branch"},
+    {"store_purpose": "Other"}, {"zip": "30301"}, {"city": "Atlanta"}, {"state": "GA"}, {"address": "1 Main"},
+    {"address_line1": "1 Main"}, {"address_line2": "Suite 2"}, {"country": "Canada"},
+    {"timezone": "America/Chicago"}, {"default_tax_rate": "6.0000"},
+    # Business Options and their Scopes (Feature Registry group "business")
+    {"opt_customer": "on"}, {"customer_scope": "MERCHANT"}, {"opt_loyalty": True}, {"loyalty_scope": "STORE"},
+    {"opt_time_attendance": "1"}, {"opt_inventory": "on"}, {"opt_location_management": "on"},
+    {"opt_accounting": "yes"},
+]
 
 
 def inline_page(html: str, head_script: str) -> str:
@@ -182,20 +190,21 @@ class MerchantStoreManagementTests(unittest.TestCase):
     # ---- allow-list ----
     def test_allowed_fields_save_and_platform_fields_are_refused(self):
         self.login("MERCHANT")
-        saved = self.put({"store_name": "Renamed", "operation_type": "Branch", "timezone": "America/Chicago",
-                          "default_tax_rate": "6.0000", "receipt_message": "Thanks", "address_line1": "1 Main",
-                          # protected fields with their saved values pass (the common form sends the whole form)
+        saved_view = self.client.get(f"{API}/store/10").json()
+        # Receipt Info and Item Features save; Platform-only fields sent with their saved values pass (an older client
+        # may send the whole form; option flags compare by the common flag rule, so "off" / False / "0" are one value).
+        saved = self.put({"receipt_message": "Thanks", "receipt_store_name": "Corner Receipt", "opt_use_color": "off",
                           "merchant_id": "10", "store_status": "active", "store_code": "str26abcd",
-                          "license_count": "3", "tax_source": ""})
+                          "license_count": "3", "tax_source": "", "store_name": saved_view["store_name"],
+                          "timezone": "America/New_York", "address_line1": saved_view.get("address_line1") or "",
+                          "opt_customer": False, "opt_location_management": "0", "customer_scope": ""})
         self.assertEqual(saved.status_code, 200, saved.text)
         self.assertNotIn("temporary_password", saved.text)
         store = self.store()
-        self.assertEqual((store.c_store_name, store.c_operation_type, store.c_timezone, store.c_default_tax_rate,
-                          store.c_receipt_message, store.c_address_line1),
-                         ("Renamed", "Branch", "America/Chicago", "6.0000", "Thanks", "1 Main"))
+        self.assertEqual((store.c_receipt_message, store.c_receipt_store_name), ("Thanks", "Corner Receipt"))
         form = self.put(FORM_PAYLOAD)  # the whole Merchant-scope form passes the allow-list
         self.assertEqual(form.status_code, 200, form.text)
-        self.assertEqual(self.store().c_store_name, "Form Save")
+        self.assertEqual(self.store().c_receipt_store_name, "Form Receipt")
         before = self.store()
         refused = {
             403: [{"merchant_id": 11}, {"installed_by_agency_id": 1}, {"store_status": "inactive"},
@@ -204,17 +213,23 @@ class MerchantStoreManagementTests(unittest.TestCase):
                   # Platform internal values: refused whatever the value (never compared, so never probed)
                   {"notes": SECRETS[0]}, {"memo": ""}, {"remark": "x"}, {"store_license_key": SECRETS[3]},
                   {"max_user_count": 5}, {"contract_end_date": "2030-01-01"}, {"dashboard_type": "STANDARD"},
-                  {"is_test": 0}],
-            422: [{"unexpected": 1}, {"_agency_optional": True}, {"channel_type": "POS"}, {"store_name": " "}],
+                  {"is_test": 0}, {"store_name": " "}, *PLATFORM_ONLY_CHANGES],
+            422: [{"unexpected": 1}, {"_agency_optional": True}, {"channel_type": "POS"}],
         }
         for status, payloads in refused.items():
             for payload in payloads:
                 with self.subTest(payload=payload):
-                    response = self.put({"store_name": "Must not save", **payload})
+                    # An allowed change in the same request: the whole request is refused, nothing is saved.
+                    response = self.put({"receipt_message": "Must not save", "opt_use_bottle_deposit": "on", **payload})
                     self.assertEqual(response.status_code, status, response.text)
         after = self.store()
         for column in ("c_store_name", "i_merchant_id", "c_status", "c_store_code", "n_license_count", "c_notes",
-                       "c_memo", "c_remark", "c_store_license_key", "i_installed_by_agency_id"):
+                       "c_memo", "c_remark", "c_store_license_key", "i_installed_by_agency_id", "c_receipt_message",
+                       "b_opt_use_bottle_deposit", "i_business_type_id", "c_operation_type", "c_zip", "c_city",
+                       "c_state", "c_address_line1", "c_address_line2", "c_country", "c_timezone",
+                       "c_default_tax_rate", "b_opt_customer", "c_customer_scope", "b_opt_loyalty", "c_loyalty_scope",
+                       "b_opt_time_attendance", "b_opt_inventory", "b_opt_use_shelf_location", "b_opt_accounting",
+                       "c_logo_url"):
             self.assertEqual(getattr(after, column), getattr(before, column), column)
 
     def test_no_create_delete_or_deactivate_for_merchants(self):
@@ -249,22 +264,27 @@ class MerchantStoreManagementTests(unittest.TestCase):
         self.assertFalse(access["opt_location_management"]["allowed"])  # ADDON, no Business Option
         self.assertIn("contract", access["opt_location_management"]["reason"])
         self.assertTrue(access["opt_use_modifier"]["allowed"])  # BASE
+        # Business Options are Platform only: refused for a Merchant whether contracted or not; the saved value passes.
         self.assertEqual(self.put({"opt_location_management": "on"}).status_code, 403)
         self.assertEqual(self.put({"opt_location_management": "off"}).status_code, 200)  # unchanged OFF is fine
         with self.factory() as db:
             save_business_options(db, 10, {"location_management": True}, 1)
             db.commit()
-        self.assertEqual(self.put({"opt_location_management": "on"}).status_code, 200)
-        self.assertTrue(self.store().b_opt_use_shelf_location)
+        self.assertEqual(self.put({"opt_location_management": "on"}).status_code, 403)
+        self.assertFalse(bool(self.store().b_opt_use_shelf_location))
+        # Item Features: the Merchant turns them ON / OFF for its own Store within the contract / Feature Entitlement.
+        self.assertEqual(self.put({"opt_use_color": "on", "opt_use_sugar_tax": "on"}).status_code, 200)
+        self.assertTrue(self.store().b_opt_use_color and self.store().b_opt_use_sugar_tax)
+        self.assertEqual(self.put({"opt_use_color": "off", "opt_use_modifier": "off"}).status_code, 200)
+        self.assertEqual((bool(self.store().b_opt_use_color), bool(self.store().b_opt_use_modifier)), (False, False))
         # Merchant Feature Entitlement OFF: a saved ON stays (re-sending it passes), a new ON is refused.
         with self.factory() as db:
             db.add(MerchantFeatureChoice(i_merchant_id=10, c_feature_key="location_management", b_enabled=False))
             db.add(MerchantFeatureChoice(i_merchant_id=10, c_feature_key="color", b_enabled=False))
+            db.add(MerchantFeatureChoice(i_merchant_id=10, c_feature_key="sugar_tax", b_enabled=False))
             db.commit()
-        item = self.client.get(f"{API}/store/10").json()
-        self.assertFalse(item["option_access"]["opt_location_management"]["effective"])  # enforcement unchanged
-        self.assertEqual(self.put({"opt_location_management": "on"}).status_code, 200)
-        self.assertTrue(self.store().b_opt_use_shelf_location)
+        self.assertEqual(self.put({"opt_use_sugar_tax": "on"}).status_code, 200)  # saved ON, unchanged
+        self.assertTrue(self.store().b_opt_use_sugar_tax)
         self.assertEqual(self.put({"opt_use_color": "on"}).status_code, 403)
         self.assertFalse(bool(self.store().b_opt_use_color))
         self.assertEqual(self.client.get("/merchant/api/master-group/location").status_code, 403)
@@ -319,19 +339,23 @@ class MerchantStoreManagementTests(unittest.TestCase):
                 "remove_image": str(remove).lower()},
                 files={"image": ("logo.png", data, "image/png")} if data is not None else None)
 
-        saved = save(10, image_bytes())
-        self.assertEqual(saved.status_code, 200, saved.text)
-        path = saved.json()["image_path"]
-        self.assertTrue(path.endswith("/store/STR26ABCD/images/logo/logo.webp"), path)
-        self.assertTrue(images.resolve_image_file(path).is_file())
-        self.assertEqual(self.client.get(f"{API}/store/10").json()["image_url"], saved.json()["image_url"])
-        self.assertEqual(save(10, image_bytes("red"), changes={"notes": "x"}).status_code, 403)
-        self.assertEqual(save(11, image_bytes()).status_code, 404)
+        # The Store base Logo is Platform only: a Merchant upload or removal is refused before anything is written.
+        with self.factory() as db:
+            db.get(Store, 10).c_logo_url = "/platform-logo.webp"
+            db.commit()
+        name = self.store().c_store_name
+        for response in (save(10, image_bytes(), changes={"store_name": name, "receipt_message": "With logo"}),
+                         save(10, remove=True, changes={"store_name": name, "receipt_message": "Without logo"})):
+            self.assertEqual(response.status_code, 403, response.text)
+            self.assertIn("Store Logo", response.json()["detail"])
+        self.assertEqual((self.store().c_logo_url, self.store().c_receipt_message), ("/platform-logo.webp", None))
+        # The Store form's own save through the same route (no Logo change) still works.
+        kept = save(10, changes={"store_name": name, "receipt_message": "Saved"})
+        self.assertEqual(kept.status_code, 200, kept.text)
+        self.assertEqual((self.store().c_logo_url, self.store().c_receipt_message), ("/platform-logo.webp", "Saved"))
+        self.assertEqual(save(11, image_bytes()).status_code, 404)  # another Merchant's Store
         self.assertIsNone(self.store(11).c_logo_url)
         self.assertEqual(save(12, image_bytes()).status_code, 403)  # Inactive: view only
-        removed = save(10, remove=True)
-        self.assertEqual(removed.status_code, 200, removed.text)
-        self.assertIsNone(self.store().c_logo_url)
 
     # ---- Platform unchanged ----
     def test_platform_store_management_is_unchanged(self):
@@ -392,13 +416,23 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  doc.getElementById('btnListEdit').click();await pause(300);
  assert(!f('notes')&&!f('store_license_key'),'Platform internal fields are not rendered');
  assert(f('store_code').readOnly&&f('license_count').readOnly&&f('status').disabled&&f('merchant_id').disabled,'Platform fields read-only');
- assert(!f('store_name').readOnly&&!f('receipt_message').readOnly,'operating fields editable');
+ // S1: Store basic information, Address and Business Options (with Scopes) are Platform only: read-only here.
+ for(const n of ['store_name','zip','city','state','address_line1','address_line2','country','timezone','default_tax_rate'])assert(f(n).readOnly,n+' read-only');
+ for(const n of ['business_type','operation_type','opt_customer','customer_scope','opt_loyalty','loyalty_scope','opt_time_attendance','opt_inventory','opt_location_management','opt_accounting'])assert(f(n).disabled,n+' disabled');
+ assert(!f('receipt_message').readOnly&&!f('receipt_store_name').readOnly,'Receipt Info editable');
  assert(f('installed_by_agency_id').disabled,'Agency stays read-only in the Store detail');
- assert(f('opt_location_management').disabled&&/contract/.test(f('opt_location_management').title),'not contracted: disabled with the reason');
- assert(!f('opt_use_modifier').disabled,'contracted Item Feature can be changed');
+ assert(/contract/.test(f('opt_location_management').title),'not contracted: the reason is shown');
+ for(const n of ['opt_use_color','opt_use_modifier','opt_use_bottle_deposit','opt_use_sugar_tax','opt_use_output_device'])assert(!f(n).disabled,n+' (Item Feature) can be changed');
+ // A locked Scope is not re-enabled by the Option sync.
+ f('opt_customer').value='on';f('opt_customer').dispatchEvent(new Event('change',{bubbles:true}));await pause(50);
+ assert(f('customer_scope').disabled,'locked Scope stays disabled after an Option change');
+ f('opt_customer').value='off';f('opt_customer').dispatchEvent(new Event('change',{bubbles:true}));
+ assert(!doc.getElementById('btnContactRegistrationEmail'),'no Registration Email button (Platform only)');
+ const logo=doc.getElementById('storeLogoUploader');
+ assert(logo&&[...logo.querySelectorAll('input,button')].every(el=>el.disabled),'Store Logo uploader disabled (Platform only)');
  const tabs=[...doc.querySelectorAll('#masterEditModal .merchant-tab-btn')].map(b=>b.textContent.trim());
  assert(!tabs.includes('Notes')&&tabs.includes('License'),'Notes tab hidden, License shown');
- f('store_name').value='Browser Renamed';f('store_name').dispatchEvent(new Event('input',{bubbles:true}));
+ f('receipt_store_name').value='Form Receipt';f('receipt_store_name').dispatchEvent(new Event('input',{bubbles:true}));
  doc.getElementById('btnModalSave').click();
  await wait(()=>win.requests.some(r=>r.method==='PUT'),'save');
  const put=win.requests.find(r=>r.method==='PUT');
@@ -406,6 +440,7 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const keys=Object.keys(JSON.parse(put.body.get('payload'))).sort();
  assert(JSON.stringify(keys)===JSON.stringify(expectedKeys),'only the allow-listed form fields are sent: '+keys);
  assert(!win.requests.some(r=>r.path.startsWith('/platform')),'no Platform API call');
+ await wait(()=>[...doc.getElementById('storeLogoUploader').querySelectorAll('input,button')].every(el=>el.disabled),'Logo uploader disabled again after the save');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});

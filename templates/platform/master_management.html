@@ -6410,6 +6410,7 @@
   function refreshStoreLogoPreview(item = null) {
     if (activeModule === 'store') {
       getStoreLogoUploader()?.reset(item?.image_url || null, !!item?.image_path);
+      if (merchantStorePolicy) getStoreLogoUploader()?.setDisabled(true); // the base Logo is Platform only
     } else {
       refreshOrgLogoPreview(item);
     }
@@ -6432,7 +6433,7 @@
       <div id="businessContactManager" class="brand-logo-upload-card">
         <div class="brand-logo-upload-head">
           <h6 class="brand-logo-upload-title">Contacts</h6>
-          ${['merchant', 'store'].includes(activeModule) ? '<button type="button" id="btnContactRegistrationEmail" class="btn btn-sm btn-outline-secondary role-action-btn d-none">Send Registration Email</button>' : ''}
+          ${['merchant', 'store'].includes(activeModule) && !merchantStorePolicy ? '<button type="button" id="btnContactRegistrationEmail" class="btn btn-sm btn-outline-secondary role-action-btn d-none">Send Registration Email</button>' : ''}
           <button type="button" id="btnAddBusinessContact" class="btn btn-sm btn-outline-secondary role-action-btn">+ Add Contact</button>
         </div>
         <div id="businessContactHint" class="brand-logo-hint mb-2"></div>
@@ -8309,6 +8310,8 @@
       const option = document.getElementById(`field_${optionName}`);
       const scope = document.getElementById(`field_${scopeName}`);
       if (!option || !scope) return;
+      // A Scope locked by the scope policy (Merchant: Business Options are Platform only) stays read-only.
+      if (merchantStoreLocked.has(scopeName)) { scope.disabled = true; return; }
       const enabled = option.value === 'on';
       scope.disabled = !enabled;
       if (enabled && !scope.value) scope.value = 'STORE';
@@ -8352,7 +8355,7 @@
       if (!state.allowed && input.value !== 'on') input.disabled = true;
       input.title = state.allowed ? '' : (state.reason || '');
     });
-    getStoreLogoUploader()?.setDisabled(readOnly);
+    getStoreLogoUploader()?.setDisabled(true); // the Store base Logo is Platform only (view for a Merchant)
     if (btnModalSave) btnModalSave.disabled = readOnly;
     showMasterModalError(readOnly ? (item.read_only_message || '') : '');
   }
@@ -8572,7 +8575,8 @@
     const errors = [];
     const mark = (name) => document.getElementById(`field_${name}`)?.classList.add('is-invalid');
     masterFormModal.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
-    if (!String(data.store_name || '').trim()) { errors.push('Store Name is required.'); mark('store_name'); }
+    // Merchant scope: Store Name is Platform only (read-only, never sent), so it is not checked there.
+    if (!merchantStorePolicy && !String(data.store_name || '').trim()) { errors.push('Store Name is required.'); mark('store_name'); }
     if (agencyModalMode === 'create' && !String(data.merchant_id || '').trim()) { errors.push('Merchant is required.'); mark('merchant_id'); }
     if (agencyModalMode === 'create' && !String(data.installed_by_agency_id || '').trim()) { errors.push('Agency is required.'); mark('installed_by_agency_id'); }
     const email = String(data.email || '').trim();

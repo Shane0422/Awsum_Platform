@@ -4,10 +4,13 @@ Reuses the Platform Store Management screen (templates/platform/master_managemen
 processing (routers.platform_store: list query, detail, _update_store, Store Logo save, BusinessContactService).
 Only the authorization and the field policy below are Merchant specific.
 
-Policy (server side; the screen only mirrors it):
+Policy (server side; the screen only mirrors it). AWSUM Platform controls the Store and its licensing:
 - Platform Admin only: Store registration / deletion / deactivation, Store ID / Code, Merchant / Agency assignment,
-  Store Status, License, contract information, max user / terminal count, Test flag, Dashboard Type, Devices.
-  There is no Merchant create / delete route.
+  Store Status, Store basic information (Name, Business Type, Operation Type, Purpose), Address (incl. Time Zone and
+  Default Tax Rate), the Store base Logo, Business Options with their Scopes, License, contract information,
+  max user / terminal count, Test flag, Dashboard Type, Devices. There is no Merchant create / delete route.
+- A Merchant changes its own Stores' Contacts, Receipt Info and Item Features (Feature Registry group "item"), an Item
+  Feature only within the contract and Feature Entitlement (turning one ON beyond them is refused).
 - MERCHANT_STORE_EDITABLE: the only fields a Merchant save applies.
 - MERCHANT_STORE_PROTECTED: shown read-only; a request that changes one is refused (403), the same value passes
   (the common form sends the whole form).
@@ -15,9 +18,11 @@ Policy (server side; the screen only mirrors it):
   returned to a Merchant; sending one is refused (403) without comparing, so the value cannot be probed.
 - Any other payload key: 422.
 - Inactive Store: view only (AppScope.require_store_access). A Store login has no Store Management (403, no menu).
-- Business Options / Item Features: a feature that is not contracted or that the Merchant turned OFF cannot be newly
-  turned ON (403). Saved values are kept; the effective status still follows the Common Feature Resolver.
-- Store Logo and Business Contacts: every read and write checks that the Store belongs to the login's Merchant.
+- Item Features: a feature that is not contracted or not in the Merchant Feature Entitlement cannot be newly turned
+  ON (403). OFF keeps the saved item data. The effective status still follows the Common Feature Resolver.
+- The whole request is checked before anything is written: one refused change refuses the request (nothing saved).
+- Store Logo (view only for a Merchant) and Business Contacts: every read and write checks that the Store belongs to the
+  login's Merchant.
 """
 from typing import Optional
 
@@ -61,15 +66,20 @@ router = APIRouter()
 API = "/merchant/api"
 LABEL = "Store Management"
 _OPTION_KEYS = frozenset(STORE_OPTION_FIELDS)
-_SCOPE_KEYS = frozenset(scope_key for _col, scope_key, _scol in STORE_OPTION_FIELDS.values() if scope_key)
 _FEATURE_OF_OPTION = {f.payload_key: f.key for f in REGISTRY if f.payload_key}
-
+# Store Options split by the Common Feature Registry group: Business Options (with their Scopes) are Platform only;
+# Item Features are the Merchant's own Store settings (within the contract / Feature Entitlement).
+_BUSINESS_FLAG_KEYS = frozenset(f.payload_key for f in REGISTRY if f.group == "business" and f.payload_key in _OPTION_KEYS)
+_BUSINESS_SCOPE_KEYS = frozenset(f.scope_key for f in REGISTRY if f.group == "business" and f.scope_key)
+_ITEM_OPTION_KEYS = frozenset(f.payload_key for f in REGISTRY if f.group == "item" and f.payload_key in _OPTION_KEYS)
+assert _BUSINESS_FLAG_KEYS | _ITEM_OPTION_KEYS == _OPTION_KEYS  # every Store Option is in exactly one group
+_STORE_BASIC_KEYS = ("store_name", "business_type", "operation_type", "store_purpose")
+_STORE_ADDRESS_KEYS = ("zip", "city", "state", "address", "address_line1", "address_line2", "country", "timezone",
+                       "default_tax_rate")
 MERCHANT_STORE_EDITABLE = frozenset({
-    "store_name", "business_type", "operation_type", "store_purpose",
-    "zip", "city", "state", "address", "address_line1", "address_line2", "country", "timezone", "default_tax_rate",
     "contact_name", "owner_name", "phone", "email",
     "receipt_store_name", "receipt_phone", "receipt_email", "receipt_website_url", "receipt_message",
-}) | _OPTION_KEYS | _SCOPE_KEYS
+}) | _ITEM_OPTION_KEYS
 # payload key -> the Merchant view key it is compared with
 MERCHANT_STORE_PROTECTED = {
     "id": "store_id", "store_id": "store_id", "store_code": "store_code", "store_seq": "store_seq",
@@ -77,6 +87,8 @@ MERCHANT_STORE_PROTECTED = {
     "status": "store_status", "store_status": "store_status",
     "store_license_status": "store_license_status", "store_license_start_date": "store_license_start_date",
     "license_expire_date": "license_expire_date", "license_count": "license_count", "tax_source": "tax_source",
+    **{key: key for key in _STORE_BASIC_KEYS + _STORE_ADDRESS_KEYS},
+    **{key: key for key in sorted(_BUSINESS_FLAG_KEYS | _BUSINESS_SCOPE_KEYS)},
 }
 MERCHANT_STORE_HIDDEN = frozenset({
     "notes", "memo", "remark", "store_license_key", "license_type",
@@ -91,7 +103,7 @@ MERCHANT_STORE_VISIBLE = (MERCHANT_STORE_EDITABLE | frozenset(MERCHANT_STORE_PRO
 # List sorts of the Merchant scope (its Merchant is fixed; no Agency / Merchant ordering). The first is the default.
 MERCHANT_STORE_SORTS = ("store_asc", "store_desc", "newest", "oldest")
 _DATE_KEYS = {"store_license_start_date", "license_expire_date"}
-_CASELESS_KEYS = {"store_status", "store_license_status", "store_code"}
+_CASELESS_KEYS = {"store_status", "store_license_status", "store_code"} | set(_BUSINESS_SCOPE_KEYS)
 assert not (MERCHANT_STORE_EDITABLE & (set(MERCHANT_STORE_PROTECTED) | MERCHANT_STORE_HIDDEN))
 assert not (MERCHANT_STORE_VISIBLE & MERCHANT_STORE_HIDDEN)
 
@@ -145,6 +157,8 @@ def _merchant_view(row: dict, scope, store: Store) -> dict:
 
 # ---- field policy ----
 def _norm(key: str, value) -> str:
+    if key in _BUSINESS_FLAG_KEYS:  # on / off, true / false, 1 / 0 ... are one value (the common option flag rule)
+        return "on" if _parse_option_flag(value) else "off"
     text = "" if value is None else str(value).strip()
     if key in _DATE_KEYS:
         text = text[:10]
@@ -167,10 +181,8 @@ def merchant_store_payload(db: Session, scope, store: Store, payload: dict) -> d
     if changed:
         raise HTTPException(403, f"Managed by AWSUM Platform only: {', '.join(changed)}.")
     values = {key: value for key, value in payload.items() if key in MERCHANT_STORE_EDITABLE}
-    if "store_name" in values and not str(values["store_name"] or "").strip():
-        raise HTTPException(422, "Store Name is required.")
     access = None
-    for option_key in sorted(_OPTION_KEYS & set(values)):
+    for option_key in sorted(_ITEM_OPTION_KEYS & set(values)):
         column = STORE_OPTION_FIELDS[option_key][0]
         if _parse_option_flag(values[option_key]) and not store_option_enabled(store, option_key, column):
             access = access or _option_access(scope, None)
@@ -271,11 +283,14 @@ def merchant_update_store_with_image(
     store_id: int, request: Request, payload: str = Form(...), image: UploadFile | None = File(None),
     remove_image: bool = Form(False), db: Session = Depends(get_db),
 ):
-    # Store Logo: the common uploader + save of the Store form (owner = this Store, checked before anything is read).
+    # The Store form's save with the common uploader (owner = this Store, checked before anything is read). The Store
+    # base Logo is Platform only: a Merchant request that uploads or removes it is refused before anything is written.
     _user, scope = _merchant_scope(request, db, "update")
     _merchant_store(db, scope, store_id, "PUT")
     values, data = image_mutation_form(payload, remove_image, image)
-    return _save(store_id, values, request, db, image_data=data, remove_image=remove_image)
+    if data is not None or remove_image:
+        raise HTTPException(403, "Managed by AWSUM Platform only: Store Logo.")
+    return _save(store_id, values, request, db)
 
 
 @router.get(f"{API}/zip-lookup/{{zip_code}}")
