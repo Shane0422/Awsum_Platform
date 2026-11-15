@@ -53,7 +53,7 @@ class MasterGroupListTemplateTests(unittest.TestCase):
                 self.assertIn("mg-page awsum-list", html)
                 self.assertIn(f'data-entity="{entity}"', html)
                 self.assertIn(f"Add {title}</button>", html)
-                self.assertIn('src="/static/js/master_group.js?v=100"', html)
+                self.assertIn('src="/static/js/master_group.js?v=101"', html)
                 if entity in SPLIT:
                     self.assertIn('class="mg-md-workspace"', html)
                     self.assertIn('class="mg-md-form"', html)
@@ -332,7 +332,10 @@ window.fetch=async(path,options={})=>{
     inventory_type:2,keep:'COLD',output_devices:[2,5],
     license_required:false,license_type:null,licenses_per_unit:null,serial_required:false__MD_EXTRA__
   }],total:1,page:1,pages:1,sort:'name',direction:'asc'}));
-  if(/\/md\/7(\/with-image)?$/.test(url.pathname)&&method==='PUT')return new Response(JSON.stringify({item:{...request.payload,id:7,code:'MD00007'}}));
+  if(/\/md\/7(\/with-image)?$/.test(url.pathname)&&method==='PUT'){
+    if(request.payload.default_detail)details=details.map(item=>item.is_default?{...item,...request.payload.default_detail}:item);
+    return new Response(JSON.stringify({item:{...request.payload,id:7,code:'MD00007'}}));
+  }
   if(/\/md\/7$/.test(url.pathname)&&method==='DELETE')return new Response(JSON.stringify({message:'Deleted.'}));
   throw Error('Unexpected request: '+method+' '+url.pathname);
 };
@@ -680,15 +683,15 @@ const wait=async(check)=>{for(let i=0;i<100;i++){if(check())return;await tick();
   assert(find('mgf_description').value==='Saved desc','saved Description loads in GENERAL');
   scan.value='NEW-BC';find('mgf_second_name').value='Alt Two';find('mgf_description').value='New desc';find('mgf_default_pk_size').value='12';find('mgf_default_size').value='500ML';
   find('mgForm').requestSubmit();
-  await wait(()=>find('mgf_default_barcode').value==='NEW-BC'&&win.requests.some(request=>request.method==='PUT'&&request.path.endsWith('/details/1')));
+  await wait(()=>find('mgf_default_barcode').value==='NEW-BC'&&win.requests.some(request=>request.method==='PUT'&&request.path.endsWith('/md/7/with-image')));
   const mdSave=win.requests.find(request=>request.method==='PUT'&&request.path.endsWith('/md/7/with-image'));
   assert(mdSave&&!('barcode' in mdSave.payload)&&!('default_barcode' in mdSave.payload)&&!('pk_size' in mdSave.payload)&&!('size' in mdSave.payload)&&mdSave.payload.item_kind==='GIFT_CARD'&&mdSave.payload.second_name==='Alt Two','MD payload saves Second Name');
   assert(mdSave.payload.inventory_type==='2'&&mdSave.payload.keep==='FROZEN'&&!('inventory_option' in mdSave.payload),'MD payload saves Inventory Type number / Keep code');
   assert(JSON.stringify(mdSave.payload.output_devices)==='["1","3"]','MD payload saves Output Devices as a list');
   assert(mdSave.payload.description==='New desc','MD payload saves Description from GENERAL');
   assert(JSON.stringify(OG.getValue(find('mgf_output_devices')))==='["1","3"]','saved Output Devices reload into the form');
-  const barcodeSync=win.requests.find(request=>request.method==='PUT'&&request.path.endsWith('/details/1'));
-  assert(barcodeSync.payload.barcode==='NEW-BC'&&barcodeSync.payload.pk_size==='12'&&barcodeSync.payload.size==='500ML'&&barcodeSync.payload.is_default===true&&barcodeSync.payload.unit==='EA'&&barcodeSync.payload.price==='95000.00','Barcode/PK/Size/Size sync to Default Detail via existing API');
+  const barcodeSync=mdSave.payload.default_detail||{};
+  assert(barcodeSync.barcode==='NEW-BC'&&barcodeSync.pk_size==='12'&&barcodeSync.size==='500ML'&&!win.requests.some(request=>request.method==='PUT'&&request.path.endsWith('/details/1')),'Barcode/PK/Size/Size are saved with the MD in one request (no separate Default Detail request)');
   await wait(()=>find('mgDetailBody').textContent.includes('NEW-BC'));
   find('mgMdToggle').click();
   await wait(()=>find('mgMdToggle').textContent==='Activate');
@@ -743,13 +746,11 @@ const wait=async(check)=>{for(let i=0;i<100;i++){if(check())return;await tick();
   const mdSave=win.requests.find(r=>r.method==='PUT'&&r.path.endsWith('/md/7/with-image'));
   assert(!('output_devices' in mdSave.payload)&&mdSave.payload.name==='Sample Item'&&mdSave.payload.keep==='COLD','MD save leaves out Output Device (saved value kept by the server)');
   assert(!('sales_location' in mdSave.payload)&&!('warehouse_location' in mdSave.payload),'Location OFF: the common positions are not sent (kept by the server)');
-  try{await wait(()=>win.requests.some(r=>r.method==='PUT'&&r.path.endsWith('/details/1')));}
-  catch(e){throw Error('no default sync; form error='+find('mgFormError').textContent+' | message='+(find('awsumToastRegion')||{textContent:''}).textContent+' | reqs='+win.requests.slice(-4).map(r=>r.method+' '+r.path).join(','));}
-  const defaultSync=win.requests.find(r=>r.method==='PUT'&&r.path.endsWith('/details/1'));
-  assert(defaultSync.payload.pk_size==='6'&&!('color_id' in defaultSync.payload)&&!('color_code_id' in defaultSync.payload),'Default Detail sync leaves out Color (saved Color kept by the server)');
-  // Wait for the end of the MD save flow (Default Detail sync -> Detail list reload -> list reload; mgSave is disabled
+  const defaultSync=mdSave.payload.default_detail||{};
+  assert(defaultSync.pk_size==='6'&&!('color_id' in defaultSync)&&!('color_code_id' in defaultSync)&&!win.requests.some(r=>r.method==='PUT'&&r.path.endsWith('/details/1')),'Default Detail fields saved with the MD leave out Color (saved Color kept by the server)');
+  // Wait for the end of the MD save flow (MD save -> Detail list reload -> list reload; mgSave is disabled
   // until it ends): during it the page ignores a Detail Save, and the reload closes an editor opened on the earlier rows.
-  const syncAt=win.requests.findIndex(r=>r.method==='PUT'&&r.path.endsWith('/details/1'));
+  const syncAt=win.requests.findIndex(r=>r.method==='PUT'&&r.path.endsWith('/md/7/with-image'));
   await wait(()=>!find('mgSave').disabled&&win.requests.slice(syncAt+1).some(r=>r.method==='GET'&&r.path.endsWith('/md/7/details'))
     &&find('mgDetailBody').querySelector('[data-detail-act="edit"][data-id="2"]'));
   find('mgDetailBody').querySelector('[data-detail-act="edit"][data-id="2"]').click();
@@ -1064,11 +1065,11 @@ const wait=async(check)=>{for(let i=0;i<100;i++){if(check())return;await tick();
   find('mgDetailCancel').click();
   top.value='12';
   find('mgForm').requestSubmit();
-  await wait(()=>win.requests.some(r=>r.method==='PUT'&&r.path.endsWith('/details/1')));
+  await wait(()=>win.requests.some(r=>r.method==='PUT'&&r.path.endsWith('/md/7/with-image')));
   const mdSave=win.requests.find(r=>r.method==='PUT'&&r.path.endsWith('/md/7/with-image'));
-  assert(!('color_id' in mdSave.payload)&&!('color_code_id' in mdSave.payload)&&!('default_color' in mdSave.payload)&&!('color' in mdSave.payload),'MD Master payload never carries Color');
-  const sync=win.requests.find(r=>r.method==='PUT'&&r.path.endsWith('/details/1')).payload;
-  assert(sync.color_code_id===12&&sync.is_default===true&&sync.barcode==='BASE-1'&&sync.unit==='EA','top Color saves to the Default Detail via the Detail API');
+  assert(!('color_id' in mdSave.payload)&&!('color_code_id' in mdSave.payload)&&!('default_color' in mdSave.payload)&&!('color' in mdSave.payload),'MD Master fields never carry Color');
+  const sync=mdSave.payload.default_detail||{};
+  assert(sync.color_code_id===12&&sync.barcode==='BASE-1'&&!('color_id' in sync)&&!win.requests.some(r=>r.method==='PUT'&&r.path.endsWith('/details/1')),'top Color saves to the Default Detail with the MD (one request)');
   await wait(()=>find('mgf_default_color').value==='12');
   frame.remove();
   document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});

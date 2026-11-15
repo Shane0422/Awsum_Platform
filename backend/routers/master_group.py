@@ -130,7 +130,10 @@ LOCATION_PAYLOAD_KEYS = ("sales_location", "warehouse_location")
 def _md_payload(entity: str, payload: dict, request: Request, db: Session, user) -> dict:
     # OFF features are ignored (saved values kept), never cleared. Permission checks are unchanged.
     if entity == "md":
-        payload = without_disabled_item_features(payload, _item_features(request, db, user))
+        features = _item_features(request, db, user)
+        payload = without_disabled_item_features(payload, features)
+        if isinstance(payload.get("default_detail"), dict):  # Default Detail fields saved with the MD (same rule)
+            payload = {**payload, "default_detail": without_disabled_item_features(payload["default_detail"], features)}
     # Common recommended positions: a login without Use Location Management never changes them (saved values kept).
     if entity in ("md", "category3") and not _location_management_on(request):
         payload = {key: value for key, value in payload.items() if key not in LOCATION_PAYLOAD_KEYS}

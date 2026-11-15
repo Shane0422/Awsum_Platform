@@ -241,6 +241,35 @@ class MasterImageTests(unittest.TestCase):
         self.assertEqual(row.c_image_path, item["image_path"])
         self.assert_clean()
 
+    def test_default_detail_barcode_conflict_rolls_back_md_and_image(self):
+        owner = svc.create_item(self.db, "md", {**self.payload, "name": "Owner", "default_detail": {"barcode": "IMG-1"}}, 1)
+        item = self.create()
+        real = svc.barcode_rules.barcode_conflict
+        calls = []
+
+        def late(*args, **kwargs):  # passes the pre-check; the DB UNIQUE index refuses the commit
+            calls.append(1)
+            return None if len(calls) == 1 else real(*args, **kwargs)
+        with patch.object(svc.barcode_rules, "barcode_conflict", late), self.assertRaises(svc.FieldErrors) as ctx:
+            svc.update_item(self.db, "md", item["id"], {**self.payload, "name": "Not saved",
+                                                        "default_detail": {"barcode": "IMG-1"}}, 1, image_data=self.red)
+        self.assertIn(owner["code"], ctx.exception.errors["default_barcode"])
+        self.db.rollback()
+        self.assertEqual(self.physical(item).read_bytes(), images.process_image(self.blue))
+        row = self.db.get(MdMaster, item["id"])
+        self.assertEqual((row.c_item_name, row.c_image_path), (self.payload["name"], item["image_path"]))
+        self.assert_clean()
+        # A refused new MD with an image leaves no record and no file.
+        calls.clear()
+        count = self.db.query(MdMaster).count()
+        with patch.object(svc.barcode_rules, "barcode_conflict", late), self.assertRaises(svc.FieldErrors):
+            svc.create_item(self.db, "md", {**self.payload, "default_detail": {"barcode": "IMG-1"}}, 1, image_data=self.red)
+        self.db.rollback()
+        self.assertEqual(self.db.query(MdMaster).count(), count)
+        self.assertEqual(sorted(p.name for p in self.root.rglob("MD*.webp")), sorted(
+            Path(r.c_image_path).name for r in self.db.query(MdMaster) if r.c_image_path))
+        self.assert_clean()
+
     def test_db_commit_failure_restores_removed_file(self):
         item = self.create()
         with patch.object(self.db, "commit", side_effect=SQLAlchemyError("Commit failed")):

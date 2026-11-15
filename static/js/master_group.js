@@ -2071,18 +2071,6 @@
     }
   }
 
-  // Saves Barcode / PK/Size / Size / Color to the Default Detail through the existing Detail API.
-  // color_code_id is sent only when it is in values (Use Color ON), so OFF keeps the saved Color.
-  async function syncDefaultDetail(mdId, values) {
-    const data = await api('GET', `${BASE}/md/${mdId}/details`);
-    const detail = data.items.find((item) => item.is_default);
-    if (!detail || Object.keys(values).every((key) => String(detail[key] ?? '') === String(values[key] ?? ''))) return;
-    await api('PUT', `${BASE}/md/${mdId}/details/${detail.id}`, {
-      barcode: detail.barcode || '', unit: detail.unit, pk_size: detail.pk_size || '', size: detail.size || '',
-      cost: detail.cost, price: detail.price, modifier: detail.modifier || '', is_default: true, ...values,
-    });
-  }
-
   async function deleteMdDetail(id) {
     const detail = state.details.find((item) => item.id === id);
     if (!detail || detail.is_default) return;
@@ -2246,8 +2234,9 @@
         ? Object.fromEntries(['barcode', 'pk_size', 'size'].map((key) => [key, f(`default_${key}`).value.trim()]))
         : null;
       if (detailValues && featureOn('color')) detailValues.color_code_id = f('default_color').value ? Number(f('default_color').value) : null;
-      // The Barcode belongs to the Default Detail (saved after the MD), so a duplicate is caught before
-      // anything is saved. The Detail API re-checks it on the server and the DB index is the final guard.
+      // Barcode / PK/Size / Size / Color belong to the Default Detail and are saved with the MD in one transaction
+      // (default_detail; color_code_id only when Use Color is ON, so OFF keeps the saved Color). The pre-check shows
+      // a duplicate early; the server re-checks it and the DB index is the final guard (nothing is saved then).
       if (entity === 'md' && detailValues.barcode) {
         const params = new URLSearchParams({ barcode: detailValues.barcode });
         if (editing) params.set('md_id', editing.id);
@@ -2258,6 +2247,7 @@
           throw err;
         }
       }
+      if (detailValues) body.default_detail = detailValues;
       let path = scoped(`${BASE}/${entity}${editing ? '/' + editing.id : ''}`);
       if (entity === 'md' || entity === 'employee') { // photo / item image through the common uploader
         body = imageUploader.formData(body);
@@ -2281,14 +2271,7 @@
       if (entity.startsWith('category') || entity === 'tax') await loadOptions();
       const resetNote = data.item.md_inventory_reset != null ? ` ${data.item.md_inventory_reset} MD item override(s) now inherit this Category III.` : '';
       showMessage(data.item.image_warning || `${AwsumToast.message(editing ? 'updated' : 'created', data.item.code)}${resetNote}`, data.item.image_warning ? 'warning' : 'success');
-      if (entity === 'md') {
-        try {
-          await syncDefaultDetail(data.item.id, detailValues);
-        } catch (err) {
-          showMessage(`${data.item.code} saved, but Default Detail was not updated: ${err.message}`, 'warning');
-        }
-        await loadMdDetails(data.item);
-      }
+      if (entity === 'md') await loadMdDetails(data.item);
       await load();
     } catch (err) {
       const box = $('mgFormError');

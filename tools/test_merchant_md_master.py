@@ -232,6 +232,35 @@ class MerchantMdMasterTests(unittest.TestCase):
         with self.factory() as db:  # the Platform / other Merchant rows are unchanged
             self.assertEqual(db.query(MdDetail).filter(MdDetail.c_barcode == "8801").count(), 2)
 
+    def test_md_save_carries_default_detail_within_the_merchant_scope(self):
+        self.login("MERCHANT")
+        first = self.merchant_md("First")
+        color = self.merchant_color()
+        # Another owner's barcode is free; this Merchant's COLOR code is accepted; one request saves both.
+        saved = self.ok(self.client.put(self.url(f"md/{first['id']}"), json=self.md_payload(
+            self._cat, "First", default_detail={"barcode": "M11-1", "size": "L", "color_code_id": color})))["item"]
+        default = next(d for d in self.ok(self.client.get(self.url(f"md/{saved['id']}/details")))["items"] if d["is_default"])
+        self.assertEqual((default["barcode"], default["size"], default["color_code_id"]), ("M11-1", "L", color))
+        # The Platform's COLOR code is not this Merchant's: refused, nothing saved.
+        refused = self.client.post(self.url("md/with-image"), data={"payload": json.dumps(self.md_payload(
+            self._cat, "Second", default_detail={"barcode": "NEW-2", "color_code_id": self.platform_color}))})
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(refused.json()["errors"], {"default_color": "Color does not exist."})
+        duplicate = self.client.post(self.url("md/with-image"), data={"payload": json.dumps(self.md_payload(
+            self._cat, "Second", default_detail={"barcode": " M11-1 "}))})
+        self.assertEqual(duplicate.status_code, 422, duplicate.text)
+        self.assertIn(first["code"], duplicate.json()["errors"]["default_barcode"])
+        with self.factory() as db:
+            self.assertEqual(db.query(MdMaster).filter(MdMaster.i_owner_key == 10).count(), 1)
+            self.assertEqual(db.query(MdDetail).filter(MdDetail.c_barcode == "NEW-2").count(), 0)
+        # A Store login still cannot write MD (P2 changes no permission).
+        self.login("STORE")
+        response = self.client.put(self.url(f"md/{first['id']}", "store"), json=self.md_payload(
+            self._cat, "Store", default_detail={"barcode": "S-9"}))
+        self.assertEqual(response.status_code, 403, response.text)
+        with self.factory() as db:
+            self.assertEqual(db.query(MdDetail).filter(MdDetail.c_barcode == "S-9").count(), 0)
+
     # ---- Store: view only ----
     def test_store_views_its_merchant_md_without_cost_and_cannot_change_it(self):
         self.login("MERCHANT")
@@ -354,7 +383,7 @@ class MerchantMdScreenTests(unittest.TestCase):
         self.assertIn("if (el.closest('[data-item-feature-off]')) return;", js)
         self.assertNotIn("field('serial_required', 'Serial Number Required', select('serial_required'), { col: 'col-md-6', feature", js)
         html = (Path(__file__).resolve().parents[1] / "templates" / "platform" / "master_group.html").read_text(encoding="utf-8")
-        self.assertIn('src="/static/js/master_group.js?v=100"', html)
+        self.assertIn('src="/static/js/master_group.js?v=101"', html)
 
 
 if __name__ == "__main__":

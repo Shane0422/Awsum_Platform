@@ -1126,6 +1126,58 @@ def _commit_detail(db: Session, barcode: str | None, owner_key: int) -> None:
         raise
 
 
+# MD form fields stored on the Default Detail: payload key in "default_detail" -> (column, MD form field for errors).
+DEFAULT_DETAIL_FIELDS = {"barcode": ("c_barcode", "default_barcode"), "pk_size": ("c_pk_size", "default_pk_size"),
+                         "size": ("c_size", "default_size"), "color_code_id": ("i_color_code_id", "default_color")}
+
+
+def _default_detail_values(db: Session, payload: dict, current: MdDetail | None, merchant_id: int | None,
+                           owner_key: int) -> dict | None:
+    """Default Detail fields sent with an MD save ("default_detail"), saved in the MD's transaction.
+
+    None = the request has no "default_detail" (earlier clients): the Default Detail keeps these fields, as before.
+    Inside it, an absent key keeps the saved value (Use Color OFF omits color_code_id) and blank clears it, the same
+    rules as the Detail API (_text, _detail_color). The barcode uses the common barcode service within the MD's owner.
+    """
+    if "default_detail" not in payload:
+        return None
+    raw = payload.get("default_detail")
+    if not isinstance(raw, dict):
+        raise FieldErrors({"default_barcode": "Default Detail is invalid."})
+    errors: dict[str, str] = {}
+    values = {column: _text(raw, key, 100, errors)
+              for key, (column, _field) in DEFAULT_DETAIL_FIELDS.items() if key != "color_code_id" and key in raw}
+    color = _detail_color(db, raw, current, errors, merchant_id)  # also refuses the removed color_id
+    if "color_code_id" in raw:
+        values["i_color_code_id"] = color
+    if errors:
+        fields = {key: field for key, (_column, field) in DEFAULT_DETAIL_FIELDS.items()} | {"color_id": "default_color"}
+        raise FieldErrors({fields[key]: message for key, message in errors.items()})
+    if "c_barcode" in values:
+        message = barcode_rules.barcode_conflict(
+            db, values["c_barcode"], owner_key=owner_key,
+            exclude_detail_id=current.i_md_detail_id if current is not None else None,
+            current_barcode=current.c_barcode if current is not None else None,
+        )
+        if message:
+            raise FieldErrors({"default_barcode": message}, message)
+    return values
+
+
+def _commit_md_with_default(db: Session, row: MdMaster, owner_key: int, detail_values: dict | None, **image) -> str | None:
+    """One commit for the MD, its Default Detail and the image (common commit_entity_image: on failure the DB is rolled
+    back and the image files restored). A concurrent save that took the same barcode first hits the DB UNIQUE index:
+    nothing of this save remains and the Barcode field error is returned (same rule as _commit_detail)."""
+    try:
+        return _commit_md(db, row, **image)
+    except IntegrityError:
+        barcode = (detail_values or {}).get("c_barcode")
+        message = barcode_rules.barcode_conflict(db, barcode, owner_key=owner_key) if barcode else None
+        if message:
+            raise FieldErrors({"default_barcode": message}, message) from None
+        raise
+
+
 def check_default_barcode(db: Session, md_id: int | None, barcode, merchant_id: int | None = None) -> dict:
     """Pre-save check for the MD form's Barcode (the Default Detail's barcode) within the scope's owner; read-only."""
     owner = md_owner_key(merchant_id)
@@ -1506,6 +1558,8 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
         values["i_common_group_id"] = common_group(db, group).i_common_group_id  # never a payload value
     if cfg.get("store_scoped"):
         values["i_store_id"] = store_id  # always the authorized Store, never a payload value
+    detail_values = (_default_detail_values(db, payload, None, merchant_id, values["i_owner_key"])
+                     if entity == "md" else None)  # checked before a code is allocated
     for _ in range(5):
         if entity == "md":
             _lock_md_images(db)
@@ -1525,6 +1579,7 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
                     c_unit=row.c_unit,
                     n_cost=row.n_cost,
                     n_price=row.n_default_unit_price,
+                    **(detail_values or {}),
                 )
                 _stamp(detail, user_id, created=True)
                 db.add(detail)
@@ -1535,7 +1590,8 @@ def create_item(db: Session, entity: str, payload: dict, user_id, can_cost: bool
             if cfg.get("manual_code"):  # a concurrent save took the same code first (DB unique index)
                 raise FieldErrors({"code": "This code already exists."}) from None
             continue
-        warning = _commit_md(db, row, image_data=image_data) if entity == "md" else None
+        warning = (_commit_md_with_default(db, row, values["i_owner_key"], detail_values, image_data=image_data)
+                   if entity == "md" else None)
         db.refresh(row)
         item = serialize(db, entity, row, can_cost)
         if warning:
@@ -1903,14 +1959,18 @@ def update_item(db: Session, entity: str, item_id: int, payload: dict, user_id, 
         default_detail = db.query(MdDetail).filter(
             MdDetail.i_md_id == row.i_md_id, MdDetail.b_is_default.is_(True),
         ).with_for_update().first()
+        detail_values = _default_detail_values(db, payload, default_detail, row.i_merchant_id, row.i_owner_key)
         if default_detail is not None:
             default_detail.c_unit = row.c_unit
             default_detail.n_price = row.n_default_unit_price
             if "n_cost" in values:
                 default_detail.n_cost = row.n_cost
+            for key, value in (detail_values or {}).items():
+                setattr(default_detail, key, value)
             _stamp(default_detail, user_id, created=False)
     _stamp(row, user_id, created=False)
-    warning = _commit_md(db, row, image_data=image_data, remove_image=remove_image) if entity == "md" else None
+    warning = (_commit_md_with_default(db, row, row.i_owner_key, detail_values, image_data=image_data,
+                                       remove_image=remove_image) if entity == "md" else None)
     if entity != "md":
         try:
             db.commit()

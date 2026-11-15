@@ -62,6 +62,10 @@ They passed in the 2026-11-14 cleanup run. The first one was stabilized on 2026-
     expected value changed; `master_group.js` unchanged.
   - Result after the fix (same reproduction conditions): alone 15/15 (instrumented) and 10/10 (plain unittest),
     module 5/5 (instrumented) and 1/1 (plain); full suite 727 tests, 0 failures, 0 errors, 11 skipped.
+  - **P2 (MD + Default Detail atomic save, 2026-11-15):** `syncDefaultDetail` and its separate `PUT .../details/1`
+    were removed; the Default Detail fields travel in the MD save (`default_detail`). The test (approved change) now
+    checks `default_detail` in `PUT .../md/7/with-image` and waits for the end of the same flow from that request
+    (`GET .../md/7/details` after it and `#mgSave` enabled again) before the Detail Edit click.
 - `tools.test_image_components.SharedImageComponentTests.test_local_preview_validation_cancel_form_payload_and_avatar_fallback`
   has failed intermittently in earlier full runs (avatar fallback timing) and passes when rerun; it passed in the
   2026-11-14 run.

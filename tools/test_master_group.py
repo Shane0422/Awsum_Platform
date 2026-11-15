@@ -675,6 +675,116 @@ class MasterGroupTests(unittest.TestCase):
             conn.execute(text("INSERT INTO tb_md_detail (i_md_id, i_owner_key, i_detail_no, b_is_default, c_barcode, c_unit, "
                               "n_price) VALUES (:md, 0, 92, 0, ' RACE-1 ', 'EA', 0)"), {"md": b["id"]})
 
+    # --- P2: MD + Default Detail saved in one transaction ("default_detail") ---
+    def _md_snapshot(self, md_id):
+        self.db.expire_all()
+        md = self.db.get(MdMaster, md_id)
+        default = self.db.query(MdDetail).filter(MdDetail.i_md_id == md_id, MdDetail.b_is_default.is_(True)).one()
+        return (md.c_item_name, md.n_default_unit_price, default.c_barcode, default.c_pk_size, default.c_size,
+                default.n_price, default.i_color_code_id)
+
+    def test_md_save_with_default_detail_is_one_transaction(self):
+        item = svc.create_item(self.db, "md", self.md_payload(
+            retail_price="5", default_detail={"barcode": " BC-1 ", "pk_size": "6", "size": "500ML"}), 1)
+        self.assertEqual(self._md_snapshot(item["id"]), ("POS Terminal", Decimal("5.00"), "BC-1", "6", "500ML",
+                                                         Decimal("5.00"), None))
+        payload = self.md_payload(name="Renamed", retail_price="7",
+                                  default_detail={"barcode": "BC-2", "pk_size": "", "size": "1L"})
+        svc.update_item(self.db, "md", item["id"], payload, 1)
+        self.assertEqual(self._md_snapshot(item["id"]), ("Renamed", Decimal("7.00"), "BC-2", None, "1L",
+                                                         Decimal("7.00"), None))
+        # An absent key keeps the saved value; an earlier client without default_detail keeps all of them.
+        svc.update_item(self.db, "md", item["id"], self.md_payload(name="Only barcode", default_detail={"barcode": "BC-3"}), 1)
+        svc.update_item(self.db, "md", item["id"], self.md_payload(name="Legacy", retail_price="8"), 1)
+        self.assertEqual(self._md_snapshot(item["id"]), ("Legacy", Decimal("8.00"), "BC-3", None, "1L",
+                                                         Decimal("8.00"), None))
+        # Cost / Price / Unit / is_default never come from default_detail (Cost permission and the MD fields rule).
+        svc.update_item(self.db, "md", item["id"], self.md_payload(name="Crafted", default_detail={
+            "cost": "99", "price": "1", "unit": "BOX", "is_default": False, "barcode": "BC-3"}), 1)
+        default = self._default_detail(item["id"])
+        self.assertEqual((default["cost"], default["price"], default["unit"], default["is_default"]),
+                         (None, "0.00", "EA", True))  # the MD retail_price (0) of this save, not default_detail
+        with self.assertRaises(svc.FieldErrors) as ctx:
+            svc.update_item(self.db, "md", item["id"], self.md_payload(default_detail="BC-9"), 1)
+        self.assertEqual(ctx.exception.errors, {"default_barcode": "Default Detail is invalid."})
+        self.db.rollback()
+        self.assertEqual(self._md_snapshot(item["id"])[0], "Crafted")
+
+    def test_md_default_detail_barcode_conflict_saves_nothing(self):
+        owner = svc.create_item(self.db, "md", self.md_payload(name="Owner", default_detail={"barcode": "DUP-1"}), 1)
+        other = svc.create_item(self.db, "md", self.md_payload(name="Other", retail_price="3",
+                                                               default_detail={"barcode": "OWN-2", "size": "S"}), 1)
+        expected = f"Barcode DUP-1 is already used by {owner['code']} (Detail 1)."
+        before = self._md_snapshot(other["id"])
+        count = self.db.query(MdMaster).count()
+        with self.assertRaises(svc.FieldErrors) as ctx:  # pre-check: create allocates no code, saves nothing
+            svc.create_item(self.db, "md", self.md_payload(name="New", default_detail={"barcode": " DUP-1 "}), 1)
+        self.assertEqual((ctx.exception.errors, ctx.exception.message), ({"default_barcode": expected}, expected))
+        self.db.rollback()
+        with self.assertRaises(svc.FieldErrors) as ctx:
+            svc.update_item(self.db, "md", other["id"], self.md_payload(
+                name="Changed", retail_price="4", default_detail={"barcode": "DUP-1", "size": "L"}), 1)
+        self.assertEqual(ctx.exception.errors, {"default_barcode": expected})
+        self.db.rollback()
+        self.assertEqual((self._md_snapshot(other["id"]), self.db.query(MdMaster).count()), (before, count))
+        # A save that passed the pre-check before a concurrent commit hits the DB UNIQUE index: full rollback.
+        real = svc.barcode_rules.barcode_conflict
+        calls = []
+
+        def late(*args, **kwargs):
+            calls.append(1)
+            return None if len(calls) == 1 else real(*args, **kwargs)
+        for label, action in (
+            ("update", lambda: svc.update_item(self.db, "md", other["id"], self.md_payload(
+                name="Changed", retail_price="4", default_detail={"barcode": "DUP-1", "size": "L"}), 1)),
+            ("create", lambda: svc.create_item(self.db, "md", self.md_payload(name="New", default_detail={"barcode": "DUP-1"}), 1)),
+        ):
+            calls.clear()
+            with self.subTest(label), patch.object(svc.barcode_rules, "barcode_conflict", late), \
+                    self.assertRaises(svc.FieldErrors) as ctx:
+                action()
+            self.assertEqual(ctx.exception.errors, {"default_barcode": expected})
+            self.db.rollback()
+        self.assertEqual((self._md_snapshot(other["id"]), self.db.query(MdMaster).count()), (before, count))
+        self.assertEqual(self.db.query(MdDetail).filter(MdDetail.c_barcode == "DUP-1").count(), 1)
+        # The next create still gets the next free code (nothing was consumed by the refused saves).
+        self.assertEqual(svc.create_item(self.db, "md", self.md_payload(name="Next"), 1)["code"], "MD00003")
+
+    def test_md_default_detail_color_follows_detail_rules(self):
+        PlatformBase.metadata.create_all(self.engine, tables=[Merchant.__table__, CommonGroup.__table__, CommonCode.__table__])
+        with redirect_stdout(io.StringIO()):
+            migrate_common_codes(self.engine)
+        colors = {c["name"]: c["id"] for c in svc.lookup_options(self.db)["color_codes"]}
+        item = svc.create_item(self.db, "md", self.md_payload(default_detail={"color_code_id": colors["Black"]}), 1)
+        self.assertEqual(self._md_snapshot(item["id"])[6], colors["Black"])
+        svc.update_item(self.db, "md", item["id"], self.md_payload(default_detail={"barcode": "C-1"}), 1)  # Color OFF
+        self.assertEqual(self._md_snapshot(item["id"])[2:], ("C-1", None, None, Decimal("0.00"), colors["Black"]))
+        for bad, errors in ((99999, {"default_color": "Color does not exist."}),
+                            ("x", {"default_color": "Color is invalid."})):
+            with self.subTest(bad), self.assertRaises(svc.FieldErrors) as ctx:
+                svc.update_item(self.db, "md", item["id"], self.md_payload(name="No", default_detail={"color_code_id": bad}), 1)
+            self.assertEqual(ctx.exception.errors, errors)
+            self.db.rollback()
+        with self.assertRaises(svc.FieldErrors) as ctx:
+            svc.update_item(self.db, "md", item["id"], self.md_payload(default_detail={"color_id": 1}), 1)
+        self.assertEqual(ctx.exception.errors, {"default_color": svc.COLOR_ID_REMOVED})
+        self.db.rollback()
+        svc.update_item(self.db, "md", item["id"], self.md_payload(default_detail={"color_code_id": None}), 1)
+        self.assertIsNone(self._md_snapshot(item["id"])[6])
+
+    def test_md_payload_drops_default_detail_fields_of_off_features(self):
+        request = SimpleNamespace(state=SimpleNamespace())
+        payload = {"name": "x", "color_code_id": 3, "default_detail": {"barcode": "B", "color_code_id": 3}}
+        with patch.object(router_module, "_item_features", return_value={"color": False}), \
+                patch.object(router_module, "_location_management_on", return_value=True):
+            off = router_module._md_payload("md", payload, request, self.db, None)
+        with patch.object(router_module, "_item_features", return_value={"color": True}), \
+                patch.object(router_module, "_location_management_on", return_value=True):
+            on = router_module._md_payload("md", payload, request, self.db, None)
+        self.assertEqual(off, {"name": "x", "default_detail": {"barcode": "B"}})  # saved Color kept by the service
+        self.assertEqual(on, payload)
+        self.assertEqual(payload["default_detail"], {"barcode": "B", "color_code_id": 3})  # caller's dict untouched
+
     def test_barcode_unique_migration_reports_duplicates_without_changing_data(self):
         from sqlalchemy import create_engine, inspect, text
         from backend.database.md_barcode_unique_migration import barcode_index_exists, migrate_md_barcode_unique
