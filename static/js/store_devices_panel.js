@@ -4,7 +4,7 @@
 
   const API = '/platform/store';
   const WIDTH_KEY = 'awsum.storeSplit.leftPct.v2';
-  const state = { storeId: null, data: null, loading: false, token: 0, inited: false, modal: null, selected: new Set() };
+  const state = { storeId: null, data: null, loading: false, token: 0, inited: false, modal: null, selected: new Set(), recent: new Set() };
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const $ = (id) => document.getElementById(id);
@@ -95,6 +95,63 @@
     return '<span class="sd-badge ' + esc(code) + '">' + esc(label) + '</span>';
   }
 
+  // Dates use the Common date formatter (MM-DD-YYYY, static/js/date.js); a missing value shows a dash.
+  const day = (iso) => (iso ? (window.AwsumDateInput ? AwsumDateInput.format(String(iso).slice(0, 10)) : String(iso).slice(0, 10)) : '—');
+
+  // Contract Quantities (tb_store_entitlement through the existing workspace summary; read only here).
+  function quantitiesHtml(sum) {
+    const row = (label, q) => '<tr><td class="fw-semibold">' + label + '</td><td>' + q.contracted + '</td><td>' + q.issued +
+      '</td><td>' + q.activated + '</td><td>' + q.remaining + '</td></tr>';
+    const ordering = sum.CUSTOMER_ORDERING;
+    return '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Contract Quantities</h6>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button></div>' +
+      '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdQtyTable"><thead><tr><th>Device Type</th>' +
+      '<th>Contracted</th><th>Issued</th><th>Activated</th><th>Remaining</th></tr></thead><tbody>' +
+      row('POS', sum.POS) + row('KIOSK', sum.KIOSK) +
+      '<tr><td class="fw-semibold">Customer Ordering</td><td colspan="4">' + (ordering.enabled ? 'Enabled' : 'Not enabled') +
+      ' &nbsp;·&nbsp; ' + esc(ordering.license_status || '—') + '</td></tr></tbody></table></div></div>';
+  }
+
+  // Email: License emails the mail server accepted that included this license (tb_license_email_log, read only).
+  const emailText = (l) => (l.email_sent_count ? 'Sent ' + day(l.email_last_sent_at) + (l.email_sent_count > 1 ? ' (' + l.email_sent_count + 'x)' : '') : 'Not sent');
+
+  // Issue History: one entry per issue request (c_issue_request_id); licenses without a recorded request ID are
+  // listed together as "Not recorded" (no grouping by time).
+  function historyHtml(d) {
+    const all = d.licenses.concat(d.service_license ? [d.service_license] : []);
+    const groups = new Map();
+    all.forEach(l => {
+      const key = l.issue_request_id || '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(l);
+    });
+    const entries = Array.from(groups.entries()).map(([key, items]) => ({
+      key, items, issued: items.map(l => l.issued_at || '').sort()[0] || '',
+    })).sort((a, b) => (!a.key) - (!b.key) || String(b.issued).localeCompare(String(a.issued)));
+    const rows = entries.map(({ key, items, issued }) => {
+      const types = {};
+      items.forEach(l => { types[l.type] = (types[l.type] || 0) + 1; });
+      const sent = items.filter(l => l.email_sent_count > 0).length;
+      const by = Array.from(new Set(items.map(l => l.issued_by).filter(Boolean))).join(', ');
+      return '<tr><td>' + esc(day(issued || null)) + '</td><td>' + esc(by || '—') + '</td>' +
+        '<td><span class="sd-key" title="' + esc(key) + '">' + esc(key || 'Not recorded') + '</span></td>' +
+        '<td>' + esc(items.map(l => l.name).join(', ')) + '</td>' +
+        '<td>' + esc(Object.keys(types).map(t => t + ' x' + types[t]).join(', ')) + '</td>' +
+        '<td>' + (sent ? esc(sent + ' / ' + items.length + ' sent') : 'Not sent') + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="text-center text-muted py-3">No licenses issued yet.</td></tr>';
+    return '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Issue History</h6></div>' +
+      '<div class="sd-table-wrap"><table class="table align-middle sd-table mb-0" id="sdHistoryTable"><thead><tr>' +
+      '<th>Issued Date</th><th>Issued By</th><th>Request ID</th><th>New Licenses</th><th>Device Types</th><th>Email Status</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+
+  // Activated / Linked Device: the device of the active link (name, OS, link date) from the existing workspace row.
+  function linkedDeviceHtml(l) {
+    if (!l.device_id) return '—';
+    return '<div class="sd-device">' + esc(l.device_name || ('Device #' + l.device_id)) + (l.os ? ' <span class="text-muted">· ' + esc(l.os) + '</span>' : '') +
+      '</div>' + (l.activated_at ? '<div class="small text-muted">Activated ' + esc(day(l.activated_at)) + '</div>' : '');
+  }
+
   function render() {
     const d = state.data;
     if (!d) return;
@@ -102,33 +159,45 @@
     const validIds = new Set(d.licenses.map(l => Number(l.license_id)));
     state.selected = new Set(Array.from(state.selected).filter(id => validIds.has(id)));
 
+    // Device Licenses: every issued license is kept and listed (an additional issue only adds rows); the latest
+    // issue is marked New. Issued Date = dt_issued_at from the existing workspace row.
     const rows = d.licenses.map(l => {
       const btn = '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 me-1" data-sd-copy="' + esc(l.license_key) + '" title="Copy license key">Copy</button>' +
         '<button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-sd-detail="' + l.license_id + '">Details</button>';
+      const fresh = state.recent.has(Number(l.license_id)) ? ' <span class="sd-badge issued">New</span>' : '';
       return '<tr><td><input type="checkbox" class="form-check-input" data-sd-license-select="' + Number(l.license_id) + '" aria-label="Select ' + esc(l.name) + '"' + (state.selected.has(Number(l.license_id)) ? ' checked' : '') + '></td>' +
-        '<td class="fw-semibold">' + esc(l.name) + '</td><td>' + esc(l.type) + '</td>' +
-        '<td><span class="sd-key" title="' + esc(l.license_key) + '">' + esc(l.license_key) + '</span></td><td class="sd-os" title="' + esc(l.os || '') + '">' + esc(l.os || '—') + '</td>' +
-        '<td>' + badge(l.status, l.status_label) + '</td><td class="text-end">' + btn + '</td></tr>';
-    }).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
+        '<td class="fw-semibold">' + esc(l.name) + fresh + '</td><td>' + esc(l.type) + '</td>' +
+        '<td><span class="sd-key" title="' + esc(l.license_key) + '">' + esc(l.license_key) + '</span></td>' +
+        '<td class="sd-issued">' + esc(day(l.issued_at)) + '</td><td class="sd-valid">' + esc(day(l.valid_until)) + '</td>' +
+        '<td>' + badge(l.status, l.status_label) + '</td><td class="sd-linked">' + linkedDeviceHtml(l) + '</td>' +
+        '<td class="sd-email">' + esc(emailText(l)) + '</td><td class="text-end">' + btn + '</td></tr>';
+    }).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">No licenses issued yet.</td></tr>';
 
-    panel().innerHTML = headerHtml(s) +
-      '<h6 class="mb-2" style="font-size:14px;font-weight:600">Devices &amp; Licenses</h6>' +
-      '<div class="d-flex align-items-center justify-content-between gap-2 mb-2"><span id="sdSelectedCount" class="small text-muted"></span>' +
-      '<button type="button" class="btn btn-sm btn-outline-primary" id="sdSendEmail" disabled>Send Email</button></div>' +
-      '<div class="sd-table-wrap"><table class="table table-hover align-middle sd-table mb-0"><thead><tr>' +
+    panel().innerHTML = headerHtml(s) + quantitiesHtml(d.summary) +
+      '<div class="sd-section"><div class="sd-section-head"><h6 class="sd-section-title">Device Licenses</h6>' +
+      '<div class="d-flex flex-wrap align-items-center gap-2"><span id="sdSelectedCount" class="small text-muted"></span>' +
+      '<button type="button" class="btn btn-sm btn-link px-1" id="sdDeselectAll">Deselect All</button>' +
+      '<button type="button" class="btn btn-sm btn-primary role-action-btn" id="sdBtnIssue">Issue Licenses</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-primary" id="sdPreviewEmail" disabled>Preview Email</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-primary" id="sdSendEmail" disabled>Send Email</button></div></div>' +
+      '<div class="sd-table-wrap"><table class="table table-hover align-middle sd-table mb-0" id="sdLicenseTable"><thead><tr>' +
       '<th><input type="checkbox" class="form-check-input" id="sdSelectAll" aria-label="Select all licenses"></th>' +
-      '<th>Name</th><th>Type</th><th>License Key</th><th>OS</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<th>Device Name</th><th>Type</th><th>License Key</th><th>Issued Date</th><th>Valid Until</th><th>Status</th><th>Activated / Linked Device</th><th>Email</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+      historyHtml(d);
+    const actions = $('sdActions');
+    if (actions) actions.remove(); // the actions now sit in their sections
 
     const selectAll = $('sdSelectAll');
     selectAll.checked = d.licenses.length > 0 && state.selected.size === d.licenses.length;
     selectAll.indeterminate = state.selected.size > 0 && state.selected.size < d.licenses.length;
     $('sdSelectedCount').textContent = state.selected.size + ' selected';
+    // Preview Email / Send Email open the existing License email dialog (preview and send use the same selection).
     $('sdSendEmail').disabled = state.selected.size === 0;
+    $('sdPreviewEmail').disabled = state.selected.size === 0;
+    $('sdDeselectAll').disabled = state.selected.size === 0;
     $('sdSendEmail').addEventListener('click', openEmailModal);
-
-    $('sdActions').innerHTML =
-      '<button type="button" class="btn btn-sm btn-outline-secondary role-action-btn" id="sdBtnQty">Edit Contract Quantities</button>' +
-      '<button type="button" class="btn btn-sm btn-primary role-action-btn" id="sdBtnIssue">Issue Licenses</button>';
+    $('sdPreviewEmail').addEventListener('click', openEmailModal);
+    $('sdDeselectAll').addEventListener('click', () => { state.selected.clear(); render(); });
     $('sdBtnQty').addEventListener('click', openQtyModal);
     $('sdBtnIssue').addEventListener('click', openIssueModal);
   }
@@ -160,6 +229,7 @@
     state.storeId = id;
     state.data = null;
     state.selected.clear();
+    state.recent.clear();
     load(id, item);
   }
 
@@ -274,7 +344,8 @@
       send: (payload) => api(API + '/' + state.storeId + '/licenses/email', {
         method: 'POST', body: JSON.stringify({ ...payload, license_ids: selected.map(l => Number(l.license_id)) }),
       }),
-      onAccepted: () => { state.selected.clear(); render(); },
+      // Accepted: reload the workspace so the Email status (tb_license_email_log) shows the sent licenses.
+      onAccepted: () => { state.selected.clear(); load(state.storeId); },
     });
   }
 
@@ -479,6 +550,7 @@
               method: 'POST',
               body: JSON.stringify({ license_type: typeEl.value, quantity: Number(qtyEl.value), request_id: requestId }),
             });
+            state.recent = new Set((res.issued || []).map(Number));
             applyWorkspace(res.workspace);
             closeModal();
             AwsumToast.success('License issued.');

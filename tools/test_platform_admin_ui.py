@@ -107,6 +107,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
       // storeDevicesPanel: the page's Store Devices panel object (window.AwsumStoreDevices on Platform Admin).
       win.eval("const activeModule="+JSON.stringify(fixture.module)+";const isListCentricModule=true;"+
         "const storeDevicesPanel={init(){},clear(){}};"+
+        // MASTER_DETAIL: the page's Common Master-Detail config (Agency / Merchant / Platform Store use the Tree layout).
+        "const MASTER_DETAIL=['agency','merchant','store'].includes(activeModule)?{}:null;"+
         "const masterListCol=document.getElementById('masterListCol'),masterEditorCol=document.getElementById('masterEditorCol'),masterListToolbar=document.getElementById('masterListToolbar');"+
         layout+";applyMasterLayoutMode();");
       assert(doc.getElementById('masterEditorCol').classList.contains('d-none'),'existing list-centric editor visibility');
@@ -147,8 +149,9 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
       if(wrap)assert(win.getComputedStyle(wrap).overflowX==='auto','existing table scrolling');
     }
     if(fixture.module==='store'){
-      assert(doc.getElementById('masterRoleView').classList.contains('store-split'),'store split retained');
-      assert(!doc.getElementById('storeSplitter').classList.contains('d-none'),'store resize control retained');
+      // Platform Store: Organization Tree + inline form (S2-b); the old split list / resize control is not used.
+      assert(!doc.getElementById('masterRoleView').classList.contains('store-split'),'no store split in the Tree layout');
+      assert(doc.getElementById('storeSplitter').classList.contains('d-none'),'no store resize control in the Tree layout');
       assert(doc.getElementById('storeToolsArea').contains(doc.getElementById('masterSearchWrap')),'filters in shared card');
       assert(!doc.getElementById('storeToolsArea').contains(doc.getElementById('masterListHead')),'store page header stays above filter card');
     }

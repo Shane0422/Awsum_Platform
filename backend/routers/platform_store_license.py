@@ -142,8 +142,33 @@ def _os_text(device: Device) -> Optional[str]:
     return text_value or None
 
 
-def _serialize_license_row(lic: License, link: Optional[LicenseDeviceLink], device: Optional[Device]) -> dict:
+def _accepted_license_emails(db: Session, store_id: int) -> dict[int, dict]:
+    """Read only: per license ID, the License emails the mail server accepted (tb_license_email_log, status
+    "accepted"). Previews are never logged and failed / in-progress sends are not counted."""
+    sent: dict[int, dict] = {}
+    logs = (
+        db.query(LicenseEmailLog.c_license_ids, LicenseEmailLog.dt_sent_at, LicenseEmailLog.dt_created_at)
+        .filter(LicenseEmailLog.i_store_id == store_id, LicenseEmailLog.c_status == "accepted")
+        .all()
+    )
+    for license_ids, sent_at, created_at in logs:
+        try:
+            ids = json.loads(license_ids or "[]")
+        except (TypeError, ValueError):
+            continue
+        when = sent_at or created_at
+        for license_id in ids if isinstance(ids, list) else []:
+            entry = sent.setdefault(license_id, {"count": 0, "last": None})
+            entry["count"] += 1
+            if when and (entry["last"] is None or when > entry["last"]):
+                entry["last"] = when
+    return sent
+
+
+def _serialize_license_row(lic: License, link: Optional[LicenseDeviceLink], device: Optional[Device],
+                           emails: Optional[dict[int, dict]] = None) -> dict:
     code, label = _license_state(lic, link is not None)
+    email = (emails or {}).get(lic.i_license_id)
     return {
         "license_id": lic.i_license_id,
         "name": _license_label(lic),
@@ -156,6 +181,13 @@ def _serialize_license_row(lic: License, link: Optional[LicenseDeviceLink], devi
         "device_id": device.i_device_id if device else None,
         "issued_at": lic.dt_issued_at.isoformat() if lic.dt_issued_at else None,
         "activated_at": link.dt_linked_at.isoformat() if link and link.dt_linked_at else None,
+        # Read-only additions (existing columns): validity end, issuer, issue request (one issue = one request ID)
+        # and the accepted License emails that included this license.
+        "valid_until": lic.dt_end.isoformat() if lic.dt_end else None,
+        "issued_by": lic.c_issued_by,
+        "issue_request_id": lic.c_issue_request_id,
+        "email_sent_count": email["count"] if email else 0,
+        "email_last_sent_at": email["last"].isoformat() if email and email["last"] else None,
     }
 
 
@@ -178,11 +210,12 @@ def _build_workspace(db: Session, store: Store) -> dict:
     rows = []
     service_license = None
     counts = {t: {"issued": 0, "activated": 0} for t in ISSUABLE_TYPES}
+    emails = _accepted_license_emails(db, store_id)
     for lic in licenses:
         ltype = _license_type(lic)
         link = links.get(lic.i_license_id)
         device = devices.get(link.i_device_id) if link else None
-        row = _serialize_license_row(lic, link, device)
+        row = _serialize_license_row(lic, link, device, emails)
         if ltype == TYPE_ORDERING:
             # Keep the newest service license that still counts, else the newest one for display.
             if _consumes_quota(lic) or service_license is None:

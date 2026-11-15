@@ -6,7 +6,7 @@
 
 {% block content %}
 {# Common Master-Detail layout (left Tree + right form); keep in sync with MASTER_DETAIL in the script below. #}
-{% if active_module in ['agency', 'merchant'] %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=3">{% endif %}
+{% if active_module in ['agency', 'merchant', 'store'] %}<link rel="stylesheet" href="/static/css/awsum-master-detail.css?v=5">{% endif %}
 <style>
   body.page-master {
     font-size: 13px;
@@ -304,6 +304,16 @@
   body.page-master #masterRoleView.store-split > #storeDevicesCol.d-none { display: none; }
   body.page-master #masterRoleView.store-split.store-no-devices > #masterListCol { flex: 0 0 100% !important; max-width: 100% !important; }
   body.page-master #masterRoleView.store-split .store-devices-card { border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 16px 20px !important; height: 100%; }
+  /* The same panel inside the License tab of the inline Store form (Platform Store Tree). */
+  body.page-master #masterEditModal .store-devices-card { margin-top: 1rem; padding: 14px 16px !important; box-shadow: none; }
+  /* Inside the Store form the panel's Store / Merchant / Agency heading repeats the form; hidden here only. */
+  body.page-master #masterEditModal .store-devices-card > :is(.sd-title, .sd-sub) { display: none; }
+  body.page-master #masterEditModal .store-devices-card > .sd-section:first-of-type { margin-top: 0; }
+  /* License tab tables: headers and the short status / email texts may wrap so the columns fit the form width. */
+  body.page-master #masterEditModal .sd-table { font-size: 13px; }
+  body.page-master #masterEditModal .sd-table th, body.page-master #masterEditModal .sd-table td.sd-email { white-space: normal; }
+  body.page-master #masterEditModal .sd-table .sd-key { max-width: 140px; }
+  body.page-master #masterEditModal .sd-table > :not(caption) > * > * { padding-left: .4rem; padding-right: .4rem; }
   .store-cell-main { min-width: 0; max-width: 260px; }
   .store-cell-merchant { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .store-cell-store { font-size: .9em; color: #5b6b82; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -318,6 +328,10 @@
   .sd-badge.activated, .sd-badge.active { background: #dff5e6; color: #1b7a3c; }
   .sd-badge.issued { background: #fff3d6; color: #8a6100; }
   .sd-badge.revoked, .sd-badge.expired, .sd-badge.suspended, .sd-badge.inactive { background: #fde4e4; color: #b02a2a; }
+  .sd-section { margin-top: 1rem; }
+  .sd-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+  .sd-section-title { margin: 0; font-size: 14px; font-weight: 600; }
+  .sd-table td.sd-linked { min-width: 140px; white-space: normal; }
   .sd-table { font-size: 14px; }
   .sd-table td, .sd-table th { white-space: nowrap; vertical-align: middle; background: transparent; }
   .sd-table td.sd-os { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
@@ -3100,7 +3114,7 @@
   }
 </script>
 
-<script src="/static/js/store_devices_panel.js?v=6"></script>
+<script src="/static/js/store_devices_panel.js?v=9"></script>
 <script src="/static/js/awsum-address.js?v=1"></script>
 <script>
   const activeModuleRaw =  "{{ active_module }}";
@@ -3765,6 +3779,9 @@
   // title: panel / empty-state noun; header: list column; levels: Tree parents (none = single list);
   // label: row text; sortColumn: config.headers index the list sorts by (header click toggles direction);
   // statusToggle: Deactivate / Activate in the panel header (flips the Status field, then the existing Save).
+  // sortable: false = fixed header (the Tree keeps the API order); countItem: rows counted in the group totals;
+  // tree: the list comes from the read-only Organization Tree API (whole tree, no paging) and a selected row loads
+  // the record from the existing detail API before the existing form is filled.
   const MASTER_DETAIL = {
     agency: {
       title: 'Agency',
@@ -3783,6 +3800,28 @@
       }],
       label: (item) => item.merchant_name,
       sortColumn: 0,
+    },
+    // Common Store Management (Platform and Merchant share this config, the form and the layout). Scope differences:
+    // Platform = Agency (the Merchant's Agency, not the installing Agency) > Merchant > Store from the Platform tree API;
+    // Merchant = its own Merchant > Store from its scoped tree API (the server fixes the Merchant). Fields, tabs and
+    // actions follow merchantStorePolicy (S1) and the server enforces it.
+    store: {
+      title: 'Store',
+      header: merchantStorePolicy ? 'Merchant / Store' : 'Agency / Merchant / Store',
+      levels: [
+        ...(merchantStorePolicy ? [] : [
+          { key: (item) => `agency:${item.agency_id ?? 'none'}`, name: (item) => item.agency_name || 'No Agency' }]),
+        { key: (item) => `merchant:${item.merchant_id ?? 'none'}`, name: (item) => item.merchant_name || 'No Merchant' },
+      ],
+      label: (item) => item.store_code ? `${item.store_name || ''} (${item.store_code})` : (item.store_name || ''),
+      sortColumn: 0,
+      sortable: false,
+      countItem: (item) => !item.placeholder,
+      // The detail API names the Store status store_status; the form (like the list rows) uses status.
+      tree: {
+        url: merchantStorePolicy ? `${apiBase}/store-tree` : '/platform/api/store-tree',
+        record: (record) => ({ ...record, status: record.status ?? record.store_status }),
+      },
     },
   }[activeModule] || null;
   const masterDetailCollapsed = new Set();
@@ -3862,16 +3901,49 @@
     });
   }
 
-  function openMasterDetailItem(item) {
-    if (!releaseMasterDetailForm()) return;
+  // Tree modules: the Tree row has identity / name / status only; the record comes from the existing detail API.
+  // Only the latest request is applied (a slower answer for an earlier click is dropped).
+  let masterDetailRequest = 0;
+  async function fetchMasterDetailRecord(item) {
+    const token = ++masterDetailRequest;
+    try {
+      const res = await fetch(getItemUrl(item.id), {
+        cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const record = await res.json();
+      if (token !== masterDetailRequest) return null;
+      const mapped = MASTER_DETAIL.tree.record ? MASTER_DETAIL.tree.record(record) : record;
+      return { ...mapped, id: record.store_id ?? record.id ?? item.id };
+    } catch (error) {
+      if (token === masterDetailRequest) AwsumToast.error(`Unable to load the ${MASTER_DETAIL.title}: ${error.message}`);
+      return null;
+    }
+  }
+
+  function showMasterDetailRecord(item) {
     const row = masterListBody.querySelector(`tr[data-row-select="${CSS.escape(String(item.id))}"]`);
     selectItem(item, row);
     markMasterDetailRow(item.id);
+  }
+
+  async function openMasterDetailItem(item) {
+    if (!releaseMasterDetailForm()) return;
+    if (MASTER_DETAIL.tree) {
+      item = await fetchMasterDetailRecord(item);
+      if (!item) return;
+    }
+    showMasterDetailRecord(item);
     openSelectedMasterEditFromList();
   }
 
   function renderMasterDetailHeader() {
     const th = document.createElement('th');
+    if (MASTER_DETAIL.sortable === false) {
+      th.textContent = MASTER_DETAIL.header;
+      masterListHeader.appendChild(th);
+      return;
+    }
     th.className = 'sortable-col';
     th.innerHTML = `${escapeMasterDetail(MASTER_DETAIL.header)}<span class="sort-indicator"></span>`;
     th.tabIndex = 0;
@@ -3896,11 +3968,17 @@
     if (selectedItem) AwsumMasterDetail.expandTree(masterDetailCollapsed, [selectedItem], MASTER_DETAIL.levels);
     masterListBody.innerHTML = AwsumMasterDetail.treeHtml({
       items, levels: MASTER_DETAIL.levels, collapsed: masterDetailCollapsed, colspan: 1,
-      rowHtml: (item, depth) => `<tr class="mg-md-row${String(item.id) === String(selectedId) ? ' selected' : ''}" data-row-select="${escapeMasterDetail(item.id)}" tabindex="0" aria-label="Edit ${escapeMasterDetail(MASTER_DETAIL.label(item))}" style="--mg-depth:${depth}"><td>${escapeMasterDetail(MASTER_DETAIL.label(item))}</td></tr>`,
+      countItem: MASTER_DETAIL.countItem,
+      rowHtml: (item, depth) => {
+        if (item.placeholder) return `<tr class="mg-md-empty-row" style="--mg-depth:${depth}"><td>No stores</td></tr>`;
+        const inactive = MASTER_DETAIL.tree && String(item.status || '').toLowerCase() !== 'active';
+        const status = inactive ? ` <span class="mg-md-row-status">${escapeMasterDetail(item.status || 'inactive')}</span>` : '';
+        return `<tr class="mg-md-row${inactive ? ' mg-md-row-inactive' : ''}${String(item.id) === String(selectedId) ? ' selected' : ''}" data-row-select="${escapeMasterDetail(item.id)}" tabindex="0" aria-label="Edit ${escapeMasterDetail(MASTER_DETAIL.label(item))}" style="--mg-depth:${depth}"><td>${escapeMasterDetail(MASTER_DETAIL.label(item))}${status}</td></tr>`;
+      },
     });
     // A saved or deep-linked record is loaded into the panel; other reloads only keep the highlight,
-    // so unsaved edits are not overwritten by a filter or page change.
-    if (highlightId && selectedItem) {
+    // so unsaved edits are not overwritten by a filter or page change. (Tree modules: loadList loads the record.)
+    if (highlightId && selectedItem && !MASTER_DETAIL.tree) {
       selectItem(selectedItem, masterListBody.querySelector(`tr[data-row-select="${CSS.escape(String(selectedItem.id))}"]`));
       markMasterDetailRow(selectedItem.id);
       if (masterEditModalElement.hidden) openSelectedMasterEditFromList();
@@ -3934,6 +4012,7 @@
     list.appendChild(scroll);
     const pager = document.getElementById('storeListPager');
     pager.classList.add('mg-md-pager', 'awsum-list-footer');
+    if (MASTER_DETAIL.tree) pager.querySelector('.store-pager-controls').classList.add('d-none'); // whole tree: no paging
     const rows = filters.querySelector('.awsum-filter-rows');
     const pageSize = document.getElementById('storePageSize');
     pager.querySelector('.store-pager-controls').prepend(pageSize);
@@ -4002,6 +4081,19 @@
         showMasterDetailForm(false);
       }
     });
+  }
+
+  // Platform Store Tree: the existing Devices & Licenses panel (static/js/store_devices_panel.js: Contract Quantities,
+  // Issue Licenses, Email Preview / Send) moves into the License tab of the common Store form, unchanged. It already
+  // follows the selected Store (selectItem -> show, clearForm -> clear). The Merchant scope has no panel
+  // (storeDevicesPanel is null) and the license APIs are Platform Admin only.
+  function mountStoreDevicesInLicenseTab() {
+    if (activeModule !== 'store' || !MASTER_DETAIL || !storeDevicesPanel) return;
+    const licenseTab = masterFormModal?.querySelector('.merchant-tab-panel[data-tab-panel="license"]');
+    const devices = document.getElementById('storeDevicesPanel');
+    if (!licenseTab || !devices) return;
+    licenseTab.appendChild(devices);
+    storeDevicesPanel.init();
   }
 
   function getMasterEditModalInstance() {
@@ -4120,7 +4212,7 @@
     if (!masterListCol || !masterEditorCol) return;
     if (isListCentricModule) {
       masterListCol.classList.remove('col-xl-3');
-      if (activeModule === 'store') {
+      if (activeModule === 'store' && !MASTER_DETAIL) {
         masterListCol.classList.remove('col-xl-12');
         const roleView = document.getElementById('masterRoleView');
         if (roleView) roleView.classList.add('store-split');
@@ -4181,8 +4273,8 @@
     const fields = {
       agency: ['masterSearch', 'masterStatusFilter'],
       merchant: ['masterSearch', 'storeAgencyCombo', 'masterStatusFilter', 'storePageSize'],
-      store: merchantStorePolicy ? ['masterSearch', 'masterStatusFilter', 'storeSortSelect', 'storePageSize']
-        : ['masterSearch', 'storeAgencyCombo', 'storeMerchantCombo', 'masterStatusFilter', 'storeSortSelect', 'storePageSize'],
+      // Store Tree (Platform and Merchant): Search and Status only (the Tree replaces the filters, sort and paging).
+      store: ['masterSearch', 'masterStatusFilter'],
     }[activeModule];
     if (!fields) return;
     const surface = document.getElementById('storeToolsArea');
@@ -4997,9 +5089,64 @@
 
   let lastSavedId = null;
 
+  // Organization Tree list (MASTER_DETAIL.tree): the API returns the whole tree; Search / Status filter it here.
+  // A Merchant without Stores keeps a "No stores" row (not counted); it is hidden while a Status filter is set.
+  function flattenOrganizationTree(payload) {
+    const rows = [];
+    // Platform: agencies > merchants > stores; Merchant scope: merchants > stores (no Agency level).
+    const agencies = payload.agencies || [{ merchants: payload.merchants || [] }];
+    agencies.forEach(agency => (agency.merchants || []).forEach(merchant => {
+      const parent = {
+        agency_id: agency.agency_id, agency_code: agency.agency_code, agency_name: agency.agency_name,
+        merchant_id: merchant.merchant_id, merchant_code: merchant.merchant_code, merchant_name: merchant.merchant_name,
+      };
+      if (!(merchant.stores || []).length) rows.push({ ...parent, id: `merchant:${merchant.merchant_id}`, placeholder: true });
+      (merchant.stores || []).forEach(store => rows.push({ ...parent, ...store, id: store.store_id }));
+    }));
+    return rows;
+  }
+
+  function filterOrganizationTree(rows) {
+    const term = masterSearch.value.trim().toLowerCase();
+    const status = masterStatusFilter ? masterStatusFilter.value : '';
+    const matches = (row, keys) => !term || keys.some(key => String(row[key] ?? '').toLowerCase().includes(term));
+    return rows.filter(row => row.placeholder
+      ? !status && matches(row, ['agency_name', 'agency_code', 'merchant_name', 'merchant_code'])
+      : (!status || String(row.status || '').toLowerCase() === status)
+        && matches(row, ['agency_name', 'agency_code', 'merchant_name', 'merchant_code', 'store_name', 'store_code']));
+  }
+
+  async function loadOrganizationTree(highlightId) {
+    try {
+      const res = await fetch(MASTER_DETAIL.tree.url, {
+        cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!(res.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
+        throw new Error('Session expired or invalid response. Please sign in again.');
+      }
+      const items = filterOrganizationTree(flattenOrganizationTree(await res.json()));
+      storeGrid.total = items.filter(item => !item.placeholder).length;
+      storeGrid.page = 1;
+      storeGrid.totalPages = 1;
+      updateStorePager();
+      renderList(items, highlightId);
+      const target = highlightId ? items.find(item => !item.placeholder && String(item.id) === String(highlightId)) : null;
+      if (!target) return;
+      const record = await fetchMasterDetailRecord(target);
+      if (!record) return;
+      showMasterDetailRecord(record);
+      if (masterEditModalElement.hidden) openSelectedMasterEditFromList();
+    } catch (error) {
+      console.error('Failed to load the organization tree:', error);
+      masterListBody.innerHTML = '<tr><td class="text-center text-danger py-4">Failed to load data. Refresh or sign in again.</td></tr>';
+    }
+  }
+
   async function loadList(highlightId = null) {
     const locateId = (typeof highlightId === 'string' || typeof highlightId === 'number') ? highlightId : null;
     if (!locateId) highlightId = null;
+    if (MASTER_DETAIL?.tree) return loadOrganizationTree(highlightId);
     const query = buildQuery({ locateId });
     const url = getCollectionUrl(query);
     try {
@@ -8944,6 +9091,7 @@
   mountMasterDetail();
   renderListHeader();
   renderForm();
+  mountStoreDevicesInLicenseTab();
   attachFormChangeWatchers();
   if (merchantStorePolicy) {
     // Store registration and deletion / deactivation are Platform Admin only.

@@ -43,6 +43,11 @@
 .mg-md-list-panel .mg-md-row.selected > td { --bs-table-bg: #e7f0fe; --bs-table-hover-bg: #e7f0fe; color: var(--list-navy); font-weight: 600; }
 .mg-md-list-panel .mg-md-row.selected > td:first-child::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--list-blue); }
 .mg-md-list-panel .mg-md-row.selected > td:first-child::after { background: var(--list-blue); }
+/* Organization Tree (Store): an Inactive record keeps its row with a muted status text; a Merchant without Stores shows
+   a "No stores" row (not selectable, not counted). */
+.mg-md-list-panel .mg-md-row-inactive > td { color: #7b8aa3; }
+.mg-md-row-status { margin-left: 6px; color: #9aa6b8; font-size: 10.5px; font-weight: 500; text-transform: capitalize; }
+.mg-md-list-panel .mg-md-empty-row > td { padding: .3rem .4rem .3rem calc(.5rem + var(--mg-depth, 0) * 16px + 22px) !important; color: #9aa6b8; font-size: 11.5px; font-style: italic; cursor: default; }
 .mg-md-list-panel :is(.mg-md-row, .mg-tree-group):focus-visible { outline: 2px solid rgba(18, 99, 235, .45); outline-offset: -2px; }
 /* Compact sticky headers inside the workspace (Common th padding is sized for full-page lists). */
 .mg-md-workspace .table th { padding: .45rem .5rem !important; font-size: 11px !important; letter-spacing: .02em; }
@@ -73,6 +78,9 @@
 .modal.awsum-modal-inline .modal-content { height: auto; max-height: none; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
 .modal.awsum-modal-inline .modal-header, .modal.awsum-modal-inline .modal-footer { display: none; }
 .modal.awsum-modal-inline .modal-body { padding: 0; overflow: visible; }
+/* Without the modal-body padding, the form row's negative gutter margins stuck out of the scrolling panel and caused a
+   horizontal scrollbar: inline, the row keeps the panel width (its columns keep their gutter padding). */
+.modal.awsum-modal-inline .modal-body > .row { margin-left: 0; margin-right: 0; }
 /* Filters in the narrow list panel: Search on its own row, other filters two per row. */
 .mg-md-list-panel > .mg-md-filter.awsum-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .5rem; align-items: end; }
 .mg-md-list-panel > .mg-md-filter.awsum-filter-grid > .awsum-filter-search { grid-column: 1 / -1; }

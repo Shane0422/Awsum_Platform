@@ -608,8 +608,13 @@ const stores=[{id:7,store_code:'ST0007',store_name:'Scope Store',merchant_id:1,m
   agency_name:'North Agency',business_type:'Retail',status:'active',opt_customer:'on',customer_scope:'MERCHANT',
   opt_loyalty:'off',loyalty_scope:'MERCHANT',country:'United States',created_at:'2026-01-01'}];
 window.fetch=async(path,options={})=>{const url=new URL(String(path),'http://127.0.0.1');
-  if(url.pathname==='/platform/stores'){requests.push({path:url.pathname,method:'GET'});
-    return new Response(JSON.stringify({items:stores,total:1,total_pages:1,page:1,page_size:20}),{headers:{'Content-Type':'application/json'}});}
+  // Platform Store: the Organization Tree (S2-b) lists the Store; selecting it loads the existing detail API.
+  const json=body=>new Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});
+  if(url.pathname==='/platform/api/store-tree'){requests.push({path:url.pathname,method:'GET'});
+    return json({agencies:[{agency_id:10,agency_code:'AG0010',agency_name:'North Agency',merchants:[{merchant_id:1,
+      merchant_code:'MER1',merchant_name:'Alpha Mart',merchant_status:'active',stores:[{store_id:7,store_code:'ST0007',
+      store_name:'Scope Store',status:'active'}]}]}],counts:{agencies:1,merchants:1,stores:1}});}
+  if(url.pathname==='/platform/store/7'){requests.push({path:url.pathname,method:'GET'});return json({...stores[0],store_id:7});}
   return base(path,options);};})();</script></head>"""
         page = module_page("store").replace("</head>", store_mock, 1)
         script = f"const page={json.dumps(page).replace('</', '<' + chr(92) + '/')};\n" + r"""
@@ -621,8 +626,8 @@ const wait=async(check,label)=>{for(let i=0;i<150;i++){if(check())return;await t
   const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
   document.body.appendChild(frame);await loaded;
   const doc=frame.contentDocument,win=frame.contentWindow,find=id=>doc.getElementById(id),field=name=>find('field_'+name);
-  await wait(()=>find('masterListBody').querySelector('tr[data-item-id="7"]'),'store list');
-  find('masterListBody').querySelector('tr[data-item-id="7"]').click();
+  await wait(()=>find('masterListBody').querySelector('tr[data-row-select="7"]'),'store tree');
+  find('masterListBody').querySelector('tr[data-row-select="7"]').click();
   await wait(()=>field('customer_scope')&&field('opt_customer').value==='on','store form');
   const set=(name,value)=>{field(name).value=value;field(name).dispatchEvent(new win.Event('change',{bubbles:true}));};
   const st=key=>`${field('opt_'+key).value}|${field(key+'_scope').value}|${field(key+'_scope').disabled}`;

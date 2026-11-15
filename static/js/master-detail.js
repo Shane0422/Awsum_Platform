@@ -13,6 +13,7 @@
   // levels: [{ key(item) -> string|null, name(item) -> string, order(item) -> number }], top level first.
   //   A null key stops the path there (the item sits under its last known parent).
   // collapsed: Set of group keys the user closed. rowHtml(item, depth) renders an item row.
+  // countItem(item) (optional): false = the row is shown but not counted in its groups (e.g. a "No stores" row).
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function pathKeys(item, levels) {
@@ -27,9 +28,10 @@
     return keys;
   }
 
-  function html({ items, levels, collapsed, colspan, rowHtml }) {
+  function html({ items, levels, collapsed, colspan, rowHtml, countItem }) {
     const root = { children: new Map(), items: [] };
     items.forEach((item, index) => {
+      const counted = countItem ? (countItem(item) ? 1 : 0) : 1;
       let node = root;
       pathKeys(item, levels).forEach((path, i) => {
         if (!node.children.has(path)) {
@@ -39,7 +41,7 @@
           });
         }
         node = node.children.get(path);
-        node.count += 1;
+        node.count += counted;
       });
       node.items.push(item);
     });

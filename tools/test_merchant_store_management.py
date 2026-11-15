@@ -376,15 +376,19 @@ class MerchantStoreManagementTests(unittest.TestCase):
     # ---- the common Store screen in the Merchant scope (headless Chrome, API mocked) ----
     @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
     def test_store_screen_in_the_merchant_scope(self):
+        # The Common Store Management screen (same Tree + inline form as Platform) in the Merchant scope.
         self.login("MERCHANT")
-        rows = self.client.get(f"{API}/stores?page=1&sort=store_asc").json()
+        tree = self.client.get(f"{API}/store-tree").json()
+        details = {sid: self.client.get(f"{API}/store/{sid}").json() for sid in (10, 12)}
         mock = ("window.__errors=[];addEventListener('error',e=>__errors.push(String(e.message)));"
-                f"window.__rows={json.dumps(rows)};" + r"""
+                f"window.__tree={json.dumps(tree)};window.__details={json.dumps(details)};" + r"""
 window.requests=[];
 const J=b=>new Response(typeof b==='string'?b:JSON.stringify(b),{headers:{'Content-Type':'application/json'}});
 window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');
  requests.push({path:url.pathname,search:url.search,method:options.method||'GET',body:options.body});
- if(url.pathname==='/merchant/api/stores')return J(__rows);
+ if(url.pathname==='/merchant/api/store-tree')return J(__tree);
+ const detail=url.pathname.match(/^\/merchant\/api\/store\/(\d+)$/);
+ if(detail&&(options.method||'GET')==='GET')return J(__details[detail[1]]);
  if(url.pathname.startsWith('/merchant/api/business-contacts/'))return J('[]');
  return J({success:true,image_path:null,image_url:null});};""")
         page = inline_page(self.client.get("/merchant/business/stores").text, mock)
@@ -397,23 +401,29 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const frame=document.createElement('iframe');frame.style.width='1400px';frame.style.height='900px';frame.srcdoc=page;
  const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
  const doc=frame.contentDocument,win=frame.contentWindow,f=n=>doc.getElementById('field_'+n);
- await wait(()=>doc.querySelectorAll('#masterListBody tr').length===2,'its two Stores listed');
- const headers=[...doc.querySelectorAll('#masterListHeader th')].map(th=>th.textContent.trim()).filter(Boolean);
- assert(JSON.stringify(headers)==='["Store ID","Store Code","Store Name","Status","Created Date"]','no Agency / Merchant column: '+headers);
+ // Tree: the login Merchant > its Stores (no Agency level), from the scoped tree API only.
+ await wait(()=>doc.querySelectorAll('#masterListBody tr[data-row-select]').length===2,'its two Stores in the Tree');
+ const headers=[...doc.querySelectorAll('#masterListHeader th')].map(th=>th.textContent.trim());
+ assert(JSON.stringify(headers)==='["Merchant / Store"]','Tree header: '+headers);
+ const groups=[...doc.querySelectorAll('#masterListBody tr[data-tree-toggle]')].map(tr=>tr.textContent.replace(/[\u2212+]/g,'').replace(/\s+/g,' ').trim());
+ assert(JSON.stringify(groups)==='["Merchant <One>2"]','one Merchant group, no Agency: '+groups);
  const shown=el=>!!el&&el.getClientRects().length>0;
- assert(!shown(doc.getElementById('storeAgencyCombo'))&&!shown(doc.getElementById('storeMerchantCombo')),'no Agency / Merchant filter');
- for(const id of ['masterSearch','masterStatusFilter','storeSortSelect','storePageSize'])assert(shown(doc.getElementById(id)),id+' kept');
+ for(const id of ['storeAgencyCombo','storeMerchantCombo','storeSortSelect','storePageSize','storePagerPrev','storePagerNext'])assert(!shown(doc.getElementById(id)),id+' hidden');
+ for(const id of ['masterSearch','masterStatusFilter'])assert(shown(doc.getElementById(id)),id+' kept');
  assert(doc.getElementById('masterSearch').placeholder==='Search Store name or code...','Store Name / Code search');
- const sorts=[...doc.getElementById('storeSortSelect').options].map(o=>o.value);
- assert(JSON.stringify(sorts)==='["store_asc","store_desc","newest","oldest"]'&&doc.getElementById('storeSortSelect').value==='store_asc','sorts: '+sorts);
- const first=new URLSearchParams(win.requests.find(r=>r.path==='/merchant/api/stores').search);
- assert(first.get('sort')==='store_asc'&&!first.has('merchant_id')&&!first.has('agency_id'),'default Store Name (A-Z), no Merchant / Agency parameter');
+ assert(!win.requests.some(r=>r.path==='/merchant/api/stores'||r.path.startsWith('/platform')),'tree API only, no Platform call');
+ assert(win.requests.filter(r=>r.path==='/merchant/api/store-tree').every(r=>!r.search),'no Merchant / Agency parameter');
  assert(/Merchant: /.test(doc.getElementById('masterListHead').textContent),'Merchant name under the title');
  const gone=id=>{const el=doc.getElementById(id);return !el||el.classList.contains('d-none');};
- for(const id of ['btnListAdd','btnListDelete','btnNewRecord','btnDeleteRecord','storeDevicesCol','storeSplitter'])
+ for(const id of ['btnListAdd','btnListDelete','btnNewRecord','btnDeleteRecord','btnModalDelete','storeDevicesCol','storeSplitter'])
    assert(gone(id),id+' hidden (Platform only)');
- [...doc.querySelectorAll('#masterListBody tr')].find(tr=>tr.textContent.includes('STR26ABCD')).click();await pause(150);
- doc.getElementById('btnListEdit').click();await pause(300);
+ assert(!doc.getElementById('masterDetailStatusToggle'),'no Deactivate / Activate (Platform only)');
+ // Selecting a Store loads it from the Merchant detail API into the same inline form.
+ doc.querySelector('#masterListBody tr[data-row-select="10"]').click();
+ await wait(()=>!doc.getElementById('masterEditModal').hidden&&f('store_code')&&f('store_code').value==='STR26ABCD','the form shows Store 10');
+ assert(win.requests.some(r=>r.path==='/merchant/api/store/10'),'Merchant detail API');
+ assert(doc.getElementById('masterDetailForm').contains(doc.getElementById('masterEditModal')),'inline form (common layout)');
+ const body=doc.getElementById('masterEditModal');assert(body.scrollWidth<=body.clientWidth+1,'no horizontal scroll in the form: '+body.scrollWidth+'/'+body.clientWidth);
  assert(!f('notes')&&!f('store_license_key'),'Platform internal fields are not rendered');
  assert(f('store_code').readOnly&&f('license_count').readOnly&&f('status').disabled&&f('merchant_id').disabled,'Platform fields read-only');
  // S1: Store basic information, Address and Business Options (with Scopes) are Platform only: read-only here.
@@ -441,6 +451,11 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  assert(JSON.stringify(keys)===JSON.stringify(expectedKeys),'only the allow-listed form fields are sent: '+keys);
  assert(!win.requests.some(r=>r.path.startsWith('/platform')),'no Platform API call');
  await wait(()=>[...doc.getElementById('storeLogoUploader').querySelectorAll('input,button')].every(el=>el.disabled),'Logo uploader disabled again after the save');
+ // An Inactive Store is view only (read_only from the Merchant detail API). Wait for the post-save Tree reload first.
+ await wait(()=>win.requests.filter(r=>r.path==='/merchant/api/store/10').length>=2,'post-save reload');await pause(200);
+ doc.querySelector('#masterListBody tr[data-row-select="12"]').click();
+ await wait(()=>f('store_code').value==='STR26INAC','the Inactive Store');
+ assert(f('receipt_message').readOnly&&f('opt_use_color').disabled,'Inactive Store: view only');
  assert(win.__errors.length===0,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
@@ -450,14 +465,17 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
 
 
     @unittest.skipUnless(browser.BROWSER.is_file(), "Set AWSUM_REPORT_CHROME to Chrome/Edge.")
-    def test_platform_store_list_is_unchanged(self):
-        rows = self.client.get("/platform/stores?page=1&sort=merchant_asc").json()
+    def test_platform_store_screen_is_the_organization_tree(self):
+        # Platform Store Management (S2-b PHASE 1): Agency > Merchant > Store Tree + the existing form inline.
+        tree = self.client.get("/platform/api/store-tree").json()
+        detail = self.client.get("/platform/store/10").json()
         mock = ("window.__errors=[];addEventListener('error',e=>__errors.push(String(e.message)));"
-                f"window.__rows={json.dumps(rows)};" + r"""
+                f"window.__tree={json.dumps(tree)};window.__detail={json.dumps(detail)};" + r"""
 window.requests=[];
 const J=b=>new Response(typeof b==='string'?b:JSON.stringify(b),{headers:{'Content-Type':'application/json'}});
 window.fetch=async(path,options={})=>{const url=new URL(path,'http://x');requests.push({path:url.pathname,search:url.search});
- if(url.pathname==='/platform/stores')return J(__rows);return J('[]');};""")
+ if(url.pathname==='/platform/api/store-tree')return J(__tree);
+ if(url.pathname==='/platform/store/10')return J(__detail);return J('[]');};""")
         page = inline_page(self.client.get("/platform/master/store").text, mock)
         script = "const page=" + json.dumps(page).replace("</", "<\\/") + ";\n" + r"""
 const assert=(ok,m)=>{if(!ok)throw Error(m);};
@@ -466,14 +484,18 @@ const wait=async(f,m)=>{for(let i=0;i<100;i++){try{if(f())return;}catch(e){}awai
  const frame=document.createElement('iframe');frame.style.width='1400px';frame.style.height='900px';frame.srcdoc=page;
  const loaded=new Promise(r=>frame.addEventListener('load',r,{once:true}));document.body.appendChild(frame);await loaded;
  const doc=frame.contentDocument,win=frame.contentWindow,shown=el=>!!el&&el.getClientRects().length>0;
- await wait(()=>doc.querySelectorAll('#masterListBody tr').length===3,'every Store listed');
- const headers=[...doc.querySelectorAll('#masterListHeader th')].map(th=>th.textContent.trim()).filter(Boolean);
- assert(JSON.stringify(headers)==='["Agency","Merchant","Store ID","Store Code","Store Name","Status","Created Date"]','Platform columns: '+headers);
- for(const id of ['storeAgencyCombo','storeMerchantCombo','btnListAdd'])assert(shown(doc.getElementById(id)),id+' still shown');
- assert(doc.getElementById('storeSortSelect').options.length===8&&doc.getElementById('storeSortSelect').value==='merchant_asc','Platform sorts');
- assert(new URLSearchParams(win.requests[0].search).get('sort')==='merchant_asc','Platform default sort');
- assert(!/Merchant: /.test(doc.getElementById('masterListHead').textContent),'Platform subtitle unchanged');
- assert(win.__errors.length===0,'no script errors: '+win.__errors);
+ await wait(()=>doc.querySelectorAll('#masterListBody tr[data-row-select]').length===3,'every Store in the Tree');
+ const headers=[...doc.querySelectorAll('#masterListHeader th')].map(th=>th.textContent.trim());
+ assert(JSON.stringify(headers)==='["Agency / Merchant / Store"]','Tree header: '+headers);
+ const groups=[...doc.querySelectorAll('#masterListBody tr[data-tree-toggle]')].map(tr=>tr.textContent.replace(/\s+/g,' ').trim());
+ assert(groups.some(g=>/Agency <One>\s*2$/.test(g))&&groups.some(g=>/No Agency\s*1$/.test(g)),'Agency / No Agency groups: '+groups);
+ for(const id of ['storeAgencyCombo','storeMerchantCombo','storeSortSelect','storePageSize','storePagerPrev','storePagerNext'])assert(!shown(doc.getElementById(id)),id+' hidden');
+ for(const id of ['masterSearch','masterStatusFilter','btnListAdd'])assert(shown(doc.getElementById(id)),id+' shown');
+ assert(!win.requests.some(r=>r.path==='/platform/stores'),'no paged list call');
+ doc.querySelector('#masterListBody tr[data-row-select="10"]').click();
+ await wait(()=>doc.getElementById('field_store_code').value==='STR26ABCD','the detail fills the form');
+ assert(win.requests.some(r=>r.path==='/platform/store/10'),'detail API');
+ assert(!win.__errors.length,'no script errors: '+win.__errors);
  document.getElementById('result').textContent=JSON.stringify({ok:true,networkCalls:0});
 })().catch(e=>{document.getElementById('result').textContent=JSON.stringify({ok:false,error:e.stack});});
 """
