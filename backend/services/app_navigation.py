@@ -35,6 +35,10 @@ TENANT_ROLES = {
     "STORE": {"Admin", "CustomerAdmin", "StoreAdmin"},
 }
 MASTER_PERMISSION = PortalPermission(create=True, update=True, delete=True)
+# Store Override (Store Settings of a Merchant MD: per-Store Detail price, MD-level POS visibility): separate from the
+# common MD write permission (MASTER_PERMISSION + STORE_VIEW_ONLY_ENTITIES), so a Store admin can manage its own
+# Store's settings while the Merchant MD stays view only. Portal Role resource later: store_md_override.
+STORE_OVERRIDE_PERMISSION = PortalPermission(read=True, update=True)
 # Merchant Store Management: view its Stores and edit the allowed operating fields. Store registration, deletion,
 # deactivation and Merchant / Agency assignment are Platform Admin only.
 STORE_MANAGEMENT_PERMISSION = PortalPermission(read=True, update=True)

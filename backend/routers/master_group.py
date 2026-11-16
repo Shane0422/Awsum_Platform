@@ -24,7 +24,8 @@ from backend.services.pos_roles import pos_role_options
 from backend.services import store_locations
 from backend.services.images import image_mutation_form
 from backend.services.reporting import table_report_html
-from backend.services.app_navigation import resolve_app_scope
+from backend.services.app_navigation import STORE_OVERRIDE_PERMISSION, resolve_app_scope
+from backend.services import store_md_settings
 from backend.services.branding import resolve_branding
 from backend.services.store_item_features import item_features, without_disabled_item_features
 from backend.services.store_locations import location_management_enabled
@@ -733,6 +734,78 @@ def md_detail_delete(item_id: int, detail_id: int, request: Request, db: Session
         db.rollback()
         return _fail(exc)
     return JSONResponse({"message": "Deleted."})
+
+
+# ---------- Store Settings (Store Override of a Merchant MD, SO-1c) ----------
+# Merchant login: every Store of its Merchant (an Inactive one is view only, common Store Status rule). Store login:
+# its own Store only (an Inactive Store cannot sign in). Platform MD has no Stores. The permission is the common
+# AppScope check with STORE_OVERRIDE_PERMISSION (permitted Merchant / Store admin roles), separate from the common
+# MD write (STORE_VIEW_ONLY_ENTITIES keeps MD view only for a Store login). Scope never comes from the payload.
+STORE_SETTINGS_LABEL = "Store Settings"
+STORE_SETTINGS_PLATFORM = "Store Settings are available in the Merchant and Store portals only."
+
+
+def _store_settings_scope(request: Request, db: Session, user) -> tuple[list[int], list[int]]:
+    """(Store ids this login may see, the view-only ones among them)."""
+    scope = request.state.app_scope
+    if scope.context == "STORE":
+        return [user.i_store_id], []
+    stores = db.query(Store).filter(Store.i_merchant_id == scope.merchant_id).all()
+    return [s.i_store_id for s in stores], [s.i_store_id for s in stores if scope.store_read_only(s)]
+
+
+def _store_settings_response(request: Request, data: dict) -> dict:
+    scope = request.state.app_scope
+    try:
+        scope.require("update", STORE_OVERRIDE_PERMISSION, STORE_SETTINGS_LABEL)
+        can_edit = True
+    except HTTPException:
+        can_edit = False
+    return {**data, "can_edit": can_edit}
+
+
+@router.get("/platform/api/master-group/md/{item_id}/store-settings")
+@router.put("/platform/api/master-group/md/{item_id}/store-settings")
+def md_store_settings_platform(item_id: int, request: Request, db: Session = Depends(get_db)):
+    _admin(request, db)
+    raise HTTPException(403, STORE_SETTINGS_PLATFORM)
+
+
+@router.get("/merchant/api/master-group/md/{item_id}/store-settings")
+@router.get("/store/api/master-group/md/{item_id}/store-settings")
+def md_store_settings(item_id: int, request: Request, db: Session = Depends(get_db)):
+    user = _admin(request, db)
+    request.state.app_scope.require("read", STORE_OVERRIDE_PERMISSION, STORE_SETTINGS_LABEL)
+    store_ids, read_only = _store_settings_scope(request, db, user)
+    try:
+        data = store_md_settings.get_store_settings(db, item_id, merchant_id=request.state.master_merchant_id,
+                                                    store_ids=store_ids, read_only_store_ids=read_only)
+    except svc.NotFound as exc:
+        return _fail(exc)
+    return _store_settings_response(request, data)
+
+
+@router.put("/merchant/api/master-group/md/{item_id}/store-settings")
+@router.put("/store/api/master-group/md/{item_id}/store-settings")
+def md_store_settings_save(item_id: int, payload: dict, request: Request, db: Session = Depends(get_db)):
+    user = _admin(request, db)
+    _validate_origin(request)
+    request.state.app_scope.require("update", STORE_OVERRIDE_PERMISSION, STORE_SETTINGS_LABEL)
+    store_ids, read_only = _store_settings_scope(request, db, user)
+    try:
+        data = store_md_settings.save_store_settings(
+            db, item_id, payload, user.i_platform_user_id, merchant_id=request.state.master_merchant_id,
+            store_ids=store_ids, read_only_store_ids=read_only)
+    except store_md_settings.VersionConflict as exc:
+        db.rollback()
+        return JSONResponse({"detail": str(exc), "conflicts": exc.conflicts}, status_code=409)
+    except store_md_settings.StoreReadOnly as exc:
+        db.rollback()
+        return JSONResponse({"detail": str(exc)}, status_code=403)
+    except (svc.FieldErrors, svc.Conflict, svc.NotFound) as exc:
+        db.rollback()
+        return _fail(exc)
+    return JSONResponse({**_store_settings_response(request, data), "message": "Saved."})
 
 
 @router.post("/platform/api/master-group/location/initialize")

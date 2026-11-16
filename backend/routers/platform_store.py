@@ -1504,6 +1504,13 @@ def _update_store(store_id: int, payload: dict, request: Request, db: Session,
             previous_merchant = db.get(Merchant, store.i_merchant_id)
             if store.c_logo_url or store.c_db_path:
                 raise HTTPException(409, "Store has owned resources. Use a reviewed resource transfer before changing its Merchant.")
+            # Store Settings (prices / POS visibility) belong to the current Merchant's MD: never removed here.
+            from backend.services.master_group import Conflict
+            from backend.services.store_md_settings import ensure_store_merchant_change_allowed
+            try:
+                ensure_store_merchant_change_allowed(db, store.i_store_id)
+            except Conflict as exc:
+                raise HTTPException(409, str(exc)) from None
             if previous_merchant:
                 try:
                     old_owner = AwsumPathResolver("STORE", merchant_code=previous_merchant.c_merchant_code,
